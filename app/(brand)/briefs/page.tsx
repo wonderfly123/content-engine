@@ -1,11 +1,9 @@
-import { PagePlaceholder } from "@/components/layout/page-placeholder";
+import { BriefQueue } from "@/components/briefs/brief-queue";
 
 export default function BriefsPage() {
   return (
-    <PagePlaceholder
-      title="Briefs"
-      description="Weekly batch with approve / edit / reject queue."
-      hint="Coming in Task 6 (Brief generation pipeline)."
-    />
+    <div className="mx-auto max-w-5xl">
+      <BriefQueue />
+    </div>
   );
 }

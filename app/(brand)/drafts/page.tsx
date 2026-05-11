@@ -1,11 +1,9 @@
-import { PagePlaceholder } from "@/components/layout/page-placeholder";
+import { DraftList } from "@/components/drafts/draft-list";
 
 export default function DraftsPage() {
   return (
-    <PagePlaceholder
-      title="Drafts"
-      description="Copy and scripts awaiting approval."
-      hint="Coming in Task 7 (Draft generation)."
-    />
+    <div className="mx-auto max-w-5xl">
+      <DraftList />
+    </div>
   );
 }

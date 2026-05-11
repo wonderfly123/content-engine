@@ -29,6 +29,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BrandSwitcher } from "./brand-switcher";
 import { NavLink } from "./nav-link";
+import { AlertBadge } from "./alert-badge";
 
 const workflowLinks = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -93,6 +94,7 @@ export function Sidebar() {
 
             <Separator className="my-2" />
 
+            <AlertBadge collapsed={collapsed} />
             <NavLink href="/settings" icon={Settings} label="Settings" collapsed={collapsed} />
             <NavLink href="/onboarding" icon={Plus} label="Add Brand" collapsed={collapsed} />
           </nav>

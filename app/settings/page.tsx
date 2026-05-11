@@ -1,10 +1,26 @@
+import Link from "next/link";
+import { desc, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { brands } from "@/lib/db/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Step3ReviewProfile } from "@/app/onboarding/[brandId]/steps/3-review-profile";
+import { Step4Icps } from "@/app/onboarding/[brandId]/steps/4-icps";
+import { Step5CompetitorsInspiration } from "@/app/onboarding/[brandId]/steps/5-competitors-inspiration";
+import { Step6Cadence } from "@/app/onboarding/[brandId]/steps/6-cadence";
+import { Step7Channels } from "@/app/onboarding/[brandId]/steps/7-channels";
+import { KeywordsTab } from "./keywords-tab";
 
-// Server component: reads process.env to surface configured/missing badges,
-// but never leaks the values themselves.
+export const dynamic = "force-dynamic";
+
 const ENV_VARS = [
   { key: "DATABASE_URL", label: "Neon Postgres (DATABASE_URL)" },
   { key: "BASIC_AUTH_USER", label: "Basic Auth user" },
@@ -28,42 +44,71 @@ function envStatuses(): { key: string; label: string; configured: boolean }[] {
   }));
 }
 
-function PlaceholderTab({ title, description, comingIn }: { title: string; description: string; comingIn: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">Form coming in {comingIn}.</p>
-      </CardContent>
-    </Card>
-  );
+interface SettingsPageProps {
+  searchParams?: Promise<{ brandId?: string; tab?: string }>;
 }
 
-export default function SettingsPage() {
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+  const sp = (await searchParams) ?? {};
   const statuses = envStatuses();
+
+  // Resolve a brand to operate on. Prefer ?brandId=; fall back to first active.
+  let activeBrand:
+    | (typeof brands.$inferSelect & { _exists: true })
+    | null = null;
+  try {
+    if (sp.brandId && /^[0-9a-f-]{36}$/i.test(sp.brandId)) {
+      const [row] = await db
+        .select()
+        .from(brands)
+        .where(eq(brands.id, sp.brandId));
+      if (row) activeBrand = { ...row, _exists: true };
+    }
+    if (!activeBrand) {
+      const [row] = await db
+        .select()
+        .from(brands)
+        .where(eq(brands.status, "active"))
+        .orderBy(desc(brands.updatedAt))
+        .limit(1);
+      if (row) activeBrand = { ...row, _exists: true };
+    }
+  } catch {
+    // DB not reachable (e.g. build-time without env). Render env tab only.
+  }
+
+  const defaultTab = sp.tab ?? "app";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          App preferences and per-brand configuration. Brand tabs operate on the active brand.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Settings</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            App preferences and per-brand configuration. Brand tabs operate on{" "}
+            <strong>{activeBrand?.name ?? "no brand"}</strong>.
+          </p>
+        </div>
       </div>
 
-      <Tabs defaultValue="app">
+      <Tabs defaultValue={defaultTab}>
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="app">App</TabsTrigger>
-          <TabsTrigger value="persona">Persona &amp; Voice</TabsTrigger>
-          <TabsTrigger value="icps">ICPs</TabsTrigger>
-          <TabsTrigger value="competitors">Competitors</TabsTrigger>
-          <TabsTrigger value="inspiration">Inspiration</TabsTrigger>
-          <TabsTrigger value="keywords">Keywords</TabsTrigger>
-          <TabsTrigger value="cadence">Cadence</TabsTrigger>
-          <TabsTrigger value="channels">Channels</TabsTrigger>
+          <TabsTrigger value="persona" disabled={!activeBrand}>
+            Persona &amp; Voice
+          </TabsTrigger>
+          <TabsTrigger value="icps" disabled={!activeBrand}>ICPs</TabsTrigger>
+          <TabsTrigger value="competitors" disabled={!activeBrand}>
+            Competitors
+          </TabsTrigger>
+          <TabsTrigger value="inspiration" disabled={!activeBrand}>
+            Inspiration
+          </TabsTrigger>
+          <TabsTrigger value="keywords" disabled={!activeBrand}>
+            Keywords
+          </TabsTrigger>
+          <TabsTrigger value="cadence" disabled={!activeBrand}>Cadence</TabsTrigger>
+          <TabsTrigger value="channels" disabled={!activeBrand}>Channels</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
@@ -86,12 +131,19 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="divide-y">
+              <ul className="divide-y" role="list">
                 {statuses.map((s) => (
-                  <li key={s.key} className="flex items-center justify-between py-2 text-sm">
-                    <span className="font-mono text-xs text-muted-foreground">{s.key}</span>
+                  <li
+                    key={s.key}
+                    className="flex items-center justify-between py-2 text-sm"
+                  >
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {s.key}
+                    </span>
                     <div className="flex items-center gap-3">
-                      <span className="hidden text-sm text-muted-foreground sm:inline">{s.label}</span>
+                      <span className="hidden text-sm text-muted-foreground sm:inline">
+                        {s.label}
+                      </span>
                       {s.configured ? (
                         <Badge variant="default">Configured</Badge>
                       ) : (
@@ -106,74 +158,53 @@ export default function SettingsPage() {
 
           <Separator />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>LLM provider</CardTitle>
-              <CardDescription>Default provider + per-task overrides.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Configuration UI coming in Task 6 (LLM adapter + brief generation).
-              </p>
-            </CardContent>
-          </Card>
+          {!activeBrand && (
+            <Card>
+              <CardHeader>
+                <CardTitle>No brand selected</CardTitle>
+                <CardDescription>
+                  Activate a brand to access per-brand settings. {" "}
+                  <Link href="/onboarding" className="underline">
+                    Add a brand
+                  </Link>
+                  .
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </TabsContent>
 
-        <TabsContent value="persona" className="pt-4">
-          <PlaceholderTab
-            title="Persona & Voice"
-            description="Mission, audience summary, archetype, POV, traits; voice tone sliders, emoji/hashtag policy, banned words, signature phrases, freeform description, example posts."
-            comingIn="Task 5 (Onboarding wizard, Step 3)"
-          />
-        </TabsContent>
+        {activeBrand && (
+          <>
+            <TabsContent value="persona" className="pt-4">
+              <Step3ReviewProfile brand={activeBrand} />
+            </TabsContent>
 
-        <TabsContent value="icps" className="pt-4">
-          <PlaceholderTab
-            title="ICPs"
-            description="List + add / edit / delete (max 3). Each ICP: name, description, pain points, where they hang out, content they engage with."
-            comingIn="Task 5 (Onboarding, Step 4)"
-          />
-        </TabsContent>
+            <TabsContent value="icps" className="pt-4">
+<Step4Icps brand={activeBrand} />
+            </TabsContent>
 
-        <TabsContent value="competitors" className="pt-4">
-          <PlaceholderTab
-            title="Competitors"
-            description="List + add / edit / delete. Handle, platform, URL, notes, pull-window days."
-            comingIn="Task 5 (Onboarding, Step 5)"
-          />
-        </TabsContent>
+            <TabsContent value="competitors" className="pt-4">
+<Step5CompetitorsInspiration brand={activeBrand} />
+            </TabsContent>
 
-        <TabsContent value="inspiration" className="pt-4">
-          <PlaceholderTab
-            title="Inspiration"
-            description="Accounts you want briefs to learn from (without copying)."
-            comingIn="Task 5 (Onboarding, Step 5)"
-          />
-        </TabsContent>
+            <TabsContent value="inspiration" className="pt-4">
+<Step5CompetitorsInspiration brand={activeBrand} />
+            </TabsContent>
 
-        <TabsContent value="keywords" className="pt-4">
-          <PlaceholderTab
-            title="Keywords"
-            description="List + add / pause / delete. Manual 'Pull now' per keyword."
-            comingIn="Task 14 (Research pipeline)"
-          />
-        </TabsContent>
+            <TabsContent value="keywords" className="pt-4">
+              <KeywordsTab brandId={activeBrand.id} />
+            </TabsContent>
 
-        <TabsContent value="cadence" className="pt-4">
-          <PlaceholderTab
-            title="Cadence"
-            description="Per-channel / per-format frequency sliders. Default Growth = 5 Reels + 2 Carousels per week."
-            comingIn="Task 5 (Onboarding, Step 6)"
-          />
-        </TabsContent>
+            <TabsContent value="cadence" className="pt-4">
+<Step6Cadence brand={activeBrand} />
+            </TabsContent>
 
-        <TabsContent value="channels" className="pt-4">
-          <PlaceholderTab
-            title="Channels"
-            description="OAuth connect / disconnect / reconnect for Instagram and Facebook. Other channels greyed."
-            comingIn="Task 9 (Meta OAuth + Publisher)"
-          />
-        </TabsContent>
+            <TabsContent value="channels" className="pt-4">
+<Step7Channels brand={activeBrand} />
+            </TabsContent>
+          </>
+        )}
 
         <TabsContent value="integrations" className="pt-4">
           <Card>
