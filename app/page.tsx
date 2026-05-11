@@ -1,14 +1,21 @@
-export default function Home() {
-  // Placeholder. Task 3 wires up real brand-check + redirect to
-  // /dashboard (if a brand exists) or /onboarding.
-  return (
-    <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="text-center">
-        <h1 className="text-4xl font-semibold tracking-tight">Content Engine</h1>
-        <p className="mt-4 text-muted-foreground">
-          Bootstrap complete. Schema, UI shell, and adapters land in subsequent tasks.
-        </p>
-      </div>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { desc, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { brands } from "@/lib/db/schema";
+
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  // First active brand → dashboard; otherwise route into onboarding.
+  const [first] = await db
+    .select({ slug: brands.slug })
+    .from(brands)
+    .where(eq(brands.status, "active"))
+    .orderBy(desc(brands.updatedAt))
+    .limit(1);
+
+  if (first) {
+    redirect(`/dashboard?brand=${first.slug}`);
+  }
+  redirect("/onboarding");
 }
