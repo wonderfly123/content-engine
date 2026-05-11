@@ -1,19 +1,80 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { FilterBar } from "@/components/analytics/filter-bar";
+import {
+  ToplineCards,
+  type ToplineDeltas,
+  type ToplineMetrics,
+} from "@/components/analytics/topline-cards";
+import { TrendCharts } from "@/components/analytics/trend-charts";
+import { CalloutCards } from "@/components/analytics/callout-cards";
+import { PostTable, type AnalyticsPostRow } from "@/components/analytics/post-table";
+import { useBrandStore } from "@/lib/stores/brand-store";
+
+interface TrendsPayload {
+  reach: Array<Record<string, number | string>>;
+  engagement: Array<Record<string, number | string>>;
+  followers: Array<Record<string, number | string>>;
+  split: "all" | "channel";
+}
 
 export default function AnalyticsPage() {
-  const topCards = [
-    "Total reach",
-    "Engagement rate",
-    "Follower delta",
-    "Posts published",
-    "Avg reach / post",
-    "Top format",
-  ];
-  const callouts = ["What's working", "Patterns to avoid"];
+  const brand = useBrandStore((s) => s.active);
+  const searchParams = useSearchParams();
+  const qs = searchParams.toString();
+
+  const [topline, setTopline] = useState<{
+    current: ToplineMetrics;
+    deltas: ToplineDeltas;
+  } | null>(null);
+  const [trends, setTrends] = useState<TrendsPayload | null>(null);
+  const [posts, setPosts] = useState<AnalyticsPostRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+
+  // Brand callouts — could come from /api/brands/[id]; for now read empty.
+  const [whatWorks] = useState<string[] | undefined>(undefined);
+  const [whatToAvoid] = useState<string[] | undefined>(undefined);
+
+  useEffect(() => {
+    if (!brand) return;
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams(qs);
+    params.set("brandId", brand.id);
+    const u = (path: string) => `/api/analytics/${path}?${params.toString()}`;
+
+    Promise.all([
+      fetch(u("topline")).then((r) => r.json()),
+      fetch(u("trends")).then((r) => r.json()),
+      fetch(u("posts")).then((r) => r.json()),
+    ])
+      .then(([t, tr, p]) => {
+        if (cancelled) return;
+        if (t.data) {
+          setTopline({ current: t.data.current, deltas: t.data.deltas });
+        }
+        if (tr.data) setTrends(tr.data);
+        if (p.data) setPosts(p.data.posts);
+        setLastSynced(new Date().toLocaleString());
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTopline(null);
+          setTrends(null);
+          setPosts([]);
+        }
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [brand, qs]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Analytics</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -21,62 +82,32 @@ export default function AnalyticsPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-3">
-        <span className="text-xs text-muted-foreground">Filters:</span>
-        <Button variant="outline" size="sm" disabled>Channel</Button>
-        <Button variant="outline" size="sm" disabled>Format</Button>
-        <Button variant="outline" size="sm" disabled>ICP</Button>
-        <Button variant="outline" size="sm" disabled>Date range</Button>
-        <div className="ml-auto text-xs text-muted-foreground">Last synced: —</div>
-      </div>
+      <FilterBar lastSyncedAt={lastSynced} />
 
-      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-        {topCards.map((label) => (
-          <Card key={label}>
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs">{label}</CardDescription>
-              <CardTitle className="text-2xl tabular-nums">—</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+      <ToplineCards
+        current={topline?.current}
+        deltas={topline?.deltas}
+        loading={loading || !topline}
+      />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {["Reach over time", "Engagement rate", "Follower growth"].map((label) => (
-          <Card key={label}>
-            <CardHeader>
-              <CardTitle className="text-base">{label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-32 rounded-md border border-dashed border-border/60" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {trends ? (
+        <TrendCharts
+          reach={trends.reach as never}
+          engagement={trends.engagement as never}
+          followers={trends.followers as never}
+          split={trends.split}
+        />
+      ) : (
+        <div className="grid h-48 gap-4 lg:grid-cols-3">
+          <div className="rounded-md border bg-card" />
+          <div className="rounded-md border bg-card" />
+          <div className="rounded-md border bg-card" />
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {callouts.map((label) => (
-          <Card key={label}>
-            <CardHeader>
-              <CardTitle className="text-base">{label}</CardTitle>
-              <CardDescription>Computed nightly by pattern recompute.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Not enough data yet.</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <CalloutCards whatWorks={whatWorks} whatToAvoid={whatToAvoid} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Posts</CardTitle>
-          <CardDescription>
-            Sortable post table arrives in Task 11. Click a row to view the provenance trail.
-          </CardDescription>
-        </CardHeader>
-        <CardContent />
-      </Card>
+      <PostTable rows={posts} loading={loading} />
     </div>
   );
 }
