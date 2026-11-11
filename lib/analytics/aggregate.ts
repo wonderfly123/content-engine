@@ -118,12 +118,19 @@ export function computeTopline(
   };
 }
 
-/** Engagement rate = (likes + comments + shares + saves) / max(reach, 1). */
-export function engagementOf(r: PostAggRow): { interactions: number; rate: number } {
+/**
+ * Engagement rate = (likes + comments + shares + saves) / views.
+ *
+ * Views is the base, not reach: Instagram reports a tiny reach for older Reels (5 accounts
+ * "reached" on a Reel with 3,500 views and 150 likes), which produced rates of several hundred
+ * percent. Reach is the fallback for posts with no views figure (photos); a post with neither
+ * has no rate at all (`measurable: false`) and is left out of averages.
+ */
+export function engagementOf(r: PostAggRow): { interactions: number; rate: number; measurable: boolean } {
   const interactions =
     (r.likes ?? 0) + (r.comments ?? 0) + (r.shares ?? 0) + (r.saves ?? 0);
-  const reach = r.reach ?? 0;
-  return { interactions, rate: reach > 0 ? interactions / reach : 0 };
+  const base = (r.impressions ?? 0) > 0 ? (r.impressions ?? 0) : (r.reach ?? 0);
+  return { interactions, rate: base > 0 ? interactions / base : 0, measurable: base > 0 };
 }
 
 export interface TrendPoint {
@@ -161,8 +168,10 @@ export function buildEngagementTrend(rows: PostAggRow[]): TrendPoint[] {
   rows.forEach((r) => {
     if (!r.publishedAt) return;
     const day = isoDay(r.publishedAt);
+    const e = engagementOf(r);
+    if (!e.measurable) return;
     const cur = buckets.get(day) ?? { sumRate: 0, n: 0 };
-    cur.sumRate += engagementOf(r).rate;
+    cur.sumRate += e.rate;
     cur.n += 1;
     buckets.set(day, cur);
   });

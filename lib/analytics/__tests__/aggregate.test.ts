@@ -108,17 +108,30 @@ describe("computeTopline", () => {
 });
 
 describe("engagementOf", () => {
-  it("computes rate over reach", () => {
+  it("computes rate over views", () => {
     const e = engagementOf(
-      row({ reach: 1000, likes: 50, comments: 25, shares: 15, saves: 10 }),
+      row({ impressions: 1000, reach: 400, likes: 50, comments: 25, shares: 15, saves: 10 }),
     );
     expect(e.interactions).toBe(100);
     expect(e.rate).toBeCloseTo(0.1);
+    expect(e.measurable).toBe(true);
   });
 
-  it("returns 0 when reach is 0", () => {
-    const e = engagementOf(row({ reach: 0 }));
+  it("stays sane when Instagram reports a tiny reach for an old Reel", () => {
+    // Real case: 3,567 views, 154 likes, reach reported as 5. Over reach that is 3,300%.
+    const e = engagementOf(row({ impressions: 3567, reach: 5, likes: 154, comments: 9, shares: 0, saves: 2 }));
+    expect(e.rate).toBeLessThan(0.1);
+  });
+
+  it("falls back to reach when there is no views figure (photos)", () => {
+    const e = engagementOf(row({ impressions: 0, reach: 500, likes: 50, comments: 0, shares: 0, saves: 0 }));
+    expect(e.rate).toBeCloseTo(0.1);
+  });
+
+  it("has no rate when neither views nor reach is known", () => {
+    const e = engagementOf(row({ impressions: null, reach: null, likes: 196, comments: 13 }));
     expect(e.rate).toBe(0);
+    expect(e.measurable).toBe(false);
   });
 });
 
@@ -147,12 +160,20 @@ describe("trends", () => {
 
   it("buildEngagementTrend averages per day", () => {
     const rows = [
-      row({ publishedAt: new Date("2026-06-01T10:00:00Z"), reach: 1000, likes: 100, comments: 0, shares: 0, saves: 0 }),
-      row({ publishedAt: new Date("2026-06-01T18:00:00Z"), reach: 1000, likes: 200, comments: 0, shares: 0, saves: 0 }),
+      row({ publishedAt: new Date("2026-06-01T10:00:00Z"), impressions: 1000, likes: 100, comments: 0, shares: 0, saves: 0 }),
+      row({ publishedAt: new Date("2026-06-01T18:00:00Z"), impressions: 1000, likes: 200, comments: 0, shares: 0, saves: 0 }),
     ];
     const t = buildEngagementTrend(rows);
     expect(t).toHaveLength(1);
     expect(t[0]!.er).toBeCloseTo(0.15);
+  });
+
+  it("buildEngagementTrend leaves out posts with no views or reach instead of counting them as 0%", () => {
+    const rows = [
+      row({ publishedAt: new Date("2026-06-01T10:00:00Z"), impressions: 1000, likes: 100, comments: 0, shares: 0, saves: 0 }),
+      row({ publishedAt: new Date("2026-06-01T18:00:00Z"), impressions: null, reach: null, likes: 200 }),
+    ];
+    expect(buildEngagementTrend(rows)[0]!.er).toBeCloseTo(0.1);
   });
 });
 
