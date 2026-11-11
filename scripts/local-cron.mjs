@@ -1,3 +1,4 @@
+// OFFLINE FALLBACK ONLY. The deployed app on Vercel runs this schedule; running both publishes posts twice.
 // Local stand-in for Vercel Cron: asks the running dev server to publish due posts once a minute
 // and, once an hour, to verify the Instagram / Facebook connections and pull post analytics.
 // Usage: npm run cron:local   (with `npm run dev` running; posts only go out while both are running)
