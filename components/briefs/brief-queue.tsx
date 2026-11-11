@@ -26,7 +26,7 @@ import { BriefForm } from "./brief-form";
 import { RejectDialog } from "./reject-dialog";
 
 interface BriefQueueProps {
-  /** Optional channel filter (used by /instagram, /facebook routes). */
+  /** Optional channel filter. */
   channel?: string;
 }
 

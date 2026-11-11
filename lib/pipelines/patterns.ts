@@ -12,7 +12,7 @@
  */
 
 import { and, eq, gte, sql } from "drizzle-orm";
-import { db as defaultDb, schema } from "@/lib/db";
+import { db as defaultDb, rowsOf, schema } from "@/lib/db";
 import type { BrandSettings } from "@/lib/db/types";
 
 export type DbOrTx = typeof defaultDb;
@@ -57,19 +57,19 @@ export async function recomputePatternsForBrand(
   // the most recent row per post.
   const latestSnapshots = await db.execute(sql`
     WITH ranked AS (
-      SELECT s.*, p.channel, p.published_at, p.draft_id,
-             ROW_NUMBER() OVER (PARTITION BY s.post_id ORDER BY s.pulled_at DESC) AS rn
+      SELECT s.*, p.channel, p."publishedAt" AS published_at, p.draft_id,
+             ROW_NUMBER() OVER (PARTITION BY s.post_id ORDER BY s."pulledAt" DESC) AS rn
         FROM analytics_snapshots s
         JOIN posts p ON p.id = s.post_id
        WHERE s.brand_id = ${brandId}
-         AND p.published_at >= ${since}
+         AND p."publishedAt" >= ${since.toISOString()}
     )
     SELECT post_id, reach, impressions, likes, comments, shares, saves,
            video_views, channel, published_at, draft_id
       FROM ranked
      WHERE rn = 1
   `);
-  const rows = ((latestSnapshots as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? []).map(normalizeSnapshotRow);
+  const rows = rowsOf(latestSnapshots).map(normalizeSnapshotRow);
 
   // Pull the join: draft → brief → format, hook, icp_id.
   const briefByDraft = new Map<
@@ -85,7 +85,7 @@ export async function recomputePatternsForBrand(
         JOIN briefs b ON b.id = d.brief_id
        WHERE d.id IN ${sql.raw(`(${draftIds.map((id) => `'${id}'`).join(",")})`)}
     `);
-    const joinList = ((joinRows as unknown as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+    const joinList = rowsOf(joinRows);
     for (const j of joinList) {
       briefByDraft.set(String(j.draft_id), {
         briefId: String(j.brief_id),

@@ -7,6 +7,8 @@
     { "path": "/api/cron/research", "schedule": "0 18 * * 0" },
     { "path": "/api/cron/briefs", "schedule": "0 7 * * 1" },
     { "path": "/api/cron/patterns", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/jobs-retry", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/jobs-retry", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/ads-insights", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/connections", "schedule": "0 * * * *" }
   ]
 }

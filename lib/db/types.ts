@@ -3,6 +3,8 @@
  * Kept narrow; widen as the app evolves.
  */
 
+import type { Channel } from "./enums";
+
 // ---- brands.persona_json --------------------------------------------------
 export interface Persona {
   mission?: string;
@@ -50,16 +52,46 @@ export interface BrandSettings {
     overrides?: Record<string, string>;
   };
   patterns?: unknown; // computed nightly; loose shape for now
+  /**
+   * Channels shown in analytics. Absent/undefined = all channels enabled
+   * (backward compatible); present = only the listed channels are included
+   * in analytics queries and the analytics channel filter.
+   */
+  enabledChannels?: Channel[];
   [key: string]: unknown;
 }
 
 // ---- channel_connections.meta_json ---------------------------------------
+export interface ConnectedAdAccount {
+  /** Meta ad account id, "act_" prefixed (e.g. "act_123456…"). */
+  id: string;
+  name: string;
+  currency?: string;
+  /** Meta numeric account_status (1=ACTIVE, 2=DISABLED, 3=UNSETTLED, …). */
+  accountStatus?: number;
+  businessId?: string;
+  businessName?: string;
+}
+
 export interface ChannelConnectionMeta {
   fbPageId?: string;
   igBusinessId?: string;
   scopes?: string[];
+  /** Currently-selected ad account for this brand (read-only paid insights). */
+  adAccountId?: string; // "act_…"
+  adAccountName?: string;
+  adAccountCurrency?: string;
+  adAccountBusinessId?: string;
+  /** All ad accounts visible to the granting user at the time of OAuth. */
+  adAccounts?: ConnectedAdAccount[];
   [key: string]: unknown;
 }
+
+// ---- ads: campaign / adset / ad metadata + insights ----------------------
+export type AdCampaignRaw = Record<string, unknown>;
+export type AdSetRaw = Record<string, unknown>;
+export type AdRaw = Record<string, unknown>;
+export type AdInsightsRaw = Record<string, unknown>;
 
 // ---- research_bundles -----------------------------------------------------
 export interface CompetitorFinding {

@@ -9,6 +9,7 @@
 
 import { channelValues, formatValues } from "@/lib/db/enums";
 import type { Channel, ContentFormat } from "@/lib/db/enums";
+import type { BrandSettings } from "@/lib/db/types";
 
 export type DateRangePreset = "7d" | "30d" | "90d" | "custom";
 
@@ -74,6 +75,19 @@ export function serializeFilters(f: AnalyticsFilters): URLSearchParams {
     if (f.to) sp.set("to", f.to);
   }
   return sp;
+}
+
+/**
+ * Resolves which channels a brand has enabled for analytics.
+ * Absent/undefined settings key = all channels (backward compatible).
+ * Unknown values are dropped defensively.
+ */
+export function resolveEnabledChannels(
+  settings: BrandSettings | null | undefined,
+): Channel[] {
+  const enabled = settings?.enabledChannels;
+  if (!Array.isArray(enabled)) return [...channelValues];
+  return enabled.filter((c): c is Channel => ALL_CHANNELS.has(c));
 }
 
 /** Resolves the absolute time window the filter currently denotes. */

@@ -19,7 +19,11 @@ const SCOPES = [
   "pages_read_engagement",
   "instagram_basic",
   "instagram_content_publish",
+  "instagram_manage_insights",
   "pages_manage_posts",
+  "read_insights",
+  "ads_read",
+  "business_management",
 ];
 
 export function ChannelConnectCard({

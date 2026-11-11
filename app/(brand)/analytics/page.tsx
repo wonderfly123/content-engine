@@ -12,6 +12,7 @@ import { TrendCharts } from "@/components/analytics/trend-charts";
 import { CalloutCards } from "@/components/analytics/callout-cards";
 import { PostTable, type AnalyticsPostRow } from "@/components/analytics/post-table";
 import { useBrandStore } from "@/lib/stores/brand-store";
+import type { Channel } from "@/lib/db/enums";
 
 interface TrendsPayload {
   reach: Array<Record<string, number | string>>;
@@ -30,6 +31,7 @@ export default function AnalyticsPage() {
     deltas: ToplineDeltas;
   } | null>(null);
   const [trends, setTrends] = useState<TrendsPayload | null>(null);
+  const [enabledChannels, setEnabledChannels] = useState<Channel[] | null>(null);
   const [posts, setPosts] = useState<AnalyticsPostRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
@@ -55,10 +57,14 @@ export default function AnalyticsPage() {
         if (cancelled) return;
         if (t.data) {
           setTopline({ current: t.data.current, deltas: t.data.deltas });
+          if (Array.isArray(t.data.enabledChannels)) {
+            setEnabledChannels(t.data.enabledChannels as Channel[]);
+          }
         }
         if (tr.data) setTrends(tr.data);
         if (p.data) setPosts(p.data.posts);
-        setLastSynced(new Date().toLocaleString());
+        // When the numbers were last pulled from Instagram / Facebook, not when this page loaded.
+        setLastSynced(tr.data?.lastSyncedAt ? new Date(tr.data.lastSyncedAt).toLocaleString() : "never");
       })
       .catch(() => {
         if (!cancelled) {
@@ -76,13 +82,13 @@ export default function AnalyticsPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Analytics</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Organic</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Unified live view with filters; click any row to drill into provenance.
+          Organic performance with filters; click any row to drill into provenance.
         </p>
       </div>
 
-      <FilterBar lastSyncedAt={lastSynced} />
+      <FilterBar lastSyncedAt={lastSynced} enabledChannels={enabledChannels} />
 
       <ToplineCards
         current={topline?.current}

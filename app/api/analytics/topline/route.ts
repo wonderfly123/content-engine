@@ -13,6 +13,7 @@ import {
 import { computeDelta } from "@/lib/analytics/delta";
 import { parseFilters, resolveRange } from "@/lib/analytics/filters";
 import {
+  loadEnabledChannels,
   loadFollowerSeries,
   loadPostAggRows,
 } from "@/lib/analytics/queries";
@@ -38,7 +39,8 @@ export async function GET(req: NextRequest) {
   const priorEnd = start;
 
   try {
-    const rows = await loadPostAggRows(brandId, priorStart, end);
+    const enabledChannels = await loadEnabledChannels(brandId);
+    const rows = await loadPostAggRows(brandId, priorStart, end, enabledChannels);
     const followerSeries = await loadFollowerSeries(brandId, priorStart, end);
 
     const currentRows = filterRows(rows, filters, { start, end });
@@ -60,6 +62,7 @@ export async function GET(req: NextRequest) {
       data: {
         current,
         prior,
+        enabledChannels,
         deltas: {
           totalReach: computeDelta(current.totalReach, prior.totalReach),
           engagementRate: computeDelta(

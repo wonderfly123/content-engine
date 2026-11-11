@@ -20,7 +20,10 @@ import {
 } from "@/lib/db/schema";
 import { parseFilters, resolveRange } from "@/lib/analytics/filters";
 import { engagementOf, filterRows } from "@/lib/analytics/aggregate";
-import { loadPostAggRows } from "@/lib/analytics/queries";
+import {
+  loadEnabledChannels,
+  loadPostAggRows,
+} from "@/lib/analytics/queries";
 
 export const runtime = "nodejs";
 
@@ -40,7 +43,8 @@ export async function GET(req: NextRequest) {
   const { start, end } = resolveRange(filters);
 
   try {
-    const rows = await loadPostAggRows(brandId, start, end);
+    const enabledChannels = await loadEnabledChannels(brandId);
+    const rows = await loadPostAggRows(brandId, start, end, enabledChannels);
     const filtered = filterRows(rows, filters, { start, end });
 
     // Enrich with title (from brief) + thumbnail (from primary draft_asset).

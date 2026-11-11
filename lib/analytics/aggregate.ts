@@ -139,6 +139,30 @@ export function buildEngagementTrend(rows: PostAggRow[]): TrendPoint[] {
     .map(([date, { sumRate, n }]) => ({ date, er: n ? sumRate / n : 0 }));
 }
 
+/**
+ * Follower snapshots arrive per channel (Instagram, Facebook, ...). Collapse them into one
+ * brand-wide point per day: the sum of each channel's latest known count, carrying a channel's
+ * last value forward on days it was not sampled. Without this, two channels sampled on the same
+ * day read as a jump from one channel's count to the other's.
+ */
+export function combineFollowerSeries(
+  rows: Array<{ pulledAt: Date; channel: string; followerCount: number | null }>,
+): Array<{ pulledAt: Date; followerCount: number | null }> {
+  const sorted = rows
+    .filter((r) => r.followerCount != null)
+    .sort((a, b) => a.pulledAt.getTime() - b.pulledAt.getTime());
+  const latestByChannel = new Map<string, number>();
+  const byDay = new Map<string, { pulledAt: Date; followerCount: number }>();
+  for (const r of sorted) {
+    latestByChannel.set(r.channel, r.followerCount ?? 0);
+    byDay.set(isoDay(r.pulledAt), {
+      pulledAt: r.pulledAt,
+      followerCount: sum([...latestByChannel.values()]),
+    });
+  }
+  return [...byDay.values()];
+}
+
 export function buildFollowerTrend(
   followerSeries: Array<{ pulledAt: Date; followerCount: number | null }>,
 ): TrendPoint[] {

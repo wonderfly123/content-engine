@@ -59,6 +59,11 @@ export interface Post {
   caption: string;
   scheduled_for?: string;
   external_container_id?: string | null;
+  /**
+   * Instagram trial Reel (shown to non-followers only). 'manual' = the owner
+   * graduates it in the app; 'auto' = Instagram graduates it on performance.
+   */
+  trial?: 'manual' | 'auto' | null;
 }
 
 export interface AnalyticsSnapshot {
@@ -88,7 +93,15 @@ export interface PublishResult {
 export interface Publisher {
   connect(brandId: string): Promise<ChannelConnection>;
   publish(post: Post, assets: Asset[]): Promise<PublishResult>;
-  fetchAnalytics(externalId: string): Promise<AnalyticsSnapshot>;
+  /**
+   * Pull insights for a single published media item. The connection must
+   * carry the page-scoped access token (FB Page token also works for IG
+   * insights when the IG Business Account is linked to that Page).
+   */
+  fetchAnalytics(
+    externalId: string,
+    connection: ChannelConnection,
+  ): Promise<AnalyticsSnapshot>;
   refreshToken(connection: ChannelConnection): Promise<ChannelConnection>;
 }
 

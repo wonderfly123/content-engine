@@ -6,6 +6,7 @@ import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DEFAULT_BRANDS,
+  DEFAULT_BRAND_SLUG,
   useBrandStore,
   type Brand,
 } from "@/lib/stores/brand-store";
@@ -58,7 +59,7 @@ export function BrandSwitcher({ collapsed = false }: BrandSwitcherProps) {
     const next = activeOnly.length > 0 ? activeOnly : DEFAULT_BRANDS;
     setBrands(next);
     if (!active || !next.some((b) => b.id === active.id)) {
-      setActive(next[0] ?? null);
+      setActive(next.find((b) => b.slug === DEFAULT_BRAND_SLUG) ?? next[0] ?? null);
     }
   }, [data, active, setActive, setBrands]);
 

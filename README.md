@@ -1,3 +1,7 @@
+
+
+
+
 # Content Engine
 
 A single-user, multi-brand content pipeline that automates **research → brief → draft → asset → schedule → publish → analytics** for Instagram and Facebook, with a roadmap for additional channels behind a shared backbone.

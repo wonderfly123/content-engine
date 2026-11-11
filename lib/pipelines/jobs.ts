@@ -13,7 +13,7 @@
  */
 
 import { and, asc, eq, lte, sql } from "drizzle-orm";
-import { db as defaultDb, schema } from "@/lib/db";
+import { db as defaultDb, rowsOf, schema } from "@/lib/db";
 import type { JobKind } from "@/lib/db/enums";
 import type { JobPayload } from "@/lib/db/types";
 
@@ -78,17 +78,15 @@ export async function claimNextJob(
     )
     UPDATE jobs j
        SET status = 'running',
-           started_at = NOW(),
+           "startedAt" = NOW(),
            attempts = j.attempts + 1
       FROM next_job
      WHERE j.id = next_job.id
     RETURNING j.id, j.kind, j.brand_id, j.payload_json, j.attempts
   `);
 
-  // neon-http returns `{ rows: [...] }`; drizzle's typing on `.execute` is loose.
-  const rows = (result as unknown as { rows?: Array<Record<string, unknown>> })
-    .rows;
-  if (!rows || rows.length === 0) return null;
+  const rows = rowsOf(result);
+  if (rows.length === 0) return null;
   const row = rows[0]!;
   return {
     id: String(row.id),

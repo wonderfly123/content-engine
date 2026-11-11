@@ -182,6 +182,7 @@ async function publishQueuedPost(
     caption: draft.caption,
     scheduled_for: post.scheduledFor.toISOString(),
     external_container_id: post.externalContainerId,
+    trial: draft.trial,
   };
   const pubAssets: PubAsset[] = draft.assets.map((a) => ({
     id: a.id,
@@ -360,6 +361,8 @@ async function markPostFailed(
 interface DraftWithAssets {
   format: typeof schema.drafts.$inferSelect.format;
   caption: string;
+  /** Instagram trial Reel mode, from `drafts.meta_json.trialReel`. */
+  trial: "manual" | "auto" | null;
   assets: Array<{
     id: string;
     brandId: string;
@@ -384,6 +387,7 @@ async function loadDraftWithAssets(
     .select({
       format: schema.drafts.format,
       caption: schema.drafts.caption,
+      metaJson: schema.drafts.metaJson,
     })
     .from(schema.drafts)
     .where(eq(schema.drafts.id, draftId))
@@ -416,6 +420,10 @@ async function loadDraftWithAssets(
   return {
     format: draft.format,
     caption: draft.caption,
+    trial:
+      draft.metaJson?.trialReel === 'manual' || draft.metaJson?.trialReel === 'auto'
+        ? draft.metaJson.trialReel
+        : null,
     assets: assetRows.map((r) => ({ ...r })),
   };
 }
@@ -484,7 +492,7 @@ export async function requeueFailedPosts(
 const defaultPollContainer: ContainerPoller = async ({
   containerId,
   accessToken,
-  graphVersion = "v21.0",
+  graphVersion = "v27.0",
 }) => {
   const url = `https://graph.facebook.com/${graphVersion}/${containerId}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`;
   const res = await fetch(url);
@@ -508,7 +516,7 @@ const defaultPublishContainer: ContainerPublisher = async ({
   containerId,
   igUserId,
   accessToken,
-  graphVersion = "v21.0",
+  graphVersion = "v27.0",
 }) => {
   const url = `https://graph.facebook.com/${graphVersion}/${igUserId}/media_publish`;
   const params = new URLSearchParams({
@@ -526,7 +534,21 @@ const defaultPublishContainer: ContainerPublisher = async ({
   if (!body.id) {
     throw new Error(`media_publish ${containerId}: no media id in response`);
   }
-  return { mediaId: body.id, permalink: body.permalink };
+  // media_publish returns only the id; fetch the permalink so the calendar can link to the post.
+  let permalink = body.permalink;
+  if (!permalink) {
+    try {
+      const info = await fetch(
+        `https://graph.facebook.com/${graphVersion}/${body.id}?fields=permalink&access_token=${encodeURIComponent(accessToken)}`,
+      );
+      if (info.ok) {
+        permalink = ((await info.json()) as { permalink?: string }).permalink;
+      }
+    } catch {
+      // The post is live either way; a missing link is not a publish failure.
+    }
+  }
+  return { mediaId: body.id, permalink };
 };
 
 export const __internals = { sql };

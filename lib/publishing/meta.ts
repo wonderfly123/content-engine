@@ -19,6 +19,12 @@ import {
   type PublishResult,
   type Publisher,
 } from './types';
+import {
+  MetaGraphError,
+  fetchFacebookPostInsights,
+  fetchInstagramPostInsights,
+  refreshLongLivedToken,
+} from './meta-graph';
 
 export type FetchLike = (
   input: string | URL,
@@ -33,7 +39,42 @@ export interface MetaPublisherOptions {
   httpClient?: FetchLike;
   /** Graph API version. Bump in one place when Meta deprecates. */
   graphVersion?: string;
+  /** Looks up the brand's channel connection. Defaults to the database; inject in tests. */
+  loadConnection?: ConnectionLoader;
 }
+
+export type ConnectionLoader = (
+  brandId: string,
+  channel: 'instagram' | 'facebook',
+) => Promise<ChannelConnection | null>;
+
+const loadConnectionFromDb: ConnectionLoader = async (brandId, channel) => {
+  const { db, schema } = await import('@/lib/db');
+  const { and, eq } = await import('drizzle-orm');
+  const rows = await db
+    .select()
+    .from(schema.channelConnections)
+    .where(
+      and(
+        eq(schema.channelConnections.brandId, brandId),
+        eq(schema.channelConnections.channel, channel),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    brand_id: row.brandId,
+    channel: row.channel,
+    external_account_id: row.externalAccountId ?? '',
+    access_token: row.accessToken,
+    refresh_token: row.refreshToken,
+    token_expires_at: row.tokenExpiresAt ? row.tokenExpiresAt.toISOString() : null,
+    status: row.status,
+    meta_json: row.metaJson,
+  };
+};
 
 export class MetaPublisher implements Publisher {
   readonly channel: 'instagram' | 'facebook';
@@ -42,6 +83,7 @@ export class MetaPublisher implements Publisher {
   private readonly redirectUri: string;
   private readonly http: FetchLike;
   private readonly graphVersion: string;
+  private readonly loadConnection: ConnectionLoader;
 
   constructor(opts: MetaPublisherOptions) {
     this.channel = opts.channel;
@@ -58,7 +100,9 @@ export class MetaPublisher implements Publisher {
     this.appSecret = appSecret;
     this.redirectUri = redirectUri;
     this.http = opts.httpClient ?? ((globalThis.fetch as unknown) as FetchLike);
-    this.graphVersion = opts.graphVersion ?? 'v21.0';
+    // v27.0: trial Reels (`trial_params`) need a recent Graph version.
+    this.graphVersion = opts.graphVersion ?? 'v27.0';
+    this.loadConnection = opts.loadConnection ?? loadConnectionFromDb;
   }
 
   /**
@@ -128,30 +172,114 @@ export class MetaPublisher implements Publisher {
    * containerId }` so the caller persists `external_container_id` and the
    * next cron cycle finalizes via `media_publish`.
    */
-  async publish(_post: Post, _assets: Asset[]): Promise<PublishResult> {
-    throw new PublisherError(
-      'MetaPublisher.publish is not implemented yet — lands in Task 6.',
-      'not_implemented',
-    );
+  /**
+   * Instagram Reel: creates an UNPUBLISHED media container that Instagram fills
+   * by fetching the video from its public `storage_url`, and returns
+   * `{ pending: true, containerId }`. The cron pipeline then polls the container
+   * and calls `media_publish` once it reports FINISHED.
+   *
+   * Hosted-URL route on purpose: direct (resumable) upload was rejected by
+   * Instagram for videos of about 45 s or longer during testing (Nov 2026).
+   */
+  async publish(post: Post, assets: Asset[]): Promise<PublishResult> {
+    if (this.channel !== 'instagram' || post.format !== 'reel') {
+      throw new PublisherError(
+        `MetaPublisher.publish only supports Instagram Reels so far (got ${this.channel}/${post.format}).`,
+        'not_implemented',
+      );
+    }
+    const video =
+      assets.find((a) => a.kind === 'video' && (a.role ?? 'primary') === 'primary') ??
+      assets.find((a) => a.kind === 'video');
+    if (!video || !/^https:\/\//.test(video.storage_url)) {
+      throw new PublisherError(
+        'Reel publish needs a video asset with a public https storage_url.',
+        'missing_config',
+      );
+    }
+    const conn = await this.loadConnection(post.brand_id, 'instagram');
+    if (!conn || !conn.access_token) {
+      throw new PublisherError(
+        `No connected Instagram account for brand ${post.brand_id}.`,
+        'missing_config',
+      );
+    }
+    const igUserId =
+      (conn.meta_json?.igBusinessId as string | undefined) ??
+      conn.external_account_id;
+    if (!igUserId) {
+      throw new PublisherError(
+        'Instagram connection has no account id.',
+        'missing_config',
+      );
+    }
+
+    const body = new URLSearchParams({
+      media_type: 'REELS',
+      video_url: video.storage_url,
+      caption: post.caption,
+      access_token: conn.access_token,
+    });
+    const cover = assets.find((a) => a.role === 'cover' && a.kind !== 'video');
+    if (cover) body.set('cover_url', cover.storage_url);
+    if (post.trial) {
+      body.set(
+        'trial_params',
+        JSON.stringify({
+          graduation_strategy: post.trial === 'auto' ? 'SS_PERFORMANCE' : 'MANUAL',
+        }),
+      );
+    }
+
+    const res = await this.http(this.graphUrl(`${igUserId}/media`), {
+      method: 'POST',
+      body,
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      error?: { message?: string; code?: number; type?: string };
+    };
+    if (!res.ok || !json.id) {
+      const message = json.error?.message ?? `Graph API ${res.status}`;
+      const expired = json.error?.code === 190 || json.error?.type === 'OAuthException';
+      throw new PublisherError(
+        `Instagram container creation failed: ${message}`,
+        expired ? 'token_expired' : 'api_error',
+      );
+    }
+    return { externalId: '', url: '', pending: true, containerId: json.id };
   }
 
-  /**
-   * Task 4 stub. Real implementation lands in Task 6 / Pipeline 5b.
-   *
-   * Planned Graph endpoint:
-   *   GET /{external_post_id}/insights
-   *     ?metric=reach,impressions,likes,comments,shares,saves,
-   *             video_views,total_interactions,profile_visits,follows
-   *   GET /{external_post_id}?fields=comments_count,like_count,permalink
-   *
-   * Every call inserts a NEW analytics_snapshots row (time series — never
-   * update). Hourly for posts <7d, daily for posts 7-30d.
-   */
-  async fetchAnalytics(_externalId: string): Promise<AnalyticsSnapshot> {
-    throw new PublisherError(
-      'MetaPublisher.fetchAnalytics is not implemented yet — lands in Task 6.',
-      'not_implemented',
-    );
+  async fetchAnalytics(
+    externalId: string,
+    connection: ChannelConnection,
+  ): Promise<AnalyticsSnapshot> {
+    if (!connection.access_token) {
+      throw new PublisherError(
+        'fetchAnalytics requires a connection with access_token',
+        'missing_config',
+      );
+    }
+    try {
+      if (this.channel === 'instagram') {
+        return await fetchInstagramPostInsights({
+          externalPostId: externalId,
+          accessToken: connection.access_token,
+        });
+      }
+      return await fetchFacebookPostInsights({
+        externalPostId: externalId,
+        accessToken: connection.access_token,
+      });
+    } catch (err) {
+      if (err instanceof MetaGraphError) {
+        if (err.code === 'oauth_exception') {
+          throw new PublisherError(err.message, 'token_expired', err);
+        }
+        throw new PublisherError(err.message, 'api_error', err);
+      }
+      throw err;
+    }
   }
 
   /**
@@ -166,11 +294,38 @@ export class MetaPublisher implements Publisher {
    * within 7 days. On 401 / OAuthException, mark connection 'expired' and
    * surface in system_alerts (Pipeline 5a token-expiry handling).
    */
-  async refreshToken(_connection: ChannelConnection): Promise<ChannelConnection> {
-    throw new PublisherError(
-      'MetaPublisher.refreshToken is not implemented yet — lands in Task 6.',
-      'not_implemented',
-    );
+  async refreshToken(
+    connection: ChannelConnection,
+  ): Promise<ChannelConnection> {
+    if (!connection.access_token) {
+      throw new PublisherError(
+        'refreshToken requires a connection with access_token',
+        'missing_config',
+      );
+    }
+    try {
+      const refreshed = await refreshLongLivedToken({
+        appId: this.appId,
+        appSecret: this.appSecret,
+        currentAccessToken: connection.access_token,
+      });
+      return {
+        ...connection,
+        access_token: refreshed.accessToken,
+        token_expires_at: refreshed.expiresAt
+          ? refreshed.expiresAt.toISOString()
+          : null,
+        status: 'connected',
+      };
+    } catch (err) {
+      if (err instanceof MetaGraphError && err.code === 'oauth_exception') {
+        return { ...connection, status: 'expired' };
+      }
+      if (err instanceof MetaGraphError) {
+        throw new PublisherError(err.message, 'api_error', err);
+      }
+      throw err;
+    }
   }
 
   /** Exposed for Task 6 — base URL for all Graph calls. */

@@ -4,27 +4,51 @@
  * shape and there is no N+1.
  */
 
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   analyticsSnapshots,
   brandMetricsSnapshots,
+  brands,
   briefs,
   drafts,
   posts,
 } from "@/lib/db/schema";
-import type { PostAggRow } from "./aggregate";
+import type { Channel } from "@/lib/db/enums";
+import type { BrandSettings } from "@/lib/db/types";
+import { combineFollowerSeries, type PostAggRow } from "./aggregate";
+import { resolveEnabledChannels } from "./filters";
+
+/**
+ * Loads the brand's analytics-enabled channels from settings_json.
+ * Absent key = all channels enabled (backward compatible).
+ */
+export async function loadEnabledChannels(brandId: string): Promise<Channel[]> {
+  const [row] = await db
+    .select({ settingsJson: brands.settingsJson })
+    .from(brands)
+    .where(eq(brands.id, brandId))
+    .limit(1);
+  return resolveEnabledChannels(
+    (row?.settingsJson ?? null) as BrandSettings | null,
+  );
+}
 
 /**
  * Returns one row per published post in [from, to] with that post's latest
  * analytics snapshot stitched in. Filtering by channel/format/icp is done
- * in JS via `filterRows` — the SQL stays simple and cacheable.
+ * in JS via `filterRows` — the SQL stays simple and cacheable. When
+ * `enabledChannels` is provided, disabled channels are excluded server-side
+ * (WHERE channel IN (...)) so they never reach any aggregation.
  */
 export async function loadPostAggRows(
   brandId: string,
   from: Date,
   to: Date,
+  enabledChannels?: Channel[],
 ): Promise<PostAggRow[]> {
+  // Explicit empty list = every channel disabled; nothing to show.
+  if (enabledChannels && enabledChannels.length === 0) return [];
   const latest = db.$with("latest").as(
     db
       .select({
@@ -70,6 +94,7 @@ export async function loadPostAggRows(
         eq(posts.status, "published"),
         gte(posts.publishedAt, from),
         lte(posts.publishedAt, to),
+        enabledChannels ? inArray(posts.channel, enabledChannels) : undefined,
       ),
     );
 
@@ -90,14 +115,16 @@ export async function loadPostAggRows(
   }));
 }
 
+/** Brand-wide follower totals, one point per day (channels summed; see combineFollowerSeries). */
 export async function loadFollowerSeries(
   brandId: string,
   from: Date,
   to: Date,
 ): Promise<Array<{ pulledAt: Date; followerCount: number | null }>> {
-  return db
+  const rows = await db
     .select({
       pulledAt: brandMetricsSnapshots.pulledAt,
+      channel: brandMetricsSnapshots.channel,
       followerCount: brandMetricsSnapshots.followerCount,
     })
     .from(brandMetricsSnapshots)
@@ -109,4 +136,16 @@ export async function loadFollowerSeries(
       ),
     )
     .orderBy(brandMetricsSnapshots.pulledAt);
+  return combineFollowerSeries(rows);
+}
+
+/** When post numbers were last pulled from the platforms for this brand (null = never). */
+export async function loadLastSyncedAt(brandId: string): Promise<Date | null> {
+  const rows = await db
+    .select({ pulledAt: analyticsSnapshots.pulledAt })
+    .from(analyticsSnapshots)
+    .where(eq(analyticsSnapshots.brandId, brandId))
+    .orderBy(desc(analyticsSnapshots.pulledAt))
+    .limit(1);
+  return rows[0]?.pulledAt ?? null;
 }

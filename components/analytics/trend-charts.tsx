@@ -120,6 +120,8 @@ export function TrendCharts({
                 fontSize={10}
                 width={36}
                 tickFormatter={(v) => `${(Number(v) * 100).toFixed(0)}%`}
+                // With no engagement yet the auto scale ran 0 to 400%; keep at least a 0 to 10% range.
+                domain={[0, (max: number) => Math.max(0.1, Math.ceil(max * 20) / 20)]}
               />
               <ChartTooltip
                 content={

@@ -17,7 +17,10 @@ import { Step4Icps } from "@/app/onboarding/[brandId]/steps/4-icps";
 import { Step5CompetitorsInspiration } from "@/app/onboarding/[brandId]/steps/5-competitors-inspiration";
 import { Step6Cadence } from "@/app/onboarding/[brandId]/steps/6-cadence";
 import { Step7Channels } from "@/app/onboarding/[brandId]/steps/7-channels";
+import { resolveEnabledChannels } from "@/lib/analytics/filters";
+import type { BrandSettings } from "@/lib/db/types";
 import { KeywordsTab } from "./keywords-tab";
+import { AnalyticsVisibilityCard } from "./analytics-visibility-card";
 
 export const dynamic = "force-dynamic";
 
@@ -200,8 +203,14 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 <Step6Cadence brand={activeBrand} />
             </TabsContent>
 
-            <TabsContent value="channels" className="pt-4">
+            <TabsContent value="channels" className="space-y-4 pt-4">
 <Step7Channels brand={activeBrand} />
+              <AnalyticsVisibilityCard
+                brandId={activeBrand.id}
+                initialEnabled={resolveEnabledChannels(
+                  activeBrand.settingsJson as BrandSettings | null,
+                )}
+              />
             </TabsContent>
           </>
         )}

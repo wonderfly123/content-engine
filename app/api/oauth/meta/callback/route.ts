@@ -20,6 +20,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { channelConnections, events } from "@/lib/db/schema";
+import type { ConnectedAdAccount } from "@/lib/db/types";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,11 @@ const META_SCOPES = [
   "pages_read_engagement",
   "instagram_basic",
   "instagram_content_publish",
+  "instagram_manage_insights",
   "pages_manage_posts",
+  "read_insights",
+  "ads_read",
+  "business_management",
 ];
 
 const stateSchema = z
@@ -58,6 +63,15 @@ interface MetaPage {
   name: string;
   access_token: string;
   instagram_business_account?: { id: string };
+}
+
+interface MetaAdAccount {
+  id: string; // "act_…"
+  account_id: string; // raw numeric
+  name: string;
+  currency?: string;
+  account_status?: number;
+  business?: { id: string; name?: string };
 }
 
 async function graphGet<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -194,12 +208,70 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // 4b) list ad accounts visible to the granting user (ads_read scope).
+    //     If 0, the brand is organic-only — that's fine.
+    //     If 1, auto-select.
+    //     If >1 and no ?ad_account_id= override → surface picker.
+    const adAccountIdOverride = sp.get("ad_account_id");
+    const adAccountsRes = await graphGet<{ data: MetaAdAccount[] }>(
+      "/me/adaccounts",
+      {
+        access_token: userToken,
+        fields: "id,account_id,name,currency,account_status,business",
+        limit: "200",
+      },
+    ).catch(() => ({ data: [] as MetaAdAccount[] }));
+    const adAccounts = adAccountsRes.data ?? [];
+    const adAccountsForMeta: ConnectedAdAccount[] = adAccounts.map((a) => ({
+      id: a.id,
+      name: a.name,
+      currency: a.currency,
+      accountStatus: a.account_status,
+      businessId: a.business?.id,
+      businessName: a.business?.name,
+    }));
+
+    let selectedAdAccount: MetaAdAccount | undefined;
+    if (adAccounts.length === 1) {
+      selectedAdAccount = adAccounts[0];
+    } else if (adAccounts.length > 1) {
+      if (adAccountIdOverride) {
+        selectedAdAccount = adAccounts.find(
+          (a) => a.id === adAccountIdOverride,
+        );
+        if (!selectedAdAccount) {
+          return NextResponse.json(
+            { error: "ad_account_id not in user's ad account list" },
+            { status: 400 },
+          );
+        }
+      } else {
+        return NextResponse.json({
+          needsAdAccountSelection: true,
+          pageId: fbPageId,
+          adAccounts: adAccountsForMeta,
+        });
+      }
+    }
+
     // 5) upsert connections
+    const baseMeta: Record<string, unknown> = {
+      fbPageId,
+      scopes: META_SCOPES,
+      adAccounts: adAccountsForMeta,
+    };
+    if (selectedAdAccount) {
+      baseMeta.adAccountId = selectedAdAccount.id;
+      baseMeta.adAccountName = selectedAdAccount.name;
+      baseMeta.adAccountCurrency = selectedAdAccount.currency;
+      baseMeta.adAccountBusinessId = selectedAdAccount.business?.id;
+    }
+
     await upsertConnection(brandId, "facebook", {
       externalAccountId: fbPageId,
       token: pageToken,
       expiresAt,
-      meta: { fbPageId, scopes: META_SCOPES },
+      meta: baseMeta,
     });
 
     if (igBusinessId) {
@@ -207,7 +279,7 @@ export async function GET(req: NextRequest) {
         externalAccountId: igBusinessId,
         token: pageToken, // IG Graph operates with the Page token
         expiresAt,
-        meta: { fbPageId, igBusinessId, scopes: META_SCOPES },
+        meta: { ...baseMeta, igBusinessId },
       });
     }
 
@@ -215,7 +287,10 @@ export async function GET(req: NextRequest) {
       entityType: "brand",
       entityId: brandId,
       actor: "user",
-      note: `Onboarding step 7: connected Meta (page=${fbPageId}, ig=${igBusinessId ?? "none"})`,
+      note:
+        `Onboarding step 7: connected Meta ` +
+        `(page=${fbPageId}, ig=${igBusinessId ?? "none"}, ` +
+        `ads=${selectedAdAccount?.id ?? (adAccounts.length === 0 ? "none" : "unset")})`,
     });
 
     return NextResponse.redirect(

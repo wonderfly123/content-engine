@@ -21,6 +21,9 @@ export const DEFAULT_BRANDS: Brand[] = [
   { id: "wonderfly", name: "Wonderfly", slug: "wonderfly" },
 ];
 
+/** Brand opened by default when nothing is selected yet. */
+export const DEFAULT_BRAND_SLUG = "personal";
+
 export const useBrandStore = create<BrandState>()(
   persist(
     (set) => ({
@@ -31,6 +34,9 @@ export const useBrandStore = create<BrandState>()(
     }),
     {
       name: "ce.brand",
+      // v2: Personal became the default brand; drop any previously remembered choice once.
+      version: 2,
+      migrate: () => ({ active: null }),
       partialize: (s) => ({ active: s.active }),
     },
   ),

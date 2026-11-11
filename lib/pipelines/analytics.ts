@@ -13,6 +13,7 @@
 
 import { and, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
+import { fetchAccountMetrics } from "@/lib/publishing/meta-graph";
 import {
   getPublisher,
   type AnalyticsSnapshot,
@@ -99,7 +100,7 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
         sql`(
           NOT EXISTS (
             SELECT 1 FROM analytics_snapshots s
-             WHERE s.post_id = posts.id AND s.pulled_at > ${intervalCutoff}
+             WHERE s.post_id = posts.id AND s."pulledAt" > ${intervalCutoff.toISOString()}
           )
         )`,
       ),
@@ -108,12 +109,54 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
 
   let pulled = 0;
   let failed = 0;
+  // Cache channel connections per (brandId, channel) so we don't re-query
+  // for every post in the loop.
+  const connCache = new Map<string, typeof schema.channelConnections.$inferSelect | null>();
+  const loadConn = async (
+    brandId: string,
+    channel: "instagram" | "facebook",
+  ) => {
+    const k = `${brandId}:${channel}`;
+    if (connCache.has(k)) return connCache.get(k) ?? null;
+    const rows = await db
+      .select()
+      .from(schema.channelConnections)
+      .where(
+        and(
+          eq(schema.channelConnections.brandId, brandId),
+          eq(schema.channelConnections.channel, channel),
+        ),
+      )
+      .limit(1);
+    const row = rows[0] ?? null;
+    connCache.set(k, row);
+    return row;
+  };
+
   for (const post of candidates) {
     if (post.channel !== "instagram" && post.channel !== "facebook") continue;
     if (!post.externalPostId) continue;
     try {
+      const conn = await loadConn(post.brandId, post.channel);
+      if (!conn || conn.status !== "connected") {
+        failed++;
+        // eslint-disable-next-line no-console
+        console.error(
+          `[analytics] post=${post.id} skipped: no connected channel_connection`,
+        );
+        continue;
+      }
       const publisher = getPub(post.channel);
-      const snap = await publisher.fetchAnalytics(post.externalPostId);
+      const snap = await publisher.fetchAnalytics(post.externalPostId, {
+        brand_id: conn.brandId,
+        channel: conn.channel,
+        external_account_id: conn.externalAccountId ?? "",
+        access_token: conn.accessToken,
+        refresh_token: conn.refreshToken,
+        token_expires_at: conn.tokenExpiresAt?.toISOString() ?? null,
+        status: conn.status,
+        meta_json: conn.metaJson as Record<string, unknown>,
+      });
       await insertSnapshot(db, post.id, post.brandId, snap);
       pulled++;
     } catch (err) {
@@ -161,7 +204,7 @@ async function insertSnapshot(
 
 async function refreshBrandMetrics(
   db: DbOrTx,
-  getPub: NonNullable<AnalyticsDeps["getPublisherFor"]>,
+  _getPub: NonNullable<AnalyticsDeps["getPublisherFor"]>,
   now: () => Date,
 ): Promise<void> {
   const oneDayAgo = new Date(now().getTime() - 24 * 60 * 60 * 1000);
@@ -187,22 +230,24 @@ async function refreshBrandMetrics(
     if (recent[0]) continue;
 
     try {
-      const publisher = getPub(conn.channel);
-      // Bare-minimum: re-use the publisher; if it had a brand-metrics method
-      // we'd call it here. Today we fetch analytics for an arbitrary post and
-      // pull follower count from raw_json if present. Until the Publisher
-      // interface exposes `fetchBrandMetrics`, we insert a placeholder row
-      // so the time series exists.
-      // (Flagged in DONE_WITH_CONCERNS.)
+      const accountId =
+        conn.channel === "instagram"
+          ? (conn.metaJson.igBusinessId ?? conn.externalAccountId)
+          : (conn.metaJson.fbPageId ?? conn.externalAccountId);
+      if (!accountId) continue;
+      const metrics = await fetchAccountMetrics({
+        channel: conn.channel,
+        accountId,
+        accessToken: conn.accessToken,
+      });
       await db.insert(schema.brandMetricsSnapshots).values({
         brandId: conn.brandId,
         channel: conn.channel,
-        followerCount: null,
-        followingCount: null,
-        totalPosts: null,
-        rawJson: { note: "placeholder — Publisher.fetchBrandMetrics not yet implemented" },
+        followerCount: metrics.followerCount,
+        followingCount: metrics.followingCount,
+        totalPosts: metrics.totalPosts,
+        rawJson: (metrics.raw ?? {}) as Record<string, unknown>,
       });
-      void publisher; // touched for future use
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(

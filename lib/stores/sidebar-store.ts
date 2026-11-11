@@ -14,7 +14,8 @@ interface SidebarState {
 export const useSidebarStore = create<SidebarState>()(
   persist(
     (set) => ({
-      collapsed: false,
+      // Closed by default; the rail opens on hover (see Sidebar).
+      collapsed: true,
       mobileOpen: false,
       toggle: () => set((s) => ({ collapsed: !s.collapsed })),
       setCollapsed: (collapsed) => set({ collapsed }),
@@ -22,6 +23,8 @@ export const useSidebarStore = create<SidebarState>()(
     }),
     {
       name: "ce.sidebar",
+      version: 2, // v2: hover-to-open rail; start everyone closed once
+      migrate: () => ({ collapsed: true }),
       partialize: (s) => ({ collapsed: s.collapsed }),
     },
   ),

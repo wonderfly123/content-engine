@@ -144,6 +144,8 @@ export const jobKindValues = [
   "analytics_cold",
   "patterns",
   "jobs_retry",
+  "ads_insights",
+  "ads_metadata",
 ] as const;
 export const jobKindEnum = pgEnum("job_kind", jobKindValues);
 export type JobKind = (typeof jobKindValues)[number];

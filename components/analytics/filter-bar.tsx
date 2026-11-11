@@ -10,12 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  channelValues,
-  formatValues,
-  type Channel,
-  type ContentFormat,
-} from "@/lib/db/enums";
+import type { Channel } from "@/lib/db/enums";
 import {
   parseFilters,
   serializeFilters,
@@ -23,12 +18,22 @@ import {
   type DateRangePreset,
 } from "@/lib/analytics/filters";
 
-export function FilterBar({ lastSyncedAt }: { lastSyncedAt?: string | null }) {
+export function FilterBar({
+  lastSyncedAt,
+  enabledChannels,
+}: {
+  lastSyncedAt?: string | null;
+  /** Brand's analytics-enabled channels; undefined/null = show all. */
+  enabledChannels?: Channel[] | null;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const filters: AnalyticsFilters = parseFilters(
     new URLSearchParams(searchParams.toString()),
   );
+  // Only the channels this app actually posts to. A brand can narrow this further in Settings.
+  const SUPPORTED: Channel[] = ["instagram", "facebook"];
+  const visibleChannels = SUPPORTED.filter((c) => !enabledChannels || enabledChannels.includes(c));
 
   const update = useCallback(
     (next: Partial<AnalyticsFilters>) => {
@@ -46,7 +51,7 @@ export function FilterBar({ lastSyncedAt }: { lastSyncedAt?: string | null }) {
       <span className="text-xs text-muted-foreground">Filters:</span>
 
       <div className="flex flex-wrap gap-1">
-        {channelValues.map((c) => {
+        {visibleChannels.map((c) => {
           const on = filters.channels.includes(c);
           return (
             <Button
@@ -59,25 +64,6 @@ export function FilterBar({ lastSyncedAt }: { lastSyncedAt?: string | null }) {
               className="h-7 capitalize"
             >
               {c}
-            </Button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap gap-1">
-        {formatValues.map((f) => {
-          const on = filters.formats.includes(f);
-          return (
-            <Button
-              key={f}
-              variant={on ? "default" : "outline"}
-              size="sm"
-              onClick={() =>
-                update({ formats: toggleArray<ContentFormat>(filters.formats, f) })
-              }
-              className="h-7 capitalize"
-            >
-              {f}
             </Button>
           );
         })}

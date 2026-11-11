@@ -7,7 +7,8 @@ import {
   filterRows,
   type PostAggRow,
 } from "../aggregate";
-import type { AnalyticsFilters } from "../filters";
+import { resolveEnabledChannels, type AnalyticsFilters } from "../filters";
+import { channelValues } from "@/lib/db/enums";
 
 const row = (over: Partial<PostAggRow>): PostAggRow => ({
   postId: "p-" + Math.random().toString(36).slice(2, 8),
@@ -56,6 +57,32 @@ describe("filterRows", () => {
     );
     // The base row + the row with icpId=abc both match channel=ig + format=reel.
     expect(out.length).toBe(2);
+  });
+});
+
+describe("resolveEnabledChannels", () => {
+  it("returns all channels when settings are absent or key is missing", () => {
+    expect(resolveEnabledChannels(null)).toEqual([...channelValues]);
+    expect(resolveEnabledChannels(undefined)).toEqual([...channelValues]);
+    expect(resolveEnabledChannels({})).toEqual([...channelValues]);
+  });
+
+  it("returns only the listed channels when present", () => {
+    expect(
+      resolveEnabledChannels({ enabledChannels: ["instagram", "blog"] }),
+    ).toEqual(["instagram", "blog"]);
+  });
+
+  it("returns an empty list when everything is disabled", () => {
+    expect(resolveEnabledChannels({ enabledChannels: [] })).toEqual([]);
+  });
+
+  it("drops unknown channel values defensively", () => {
+    expect(
+      resolveEnabledChannels({
+        enabledChannels: ["instagram", "myspace"] as never,
+      }),
+    ).toEqual(["instagram"]);
   });
 });
 
@@ -126,5 +153,28 @@ describe("trends", () => {
     const t = buildEngagementTrend(rows);
     expect(t).toHaveLength(1);
     expect(t[0]!.er).toBeCloseTo(0.15);
+  });
+});
+
+describe("combineFollowerSeries", () => {
+  it("sums channels into one point per day instead of treating them as a sequence", async () => {
+    const { combineFollowerSeries } = await import("../aggregate");
+    const out = combineFollowerSeries([
+      { pulledAt: new Date("2026-11-11T10:00:00Z"), channel: "instagram", followerCount: 1377 },
+      { pulledAt: new Date("2026-11-11T10:00:01Z"), channel: "facebook", followerCount: 0 },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].followerCount).toBe(1377);
+  });
+
+  it("carries a channel's last count forward on days it was not sampled, and skips nulls", async () => {
+    const { combineFollowerSeries } = await import("../aggregate");
+    const out = combineFollowerSeries([
+      { pulledAt: new Date("2026-11-11T10:00:00Z"), channel: "instagram", followerCount: 1000 },
+      { pulledAt: new Date("2026-11-11T10:00:01Z"), channel: "facebook", followerCount: 50 },
+      { pulledAt: new Date("2026-11-12T10:00:00Z"), channel: "instagram", followerCount: 1010 },
+      { pulledAt: new Date("2026-11-12T10:00:01Z"), channel: "facebook", followerCount: null },
+    ]);
+    expect(out.map((p) => p.followerCount)).toEqual([1050, 1060]);
   });
 });

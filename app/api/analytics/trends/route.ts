@@ -17,7 +17,9 @@ import {
 } from "@/lib/analytics/aggregate";
 import { parseFilters, resolveRange } from "@/lib/analytics/filters";
 import {
+  loadEnabledChannels,
   loadFollowerSeries,
+  loadLastSyncedAt,
   loadPostAggRows,
 } from "@/lib/analytics/queries";
 
@@ -39,9 +41,11 @@ export async function GET(req: NextRequest) {
   const { start, end } = resolveRange(filters);
 
   try {
-    const [rows, followerSeries] = await Promise.all([
-      loadPostAggRows(brandId, start, end),
+    const enabledChannels = await loadEnabledChannels(brandId);
+    const [rows, followerSeries, lastSyncedAt] = await Promise.all([
+      loadPostAggRows(brandId, start, end, enabledChannels),
       loadFollowerSeries(brandId, start, end),
+      loadLastSyncedAt(brandId),
     ]);
     const currentRows = filterRows(rows, filters, { start, end });
     const split: "all" | "channel" = filters.channels.length === 0 ? "channel" : "all";
@@ -52,6 +56,7 @@ export async function GET(req: NextRequest) {
         engagement: buildEngagementTrend(currentRows),
         followers: buildFollowerTrend(followerSeries),
         split,
+        lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
       },
       error: null,
     });
