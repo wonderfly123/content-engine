@@ -30,6 +30,8 @@ export interface AnalyticsPostRow {
   publishedAt: string | null;
   thumbnailUrl: string | null;
   reach: number | null;
+  views: number | null;
+  likes: number | null;
   engagementRate: number;
   saves: number | null;
   followsFromPost: number | null;
@@ -39,6 +41,8 @@ type SortKey = keyof Pick<
   AnalyticsPostRow,
   | "publishedAt"
   | "reach"
+  | "views"
+  | "likes"
   | "engagementRate"
   | "saves"
   | "followsFromPost"
@@ -104,6 +108,12 @@ export function PostTable({
               <SortableHead k="reach" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Reach
               </SortableHead>
+              <SortableHead k="views" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Views
+              </SortableHead>
+              <SortableHead k="likes" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Likes
+              </SortableHead>
               <SortableHead k="engagementRate" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 ER
               </SortableHead>
@@ -119,7 +129,7 @@ export function PostTable({
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((__, j) => (
+                  {Array.from({ length: 11 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -128,7 +138,7 @@ export function PostTable({
               ))
             ) : sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-sm text-muted-foreground">
                   No posts in this window.
                 </TableCell>
               </TableRow>
@@ -175,6 +185,12 @@ export function PostTable({
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {(r.reach ?? 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {(r.views ?? 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {(r.likes ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {(r.engagementRate * 100).toFixed(1)}%

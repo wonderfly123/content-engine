@@ -92,6 +92,8 @@ export async function GET(req: NextRequest) {
         publishedAt: r.publishedAt,
         thumbnailUrl: m?.thumbnailUrl ?? m?.storageUrl ?? null,
         reach: r.reach,
+        views: r.impressions,
+        likes: r.likes,
         engagementRate: er.rate,
         saves: r.saves,
         followsFromPost: r.followsFromPost,

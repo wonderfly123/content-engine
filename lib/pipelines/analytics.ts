@@ -63,6 +63,18 @@ export async function pullAnalyticsCold(
   });
 }
 
+/** On-demand pull for the "Refresh now" button: recent posts, ignoring the hourly throttle. */
+export async function pullAnalyticsNow(
+  deps: AnalyticsDeps = {},
+): Promise<AnalyticsResult> {
+  return pullAnalytics({
+    ...deps,
+    minAgeMs: 0,
+    maxAgeMs: HOT_AGE_MS,
+    minIntervalMs: 0,
+  });
+}
+
 interface PullOpts extends AnalyticsDeps {
   minAgeMs: number;
   maxAgeMs: number;

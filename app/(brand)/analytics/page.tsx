@@ -11,6 +11,7 @@ import {
 import { TrendCharts } from "@/components/analytics/trend-charts";
 import { CalloutCards } from "@/components/analytics/callout-cards";
 import { PostTable, type AnalyticsPostRow } from "@/components/analytics/post-table";
+import { toast } from "sonner";
 import { useBrandStore } from "@/lib/stores/brand-store";
 import type { Channel } from "@/lib/db/enums";
 
@@ -35,6 +36,8 @@ export default function AnalyticsPage() {
   const [posts, setPosts] = useState<AnalyticsPostRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Brand callouts — could come from /api/brands/[id]; for now read empty.
   const [whatWorks] = useState<string[] | undefined>(undefined);
@@ -77,18 +80,26 @@ export default function AnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [brand, qs]);
+  }, [brand, qs, reloadKey]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/analytics/refresh", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setReloadKey((k) => k + 1);
+    } catch {
+      toast.error("Couldn't pull fresh numbers. Try again in a minute.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Organic</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Organic performance with filters; click any row to drill into provenance.
-        </p>
-      </div>
+      <h2 className="text-2xl font-semibold tracking-tight">Organic</h2>
 
-      <FilterBar lastSyncedAt={lastSynced} enabledChannels={enabledChannels} />
+      <FilterBar lastSyncedAt={lastSynced} enabledChannels={enabledChannels} onRefresh={refresh} refreshing={refreshing} />
 
       <ToplineCards
         current={topline?.current}

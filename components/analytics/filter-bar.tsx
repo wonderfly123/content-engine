@@ -21,7 +21,12 @@ import {
 export function FilterBar({
   lastSyncedAt,
   enabledChannels,
+  onRefresh,
+  refreshing,
 }: {
+  /** Pull fresh numbers from the platforms now. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
   lastSyncedAt?: string | null;
   /** Brand's analytics-enabled channels; undefined/null = show all. */
   enabledChannels?: Channel[] | null;
@@ -83,8 +88,13 @@ export function FilterBar({
         </SelectContent>
       </Select>
 
-      <div className="ml-auto text-xs text-muted-foreground">
-        Last synced: {lastSyncedAt ?? "—"}
+      <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Last synced: {lastSyncedAt ?? "—"}</span>
+        {onRefresh && (
+          <Button variant="outline" size="sm" className="h-7" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Refresh now"}
+          </Button>
+        )}
       </div>
     </div>
   );
