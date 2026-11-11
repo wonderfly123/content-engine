@@ -393,6 +393,44 @@ export async function fetchInstagramAccountTotals(args: {
 }
 
 /**
+ * The view count Instagram shows publicly on each post (what you see on the Reel in the app).
+ *
+ * This is NOT the same number as the insights `views` metric: on a Reel that was also recommended
+ * on Facebook the public count is far higher (210K public vs 31K in insights on one 2024 Reel),
+ * so insights alone understate the videos people remember as their biggest. It comes from the
+ * public-profile lookup, run against the account's own username. Returns media id -> count.
+ */
+export async function fetchInstagramPublicViewCounts(args: {
+  accountId: string;
+  accessToken: string;
+}): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const me = await graphCall<{ username?: string }>(
+    withParams(`/${args.accountId}`, { fields: "username", access_token: args.accessToken }),
+  );
+  if (!me.username || !/^[A-Za-z0-9._]+$/.test(me.username)) return out;
+  let after = "";
+  for (let page = 0; page < 20; page++) {
+    const res = await graphCall<{
+      business_discovery?: { media?: { data?: Array<{ id: string; view_count?: number }>; paging?: { cursors?: { after?: string } } } };
+    }>(
+      withParams(`/${args.accountId}`, {
+        fields: `business_discovery.username(${me.username}){media.limit(100)${after ? `.after(${after})` : ""}{id,view_count}}`,
+        access_token: args.accessToken,
+      }),
+    );
+    const media = res.business_discovery?.media;
+    for (const m of media?.data ?? []) {
+      if (typeof m.view_count === "number") out.set(m.id, m.view_count);
+    }
+    const next = media?.paging?.cursors?.after;
+    if (!next || (media?.data ?? []).length < 100) break;
+    after = next;
+  }
+  return out;
+}
+
+/**
  * Followers gained and lost in a window (Instagram's own count, so it works from day one without
  * waiting for our daily snapshots). Sliced into 30-day requests like the other account metrics.
  */

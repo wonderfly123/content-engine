@@ -13,7 +13,7 @@
 
 import { and, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
-import { fetchAccountMetrics } from "@/lib/publishing/meta-graph";
+import { fetchAccountMetrics, fetchInstagramPublicViewCounts } from "@/lib/publishing/meta-graph";
 import {
   getPublisher,
   type AnalyticsSnapshot,
@@ -172,6 +172,21 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
     return row;
   };
 
+  // One public-view lookup per account per run, shared by all of its posts.
+  const publicViewsCache = new Map<string, Promise<Map<string, number>>>();
+  const loadPublicViews = (conn: typeof schema.channelConnections.$inferSelect) => {
+    const accountId = conn.metaJson.igBusinessId ?? conn.externalAccountId ?? "";
+    if (!publicViewsCache.has(accountId)) {
+      publicViewsCache.set(
+        accountId,
+        accountId
+          ? fetchInstagramPublicViewCounts({ accountId, accessToken: conn.accessToken }).catch(() => new Map<string, number>())
+          : Promise.resolve(new Map<string, number>()),
+      );
+    }
+    return publicViewsCache.get(accountId)!;
+  };
+
   for (const post of candidates) {
     if (post.channel !== "instagram" && post.channel !== "facebook") continue;
     if (!post.externalPostId) continue;
@@ -196,6 +211,20 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
         status: conn.status,
         meta_json: conn.metaJson as Record<string, unknown>,
       });
+      if (post.channel === "instagram") {
+        // Headline views = the public count shown on the post, which includes Facebook plays that
+        // insights leave out. Keep both figures in raw_json.
+        const publicViews = (await loadPublicViews(conn)).get(post.externalPostId);
+        if (publicViews != null && publicViews > (snap.impressions ?? 0)) {
+          snap.raw_json = {
+            ...((snap.raw_json as Record<string, unknown>) ?? {}),
+            public_view_count: publicViews,
+            insights_views: snap.impressions ?? null,
+          };
+          snap.impressions = publicViews;
+          snap.video_views = publicViews;
+        }
+      }
       await insertSnapshot(db, post.id, post.brandId, snap);
       pulled++;
     } catch (err) {
