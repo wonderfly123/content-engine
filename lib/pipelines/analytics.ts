@@ -39,6 +39,8 @@ export interface AnalyticsResult {
 const HOT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const COLD_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const HOT_INTERVAL_MS = 60 * 60 * 1000; // 1h
+const ARCHIVE_AGE_MS = 20 * 365 * 24 * 60 * 60 * 1000; // effectively "ever"
+const ARCHIVE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // weekly
 const COLD_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 
 export async function pullAnalyticsHot(
@@ -55,12 +57,21 @@ export async function pullAnalyticsHot(
 export async function pullAnalyticsCold(
   deps: AnalyticsDeps = {},
 ): Promise<AnalyticsResult> {
-  return pullAnalytics({
+  const cold = await pullAnalytics({
     ...deps,
     minAgeMs: HOT_AGE_MS,
     maxAgeMs: COLD_AGE_MS,
     minIntervalMs: COLD_INTERVAL_MS,
   });
+  // Posts older than 30 days still collect views slowly: refresh each about once a week.
+  const archive = await pullAnalytics({
+    ...deps,
+    minAgeMs: COLD_AGE_MS,
+    maxAgeMs: ARCHIVE_AGE_MS,
+    minIntervalMs: ARCHIVE_INTERVAL_MS,
+    skipBrandMetrics: true,
+  });
+  return { pulled: cold.pulled + archive.pulled, failed: cold.failed + archive.failed };
 }
 
 /** On-demand pull for the "Refresh now" button: recent posts, ignoring the hourly throttle. */
@@ -76,6 +87,8 @@ export async function pullAnalyticsNow(
 }
 
 interface PullOpts extends AnalyticsDeps {
+  /** Set on secondary passes so follower counts are not fetched twice in one run. */
+  skipBrandMetrics?: boolean;
   minAgeMs: number;
   maxAgeMs: number;
   minIntervalMs: number;
@@ -182,7 +195,7 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
 
   // Daily brand-level metrics. Only the cold pull triggers this so we don't
   // hammer the API hourly with /me data.
-  if (opts.minAgeMs > 0) {
+  if (opts.minAgeMs > 0 && !opts.skipBrandMetrics) {
     await refreshBrandMetrics(db, getPub, now);
   }
 

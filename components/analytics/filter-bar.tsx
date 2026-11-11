@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import type { Channel } from "@/lib/db/enums";
 import {
+  activeChannel,
   parseFilters,
   serializeFilters,
   type AnalyticsFilters,
@@ -40,6 +41,8 @@ export function FilterBar({
   const SUPPORTED: Channel[] = ["instagram", "facebook"];
   const visibleChannels = SUPPORTED.filter((c) => !enabledChannels || enabledChannels.includes(c));
 
+  const current = activeChannel(filters);
+
   const update = useCallback(
     (next: Partial<AnalyticsFilters>) => {
       const merged: AnalyticsFilters = { ...filters, ...next };
@@ -48,24 +51,20 @@ export function FilterBar({
     [router, filters],
   );
 
-  const toggleArray = <T extends string>(arr: T[], item: T): T[] =>
-    arr.includes(item) ? arr.filter((a) => a !== item) : [...arr, item];
-
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-3">
-      <span className="text-xs text-muted-foreground">Filters:</span>
-
-      <div className="flex flex-wrap gap-1">
+      {/* One channel at a time: Instagram and Facebook numbers are not comparable, so they are never added together. */}
+      <div className="inline-flex rounded-md border p-0.5" role="tablist" aria-label="Channel">
         {visibleChannels.map((c) => {
-          const on = filters.channels.includes(c);
+          const on = current === c;
           return (
             <Button
               key={c}
-              variant={on ? "default" : "outline"}
+              role="tab"
+              aria-selected={on}
+              variant={on ? "default" : "ghost"}
               size="sm"
-              onClick={() =>
-                update({ channels: toggleArray<Channel>(filters.channels, c) })
-              }
+              onClick={() => update({ channels: [c] })}
               className="h-7 capitalize"
             >
               {c}
@@ -78,13 +77,14 @@ export function FilterBar({
         value={filters.dateRange}
         onValueChange={(v) => update({ dateRange: v as DateRangePreset })}
       >
-        <SelectTrigger className="h-7 w-[110px]">
+        <SelectTrigger className="h-7 w-[130px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="7d">Last 7 days</SelectItem>
           <SelectItem value="30d">Last 30 days</SelectItem>
           <SelectItem value="90d">Last 90 days</SelectItem>
+          <SelectItem value="all">All time</SelectItem>
         </SelectContent>
       </Select>
 

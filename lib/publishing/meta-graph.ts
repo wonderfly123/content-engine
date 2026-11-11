@@ -141,7 +141,7 @@ export async function refreshLongLivedToken(args: {
 // This set works across IMAGE / VIDEO / CAROUSEL / REELS. Reels-specific
 // retention metrics (ig_reels_avg_watch_time, ig_reels_video_view_total_time)
 // are fetched separately when needed.
-const IG_POST_METRICS = [
+const IG_BASE_METRICS = [
   "views",
   "reach",
   "likes",
@@ -150,6 +150,10 @@ const IG_POST_METRICS = [
   "saved",
   "total_interactions",
 ];
+// Reels report watch time; feed posts (images, carousels) report follows and profile visits instead.
+// Asking for a metric the media type does not support fails the whole request, so each type gets its own set.
+const IG_REEL_METRICS = [...IG_BASE_METRICS, "ig_reels_avg_watch_time", "ig_reels_video_view_total_time"];
+const IG_FEED_METRICS = [...IG_BASE_METRICS, "follows", "profile_visits"];
 
 // Updated for FB Page Insights deprecation (Nov 15, 2025): `post_impressions`,
 // `post_impressions_unique`, `post_impressions_paid`, `post_impressions_organic`
@@ -179,11 +183,43 @@ export async function fetchInstagramPostInsights(args: {
   externalPostId: string;
   accessToken: string;
 }): Promise<AnalyticsSnapshot> {
-  const insightsUrl = withParams(`/${args.externalPostId}/insights`, {
-    metric: IG_POST_METRICS.join(","),
-    access_token: args.accessToken,
-  });
-  const insights = await graphCall<InsightsResponse>(insightsUrl);
+  const fetchSet = (metrics: string[]) =>
+    graphCall<InsightsResponse>(
+      withParams(`/${args.externalPostId}/insights`, {
+        metric: metrics.join(","),
+        access_token: args.accessToken,
+      }),
+    );
+  // Meta reports "metric not supported for this media type" as an OAuthException (#100), the same
+  // error type as a dead token, so tell them apart by the message before falling back.
+  const unsupported = (err: unknown) =>
+    err instanceof MetaGraphError && /does not support|invalid parameter/i.test(err.message);
+  let insights: InsightsResponse;
+  try {
+    insights = await fetchSet(IG_REEL_METRICS);
+  } catch (err) {
+    if (!unsupported(err)) throw err;
+    try {
+      insights = await fetchSet(IG_FEED_METRICS);
+    } catch (err2) {
+      // Posts from before the account went professional have no insights at all ("Invalid parameter").
+      // Likes and comments are still on the post itself, so record those and nothing else.
+      if (!unsupported(err2)) throw err2;
+      const media = await graphCall<{ like_count?: number; comments_count?: number }>(
+        withParams(`/${args.externalPostId}`, {
+          fields: "like_count,comments_count",
+          access_token: args.accessToken,
+        }),
+      );
+      return {
+        external_post_id: args.externalPostId,
+        pulled_at: new Date().toISOString(),
+        likes: media.like_count,
+        comments: media.comments_count,
+        raw_json: { note: "no insights for this post (published before the account was professional)", media },
+      };
+    }
+  }
 
   // Tolerate per-metric failures (e.g. video_views on non-video media):
   // Meta returns a partial array; missing metrics become 0.
@@ -207,6 +243,12 @@ export async function fetchInstagramPostInsights(args: {
     shares: m.get("shares"),
     saves: m.get("saved"),
     video_views: m.get("views"),
+    // Reels: total time watched. The per-view average stays in raw_json (`ig_reels_avg_watch_time`, ms).
+    watch_time_sec: m.has("ig_reels_video_view_total_time")
+      ? Math.round((m.get("ig_reels_video_view_total_time") ?? 0) / 1000)
+      : undefined,
+    profile_visits: m.get("profile_visits"),
+    follows_from_post: m.get("follows"),
     raw_json: insights as unknown,
   };
 }
@@ -258,6 +300,89 @@ export async function fetchFacebookPostInsights(args: {
     shares: postObj.shares?.count,
     raw_json: { insights, postObj } as unknown,
   };
+}
+
+export interface InstagramMediaItem {
+  id: string;
+  caption: string;
+  mediaType: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+  productType: string; // "REELS" | "FEED" | "STORY" | ...
+  permalink: string;
+  timestamp: string;
+  /** Short-lived CDN URL of a still image for the post. Copy it somewhere durable. */
+  imageUrl: string | null;
+}
+
+/** Everything the account has published (newest first), following pagination. */
+export async function listInstagramMedia(args: {
+  accountId: string;
+  accessToken: string;
+  maxItems?: number;
+}): Promise<InstagramMediaItem[]> {
+  const out: InstagramMediaItem[] = [];
+  let url: string | undefined = withParams(`/${args.accountId}/media`, {
+    fields: "id,caption,media_type,media_product_type,permalink,timestamp,thumbnail_url,media_url",
+    limit: "100",
+    access_token: args.accessToken,
+  });
+  while (url && out.length < (args.maxItems ?? 2000)) {
+    const page: { data?: Array<Record<string, string>>; paging?: { next?: string } } = await graphCall(url);
+    for (const m of page.data ?? []) {
+      out.push({
+        id: m.id,
+        caption: m.caption ?? "",
+        mediaType: m.media_type as InstagramMediaItem["mediaType"],
+        productType: m.media_product_type ?? "FEED",
+        permalink: m.permalink ?? "",
+        timestamp: m.timestamp,
+        imageUrl: m.thumbnail_url ?? (m.media_type === "VIDEO" ? null : (m.media_url ?? null)),
+      });
+    }
+    url = page.paging?.next;
+  }
+  return out;
+}
+
+/**
+ * Account-wide views and reach for a date window, counting everything people saw in that window
+ * (old posts included). Instagram accepts at most 30 days per request, so longer windows are
+ * fetched in slices: views add up exactly; reach is unique per slice, so its sum can count a
+ * person once per slice (`reachIsSummed`).
+ */
+export async function fetchInstagramAccountTotals(args: {
+  accountId: string;
+  accessToken: string;
+  since: Date;
+  until: Date;
+}): Promise<{ views: number; reach: number; reachIsSummed: boolean }> {
+  const SLICE_MS = 30 * 24 * 60 * 60 * 1000;
+  let views = 0;
+  let reach = 0;
+  let slices = 0;
+  // A "30 day" window that crosses a clock change is an hour over; trim it so it stays one slice
+  // (one slice keeps reach a true unique count).
+  let since = args.since.getTime();
+  const span = args.until.getTime() - since;
+  if (span > SLICE_MS && span <= SLICE_MS + 2 * 60 * 60 * 1000) since = args.until.getTime() - SLICE_MS;
+  for (let start = since; start < args.until.getTime(); start += SLICE_MS) {
+    const end = Math.min(start + SLICE_MS, args.until.getTime());
+    const res = await graphCall<{ data?: Array<{ name: string; total_value?: { value?: number } }> }>(
+      withParams(`/${args.accountId}/insights`, {
+        metric: "views,reach",
+        period: "day",
+        metric_type: "total_value",
+        since: String(Math.floor(start / 1000)),
+        until: String(Math.floor(end / 1000)),
+        access_token: args.accessToken,
+      }),
+    );
+    for (const row of res.data ?? []) {
+      if (row.name === "views") views += row.total_value?.value ?? 0;
+      if (row.name === "reach") reach += row.total_value?.value ?? 0;
+    }
+    slices++;
+  }
+  return { views, reach, reachIsSummed: slices > 1 };
 }
 
 /** Account-level counts for the follower-growth time series. */

@@ -178,3 +178,48 @@ describe("combineFollowerSeries", () => {
     expect(out.map((p) => p.followerCount)).toEqual([1050, 1060]);
   });
 });
+
+describe("summarizePosts", () => {
+  const post = (over: Record<string, unknown>) => ({
+    postId: "p", brandId: "b", channel: "instagram", format: "reel", icpId: null, publishedAt: new Date("2026-11-01T00:00:00Z"),
+    reach: 0, impressions: 0, likes: 0, comments: 0, shares: 0, saves: 0, followsFromPost: 0, ...over,
+  }) as never;
+
+  it("adds up views, reach, shares and saves across posts", async () => {
+    const { summarizePosts } = await import("../aggregate");
+    const s = summarizePosts([post({ impressions: 100, reach: 80, shares: 2, saves: 3 }), post({ impressions: 50, reach: 40, shares: 1, saves: 0 })]);
+    expect(s).toMatchObject({ postsPublished: 2, views: 150, reach: 120, sharesAndSaves: 6 });
+  });
+
+  it("weights average watch time by views and ignores posts that do not report it", async () => {
+    const { summarizePosts } = await import("../aggregate");
+    const s = summarizePosts([
+      post({ impressions: 300, avgWatchSec: 10 }),
+      post({ impressions: 100, avgWatchSec: 2 }),
+      post({ impressions: 9999, format: "image", avgWatchSec: null }),
+    ]);
+    expect(s.avgWatchSec).toBeCloseTo(8, 5);
+  });
+
+  it("reports no watch time when nothing has it", async () => {
+    const { summarizePosts } = await import("../aggregate");
+    expect(summarizePosts([post({ impressions: 10 })]).avgWatchSec).toBeNull();
+    expect(summarizePosts([]).avgWatchSec).toBeNull();
+  });
+});
+
+describe("activeChannel and the all-time range", () => {
+  it("shows Instagram unless Facebook alone is selected", async () => {
+    const { activeChannel, parseFilters } = await import("../filters");
+    expect(activeChannel(parseFilters(new URLSearchParams("")))).toBe("instagram");
+    expect(activeChannel(parseFilters(new URLSearchParams("channel=facebook")))).toBe("facebook");
+    expect(activeChannel(parseFilters(new URLSearchParams("channel=instagram,facebook")))).toBe("instagram");
+  });
+  it("makes every past post fall inside the all-time window", async () => {
+    const { parseFilters, resolveRange } = await import("../filters");
+    const { start, end } = resolveRange(parseFilters(new URLSearchParams("range=all")), new Date("2026-11-11T00:00:00Z"));
+    expect(start.getTime()).toBeLessThan(new Date("2017-07-21T00:00:00Z").getTime());
+    expect(end.toISOString()).toBe("2026-11-11T00:00:00.000Z");
+  });
+});
+

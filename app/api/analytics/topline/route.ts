@@ -1,24 +1,29 @@
 /**
- * GET /api/analytics/topline
+ * GET /api/analytics/topline?brandId=...&channel=instagram|facebook&range=7d|30d|90d|all
  *
- * Returns 6 top-line metrics + period-over-period deltas.
+ * Summary cards for ONE channel (Instagram unless Facebook is selected):
+ * followers (total + change in the window), views, reach, average watch time,
+ * shares + saves, posts published.
+ *
+ * Instagram views and reach are account-wide for 7/30/90-day windows (everything people saw in
+ * the window, old posts included). For "all time", and whenever the account call fails, they are
+ * summed from the posts published in the window instead; `viewsSource` says which.
  */
-
 import { NextResponse, type NextRequest } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import {
-  computeTopline,
-  filterRows,
-} from "@/lib/analytics/aggregate";
-import { computeDelta } from "@/lib/analytics/delta";
-import { parseFilters, resolveRange } from "@/lib/analytics/filters";
+import { db, schema } from "@/lib/db";
+import { filterRows, summarizePosts } from "@/lib/analytics/aggregate";
+import { activeChannel, parseFilters, resolveRange } from "@/lib/analytics/filters";
 import {
   loadEnabledChannels,
   loadFollowerSeries,
   loadPostAggRows,
 } from "@/lib/analytics/queries";
+import { fetchInstagramAccountTotals } from "@/lib/publishing/meta-graph";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const querySchema = z.object({ brandId: z.string().uuid() });
 
@@ -26,62 +31,64 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({ brandId: sp.get("brandId") });
   if (!parsed.success) {
-    return NextResponse.json(
-      { data: null, error: { code: "invalid_query" } },
-      { status: 400 },
-    );
+    return NextResponse.json({ data: null, error: { code: "invalid_query" } }, { status: 400 });
   }
   const { brandId } = parsed.data;
   const filters = parseFilters(sp);
+  const channel = activeChannel(filters);
   const { start, end } = resolveRange(filters);
-  const periodMs = end.getTime() - start.getTime();
-  const priorStart = new Date(start.getTime() - periodMs);
-  const priorEnd = start;
 
   try {
     const enabledChannels = await loadEnabledChannels(brandId);
-    const rows = await loadPostAggRows(brandId, priorStart, end, enabledChannels);
-    const followerSeries = await loadFollowerSeries(brandId, priorStart, end);
+    const [rows, followerSeries] = await Promise.all([
+      loadPostAggRows(brandId, start, end, enabledChannels),
+      loadFollowerSeries(brandId, new Date("2010-01-01T00:00:00Z"), end, channel),
+    ]);
+    const summary = summarizePosts(filterRows(rows, { ...filters, channels: [channel] }, { start, end }));
 
-    const currentRows = filterRows(rows, filters, { start, end });
-    const priorRows = filterRows(rows, filters, {
-      start: priorStart,
-      end: priorEnd,
-    });
-    const currentFollowerDelta = followerDeltaInWindow(followerSeries, start, end);
-    const priorFollowerDelta = followerDeltaInWindow(
-      followerSeries,
-      priorStart,
-      priorEnd,
-    );
+    // Followers: latest known total, and how it moved inside the window.
+    const known = followerSeries.filter((s) => s.followerCount != null);
+    const inWindow = known.filter((s) => s.pulledAt >= start && s.pulledAt <= end);
+    const total = known.length ? (known[known.length - 1]!.followerCount ?? 0) : null;
+    const change = inWindow.length >= 2 ? (inWindow[inWindow.length - 1]!.followerCount ?? 0) - (inWindow[0]!.followerCount ?? 0) : null;
 
-    const current = computeTopline(currentRows, currentFollowerDelta);
-    const prior = computeTopline(priorRows, priorFollowerDelta);
+    let views = summary.views;
+    let reach = summary.reach;
+    let viewsSource: "account" | "posts" = "posts";
+    let reachIsSummed = summary.postsPublished > 1;
+    if (channel === "instagram" && filters.dateRange !== "all" && filters.dateRange !== "custom") {
+      try {
+        const [conn] = await db
+          .select()
+          .from(schema.channelConnections)
+          .where(and(eq(schema.channelConnections.brandId, brandId), eq(schema.channelConnections.channel, "instagram")))
+          .limit(1);
+        const accountId = conn?.metaJson.igBusinessId ?? conn?.externalAccountId;
+        if (conn && conn.status === "connected" && accountId) {
+          const totals = await fetchInstagramAccountTotals({ accountId, accessToken: conn.accessToken, since: start, until: end });
+          views = totals.views;
+          reach = totals.reach;
+          reachIsSummed = totals.reachIsSummed;
+          viewsSource = "account";
+        }
+      } catch {
+        // Fall back to the per-post sums already computed.
+      }
+    }
 
     return NextResponse.json({
       data: {
-        current,
-        prior,
+        channel,
         enabledChannels,
-        deltas: {
-          totalReach: computeDelta(current.totalReach, prior.totalReach),
-          engagementRate: computeDelta(
-            current.engagementRate,
-            prior.engagementRate,
-          ),
-          followerDelta: computeDelta(current.followerDelta, prior.followerDelta),
-          postsPublished: computeDelta(
-            current.postsPublished,
-            prior.postsPublished,
-          ),
-          avgReachPerPost: computeDelta(
-            current.avgReachPerPost,
-            prior.avgReachPerPost,
-          ),
-          topFormatEr: computeDelta(
-            current.topFormat.avgEr,
-            prior.topFormat.avgEr,
-          ),
+        current: {
+          followers: { total, change },
+          views,
+          reach,
+          reachIsSummed,
+          viewsSource,
+          avgWatchSec: summary.avgWatchSec,
+          sharesAndSaves: summary.sharesAndSaves,
+          postsPublished: summary.postsPublished,
         },
       },
       error: null,
@@ -92,21 +99,4 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
-
-function followerDeltaInWindow(
-  series: Array<{ pulledAt: Date; followerCount: number | null }>,
-  start: Date,
-  end: Date,
-): number {
-  const inWin = series.filter(
-    (s) =>
-      s.pulledAt.getTime() >= start.getTime() &&
-      s.pulledAt.getTime() <= end.getTime() &&
-      s.followerCount != null,
-  );
-  if (inWin.length < 2) return 0;
-  const first = inWin[0]!.followerCount ?? 0;
-  const last = inWin[inWin.length - 1]!.followerCount ?? 0;
-  return last - first;
 }

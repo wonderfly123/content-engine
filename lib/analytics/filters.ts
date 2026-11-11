@@ -11,7 +11,7 @@ import { channelValues, formatValues } from "@/lib/db/enums";
 import type { Channel, ContentFormat } from "@/lib/db/enums";
 import type { BrandSettings } from "@/lib/db/types";
 
-export type DateRangePreset = "7d" | "30d" | "90d" | "custom";
+export type DateRangePreset = "7d" | "30d" | "90d" | "all" | "custom";
 
 export interface AnalyticsFilters {
   channels: Channel[];
@@ -52,7 +52,7 @@ export function parseFilters(
 
   const dr = (get("range") ?? "30d") as DateRangePreset;
   const dateRange: DateRangePreset =
-    dr === "7d" || dr === "30d" || dr === "90d" || dr === "custom" ? dr : "30d";
+    dr === "7d" || dr === "30d" || dr === "90d" || dr === "all" || dr === "custom" ? dr : "30d";
 
   return {
     channels,
@@ -98,9 +98,22 @@ export function resolveRange(f: AnalyticsFilters, now: Date = new Date()): {
   if (f.dateRange === "custom" && f.from && f.to) {
     return { start: new Date(f.from + "T00:00:00Z"), end: new Date(f.to + "T23:59:59Z") };
   }
+  if (f.dateRange === "all") {
+    // Before Instagram existed, so every post ever published is inside the window.
+    return { start: new Date("2010-01-01T00:00:00Z"), end: new Date(now) };
+  }
   const days = f.dateRange === "7d" ? 7 : f.dateRange === "90d" ? 90 : 30;
   const end = new Date(now);
   const start = new Date(now);
   start.setDate(start.getDate() - days);
   return { start, end };
+}
+
+/** Channels the Organic page reports on. Each is shown separately: their numbers are not comparable. */
+export const ANALYTICS_CHANNELS = ["instagram", "facebook"] as const;
+export type AnalyticsChannel = (typeof ANALYTICS_CHANNELS)[number];
+
+/** The one channel being viewed (Instagram unless Facebook is selected). */
+export function activeChannel(f: AnalyticsFilters): AnalyticsChannel {
+  return f.channels.includes("facebook") && !f.channels.includes("instagram") ? "facebook" : "instagram";
 }

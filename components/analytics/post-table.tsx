@@ -31,7 +31,10 @@ export interface AnalyticsPostRow {
   thumbnailUrl: string | null;
   reach: number | null;
   views: number | null;
+  avgWatchSec: number | null;
   likes: number | null;
+  comments: number | null;
+  shares: number | null;
   engagementRate: number;
   saves: number | null;
   followsFromPost: number | null;
@@ -42,7 +45,10 @@ type SortKey = keyof Pick<
   | "publishedAt"
   | "reach"
   | "views"
+  | "avgWatchSec"
   | "likes"
+  | "comments"
+  | "shares"
   | "engagementRate"
   | "saves"
   | "followsFromPost"
@@ -111,8 +117,17 @@ export function PostTable({
               <SortableHead k="views" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Views
               </SortableHead>
+              <SortableHead k="avgWatchSec" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Watch
+              </SortableHead>
               <SortableHead k="likes" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Likes
+              </SortableHead>
+              <SortableHead k="comments" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Comments
+              </SortableHead>
+              <SortableHead k="shares" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Shares
               </SortableHead>
               <SortableHead k="engagementRate" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 ER
@@ -129,7 +144,7 @@ export function PostTable({
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 11 }).map((__, j) => (
+                  {Array.from({ length: 14 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -138,7 +153,7 @@ export function PostTable({
               ))
             ) : sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={14} className="text-center text-sm text-muted-foreground">
                   No posts in this window.
                 </TableCell>
               </TableRow>
@@ -190,7 +205,16 @@ export function PostTable({
                     {(r.views ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="tabular-nums">
+                    {r.avgWatchSec == null ? "—" : `${r.avgWatchSec.toFixed(1)}s`}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
                     {(r.likes ?? 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {(r.comments ?? 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {(r.shares ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {(r.engagementRate * 100).toFixed(1)}%

@@ -76,6 +76,7 @@ export async function loadPostAggRows(
       shares: analyticsSnapshots.shares,
       saves: analyticsSnapshots.saves,
       followsFromPost: analyticsSnapshots.followsFromPost,
+      rawJson: analyticsSnapshots.rawJson,
     })
     .from(posts)
     .innerJoin(drafts, eq(drafts.id, posts.draftId))
@@ -112,7 +113,15 @@ export async function loadPostAggRows(
     shares: r.shares,
     saves: r.saves,
     followsFromPost: r.followsFromPost,
+    avgWatchSec: avgWatchSecFrom(r.rawJson),
   }));
+}
+
+/** Instagram reports a Reel's average watch time (ms) inside the raw insights payload. */
+function avgWatchSecFrom(raw: unknown): number | null {
+  const data = (raw as { data?: Array<{ name?: string; values?: Array<{ value?: unknown }> }> } | null)?.data;
+  const ms = data?.find((d) => d.name === "ig_reels_avg_watch_time")?.values?.[0]?.value;
+  return typeof ms === "number" ? ms / 1000 : null;
 }
 
 /** Brand-wide follower totals, one point per day (channels summed; see combineFollowerSeries). */
@@ -120,6 +129,7 @@ export async function loadFollowerSeries(
   brandId: string,
   from: Date,
   to: Date,
+  channel?: Channel,
 ): Promise<Array<{ pulledAt: Date; followerCount: number | null }>> {
   const rows = await db
     .select({
@@ -133,6 +143,7 @@ export async function loadFollowerSeries(
         eq(brandMetricsSnapshots.brandId, brandId),
         gte(brandMetricsSnapshots.pulledAt, from),
         lte(brandMetricsSnapshots.pulledAt, to),
+        channel ? eq(brandMetricsSnapshots.channel, channel) : undefined,
       ),
     )
     .orderBy(brandMetricsSnapshots.pulledAt);

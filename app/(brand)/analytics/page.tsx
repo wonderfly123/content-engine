@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import {
   ToplineCards,
-  type ToplineDeltas,
   type ToplineMetrics,
 } from "@/components/analytics/topline-cards";
 import { TrendCharts } from "@/components/analytics/trend-charts";
@@ -29,7 +28,7 @@ export default function AnalyticsPage() {
 
   const [topline, setTopline] = useState<{
     current: ToplineMetrics;
-    deltas: ToplineDeltas;
+    channel: "instagram" | "facebook";
   } | null>(null);
   const [trends, setTrends] = useState<TrendsPayload | null>(null);
   const [enabledChannels, setEnabledChannels] = useState<Channel[] | null>(null);
@@ -59,7 +58,7 @@ export default function AnalyticsPage() {
       .then(([t, tr, p]) => {
         if (cancelled) return;
         if (t.data) {
-          setTopline({ current: t.data.current, deltas: t.data.deltas });
+          setTopline({ current: t.data.current, channel: t.data.channel });
           if (Array.isArray(t.data.enabledChannels)) {
             setEnabledChannels(t.data.enabledChannels as Channel[]);
           }
@@ -103,7 +102,7 @@ export default function AnalyticsPage() {
 
       <ToplineCards
         current={topline?.current}
-        deltas={topline?.deltas}
+        channel={topline?.channel ?? "instagram"}
         loading={loading || !topline}
       />
 

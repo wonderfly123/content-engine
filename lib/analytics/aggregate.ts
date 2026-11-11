@@ -23,6 +23,8 @@ export interface PostAggRow {
   shares: number | null;
   saves: number | null;
   followsFromPost: number | null;
+  /** Reels only: average seconds watched per view. */
+  avgWatchSec?: number | null;
 }
 
 export interface ToplineMetrics {
@@ -32,6 +34,36 @@ export interface ToplineMetrics {
   postsPublished: number;
   avgReachPerPost: number;
   topFormat: { format: ContentFormat | null; avgEr: number };
+}
+
+/** What the summary cards show for one channel over the selected window. */
+export interface ChannelSummary {
+  postsPublished: number;
+  /** Sum over the posts published in the window. */
+  views: number;
+  reach: number;
+  sharesAndSaves: number;
+  /** Average seconds watched per view across Reels, weighted by views; null when no Reel reports it. */
+  avgWatchSec: number | null;
+}
+
+export function summarizePosts(rows: PostAggRow[]): ChannelSummary {
+  let watchedSeconds = 0;
+  let watchedViews = 0;
+  for (const r of rows) {
+    if (r.avgWatchSec == null) continue;
+    // A Reel with watch time but no recorded views still counts once, so it cannot vanish from the average.
+    const weight = Math.max(r.impressions ?? 0, 1);
+    watchedSeconds += r.avgWatchSec * weight;
+    watchedViews += weight;
+  }
+  return {
+    postsPublished: rows.length,
+    views: sum(rows.map((r) => r.impressions ?? 0)),
+    reach: sum(rows.map((r) => r.reach ?? 0)),
+    sharesAndSaves: sum(rows.map((r) => (r.shares ?? 0) + (r.saves ?? 0))),
+    avgWatchSec: watchedViews > 0 ? watchedSeconds / watchedViews : null,
+  };
 }
 
 export function filterRows(

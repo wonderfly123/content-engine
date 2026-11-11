@@ -15,7 +15,7 @@ import {
   buildReachTrend,
   filterRows,
 } from "@/lib/analytics/aggregate";
-import { parseFilters, resolveRange } from "@/lib/analytics/filters";
+import { activeChannel, parseFilters, resolveRange } from "@/lib/analytics/filters";
 import {
   loadEnabledChannels,
   loadFollowerSeries,
@@ -44,11 +44,12 @@ export async function GET(req: NextRequest) {
     const enabledChannels = await loadEnabledChannels(brandId);
     const [rows, followerSeries, lastSyncedAt] = await Promise.all([
       loadPostAggRows(brandId, start, end, enabledChannels),
-      loadFollowerSeries(brandId, start, end),
+      loadFollowerSeries(brandId, start, end, activeChannel(filters)),
       loadLastSyncedAt(brandId),
     ]);
-    const currentRows = filterRows(rows, filters, { start, end });
-    const split: "all" | "channel" = filters.channels.length === 0 ? "channel" : "all";
+    const channel = activeChannel(filters);
+    const currentRows = filterRows(rows, { ...filters, channels: [channel] }, { start, end });
+    const split = "all" as const;
 
     return NextResponse.json({
       data: {

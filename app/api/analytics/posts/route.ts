@@ -18,7 +18,7 @@ import {
   drafts,
   posts,
 } from "@/lib/db/schema";
-import { parseFilters, resolveRange } from "@/lib/analytics/filters";
+import { activeChannel, parseFilters, resolveRange } from "@/lib/analytics/filters";
 import { engagementOf, filterRows } from "@/lib/analytics/aggregate";
 import {
   loadEnabledChannels,
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   try {
     const enabledChannels = await loadEnabledChannels(brandId);
     const rows = await loadPostAggRows(brandId, start, end, enabledChannels);
-    const filtered = filterRows(rows, filters, { start, end });
+    const filtered = filterRows(rows, { ...filters, channels: [activeChannel(filters)] }, { start, end });
 
     // Enrich with title (from brief) + thumbnail (from primary draft_asset).
     const postIds = filtered.map((r) => r.postId);
@@ -93,7 +93,10 @@ export async function GET(req: NextRequest) {
         thumbnailUrl: m?.thumbnailUrl ?? m?.storageUrl ?? null,
         reach: r.reach,
         views: r.impressions,
+        avgWatchSec: r.avgWatchSec ?? null,
         likes: r.likes,
+        comments: r.comments,
+        shares: r.shares,
         engagementRate: er.rate,
         saves: r.saves,
         followsFromPost: r.followsFromPost,
