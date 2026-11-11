@@ -25,6 +25,12 @@ export interface PostAggRow {
   followsFromPost: number | null;
   /** Reels only: average seconds watched per view. */
   avgWatchSec?: number | null;
+  /** Newer Reels only: percent of views that left within the first 3 seconds (0-100). */
+  skipRate?: number | null;
+  /** Video length, known only for posts made through the engine (Instagram does not report it). */
+  durationSec?: number | null;
+  /** Trial Reels are shown to non-followers only, so they are not comparable with normal posts. */
+  isTrial?: boolean;
 }
 
 export interface ToplineMetrics {
@@ -39,31 +45,76 @@ export interface ToplineMetrics {
 /** What the summary cards show for one channel over the selected window. */
 export interface ChannelSummary {
   postsPublished: number;
-  /** Sum over the posts published in the window. */
+  /** Sums over the posts published in the window. */
   views: number;
   reach: number;
   sharesAndSaves: number;
+  /** How often a view turns into a share / a save. Null when the window has no views. */
+  sharesPer1kViews: number | null;
+  savesPer1kViews: number | null;
+  /** Percent of views that stayed past the first 3 seconds, weighted by views; null when no Reel reports it. */
+  stayedPast3sPct: number | null;
   /** Average seconds watched per view across Reels, weighted by views; null when no Reel reports it. */
   avgWatchSec: number | null;
 }
 
-export function summarizePosts(rows: PostAggRow[]): ChannelSummary {
-  let watchedSeconds = 0;
-  let watchedViews = 0;
+/** Views-weighted mean of `value` over the rows that have one. */
+function weightedByViews(rows: PostAggRow[], value: (r: PostAggRow) => number | null | undefined): number | null {
+  let total = 0;
+  let weight = 0;
   for (const r of rows) {
-    if (r.avgWatchSec == null) continue;
-    // A Reel with watch time but no recorded views still counts once, so it cannot vanish from the average.
-    const weight = Math.max(r.impressions ?? 0, 1);
-    watchedSeconds += r.avgWatchSec * weight;
-    watchedViews += weight;
+    const v = value(r);
+    if (v == null) continue;
+    // A post with a value but no recorded views still counts once, so it cannot vanish from the average.
+    const w = Math.max(r.impressions ?? 0, 1);
+    total += v * w;
+    weight += w;
   }
+  return weight > 0 ? total / weight : null;
+}
+
+export function summarizePosts(rows: PostAggRow[]): ChannelSummary {
+  const views = sum(rows.map((r) => r.impressions ?? 0));
+  const shares = sum(rows.map((r) => r.shares ?? 0));
+  const saves = sum(rows.map((r) => r.saves ?? 0));
   return {
     postsPublished: rows.length,
-    views: sum(rows.map((r) => r.impressions ?? 0)),
+    views,
     reach: sum(rows.map((r) => r.reach ?? 0)),
-    sharesAndSaves: sum(rows.map((r) => (r.shares ?? 0) + (r.saves ?? 0))),
-    avgWatchSec: watchedViews > 0 ? watchedSeconds / watchedViews : null,
+    sharesAndSaves: shares + saves,
+    sharesPer1kViews: views > 0 ? (shares / views) * 1000 : null,
+    savesPer1kViews: views > 0 ? (saves / views) * 1000 : null,
+    stayedPast3sPct: weightedByViews(rows, (r) => (r.skipRate == null ? null : 100 - r.skipRate)),
+    avgWatchSec: weightedByViews(rows, (r) => r.avgWatchSec),
   };
+}
+
+/**
+ * "Your typical post": the median views of comparable posts, so one viral post does not move it.
+ * Trial Reels are compared only with other trial Reels; with fewer than 3 comparable posts there
+ * is no baseline (null) rather than a misleading one.
+ */
+export function typicalViews(rows: PostAggRow[], like: { format: ContentFormat; isTrial?: boolean }): number | null {
+  const peers = rows
+    .filter((r) => r.format === like.format && Boolean(r.isTrial) === Boolean(like.isTrial) && (r.impressions ?? 0) > 0)
+    .map((r) => r.impressions ?? 0)
+    .sort((a, b) => a - b);
+  if (peers.length < 3) return null;
+  const mid = Math.floor(peers.length / 2);
+  return peers.length % 2 ? peers[mid]! : (peers[mid - 1]! + peers[mid]!) / 2;
+}
+
+/** Views per day the post was published on (the dependable volume number; reach is unreliable for old Reels). */
+export function buildViewsTrend(rows: PostAggRow[]): TrendPoint[] {
+  const buckets = new Map<string, number>();
+  rows.forEach((r) => {
+    if (!r.publishedAt) return;
+    const day = isoDay(r.publishedAt);
+    buckets.set(day, (buckets.get(day) ?? 0) + (r.impressions ?? 0));
+  });
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, views]) => ({ date, views }));
 }
 
 export function filterRows(

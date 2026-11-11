@@ -77,6 +77,8 @@ export async function loadPostAggRows(
       saves: analyticsSnapshots.saves,
       followsFromPost: analyticsSnapshots.followsFromPost,
       rawJson: analyticsSnapshots.rawJson,
+      draftMeta: drafts.metaJson,
+      durationSec: sql<number | null>`(select max(a.duration_sec) from draft_assets da join assets a on a.id = da.asset_id where da.draft_id = ${drafts.id})`,
     })
     .from(posts)
     .innerJoin(drafts, eq(drafts.id, posts.draftId))
@@ -113,15 +115,24 @@ export async function loadPostAggRows(
     shares: r.shares,
     saves: r.saves,
     followsFromPost: r.followsFromPost,
-    avgWatchSec: avgWatchSecFrom(r.rawJson),
+    avgWatchSec: insightFrom(r.rawJson, "ig_reels_avg_watch_time", 1 / 1000),
+    // Instagram only began counting 3-second skips recently, but still divides by lifetime views, so
+    // older Reels report absurdly low skip rates (0.3% on a 164K-view Reel from 2024). Trust it only
+    // for posts from the last 12 months.
+    skipRate:
+      r.publishedAt && Date.now() - r.publishedAt.getTime() < 365 * 24 * 60 * 60 * 1000
+        ? insightFrom(r.rawJson, "reels_skip_rate", 1)
+        : null,
+    durationSec: r.durationSec == null ? null : Number(r.durationSec),
+    isTrial: r.draftMeta?.trialReel === "manual" || r.draftMeta?.trialReel === "auto",
   }));
 }
 
-/** Instagram reports a Reel's average watch time (ms) inside the raw insights payload. */
-function avgWatchSecFrom(raw: unknown): number | null {
+/** Reads one metric out of the raw Instagram insights payload stored with each snapshot. */
+function insightFrom(raw: unknown, name: string, scale: number): number | null {
   const data = (raw as { data?: Array<{ name?: string; values?: Array<{ value?: unknown }> }> } | null)?.data;
-  const ms = data?.find((d) => d.name === "ig_reels_avg_watch_time")?.values?.[0]?.value;
-  return typeof ms === "number" ? ms / 1000 : null;
+  const value = data?.find((d) => d.name === name)?.values?.[0]?.value;
+  return typeof value === "number" ? value * scale : null;
 }
 
 /** Brand-wide follower totals, one point per day (channels summed; see combineFollowerSeries). */

@@ -154,6 +154,8 @@ const IG_BASE_METRICS = [
 // Asking for a metric the media type does not support fails the whole request, so each type gets its own set.
 const IG_REEL_METRICS = [...IG_BASE_METRICS, "ig_reels_avg_watch_time", "ig_reels_video_view_total_time"];
 const IG_FEED_METRICS = [...IG_BASE_METRICS, "follows", "profile_visits"];
+// Skip rate (share of views that left within the first 3 seconds) is only reported for newer Reels.
+const IG_REEL_METRICS_FULL = [...IG_REEL_METRICS, "reels_skip_rate"];
 
 // Updated for FB Page Insights deprecation (Nov 15, 2025): `post_impressions`,
 // `post_impressions_unique`, `post_impressions_paid`, `post_impressions_organic`
@@ -196,7 +198,12 @@ export async function fetchInstagramPostInsights(args: {
     err instanceof MetaGraphError && /does not support|invalid parameter/i.test(err.message);
   let insights: InsightsResponse;
   try {
-    insights = await fetchSet(IG_REEL_METRICS);
+    try {
+      insights = await fetchSet(IG_REEL_METRICS_FULL);
+    } catch (err0) {
+      if (!unsupported(err0)) throw err0;
+      insights = await fetchSet(IG_REEL_METRICS);
+    }
   } catch (err) {
     if (!unsupported(err)) throw err;
     try {
@@ -383,6 +390,66 @@ export async function fetchInstagramAccountTotals(args: {
     slices++;
   }
   return { views, reach, reachIsSummed: slices > 1 };
+}
+
+/**
+ * Followers gained and lost in a window (Instagram's own count, so it works from day one without
+ * waiting for our daily snapshots). Sliced into 30-day requests like the other account metrics.
+ */
+export async function fetchInstagramFollowerFlow(args: {
+  accountId: string;
+  accessToken: string;
+  since: Date;
+  until: Date;
+}): Promise<{ gained: number; lost: number }> {
+  const SLICE_MS = 30 * 24 * 60 * 60 * 1000;
+  let since = args.since.getTime();
+  const span = args.until.getTime() - since;
+  if (span > SLICE_MS && span <= SLICE_MS + 2 * 60 * 60 * 1000) since = args.until.getTime() - SLICE_MS;
+  let gained = 0;
+  let lost = 0;
+  for (let start = since; start < args.until.getTime(); start += SLICE_MS) {
+    const end = Math.min(start + SLICE_MS, args.until.getTime());
+    const res = await graphCall<{
+      data?: Array<{ total_value?: { breakdowns?: Array<{ results?: Array<{ dimension_values?: string[]; value?: number }> }> } }>;
+    }>(
+      withParams(`/${args.accountId}/insights`, {
+        metric: "follows_and_unfollows",
+        period: "day",
+        metric_type: "total_value",
+        breakdown: "follow_type",
+        since: String(Math.floor(start / 1000)),
+        until: String(Math.floor(end / 1000)),
+        access_token: args.accessToken,
+      }),
+    );
+    for (const r of res.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? []) {
+      // FOLLOWER = accounts that followed in the window; NON_FOLLOWER = accounts that unfollowed.
+      if (r.dimension_values?.[0] === "FOLLOWER") gained += r.value ?? 0;
+      if (r.dimension_values?.[0] === "NON_FOLLOWER") lost += r.value ?? 0;
+    }
+  }
+  return { gained, lost };
+}
+
+/** New followers per day. Instagram only keeps this for the last 30 days. */
+export async function fetchInstagramDailyNewFollowers(args: {
+  accountId: string;
+  accessToken: string;
+  days: number;
+}): Promise<Array<{ date: string; newFollowers: number }>> {
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - Math.min(Math.max(args.days, 1), 29) * 24 * 60 * 60;
+  const res = await graphCall<{ data?: Array<{ values?: Array<{ value?: number; end_time?: string }> }> }>(
+    withParams(`/${args.accountId}/insights`, {
+      metric: "follower_count",
+      period: "day",
+      since: String(since),
+      until: String(until),
+      access_token: args.accessToken,
+    }),
+  );
+  return (res.data?.[0]?.values ?? []).map((v) => ({ date: (v.end_time ?? "").slice(0, 10), newFollowers: v.value ?? 0 }));
 }
 
 /** Account-level counts for the follower-growth time series. */

@@ -244,3 +244,38 @@ describe("activeChannel and the all-time range", () => {
   });
 });
 
+describe("rates and the typical-post baseline", () => {
+  const post = (over: Record<string, unknown>) => ({
+    postId: "p", brandId: "b", channel: "instagram", format: "reel", icpId: null, publishedAt: new Date("2026-11-01T00:00:00Z"),
+    reach: 0, impressions: 0, likes: 0, comments: 0, shares: 0, saves: 0, followsFromPost: 0, ...over,
+  }) as never;
+
+  it("turns shares and saves into rates per 1,000 views", async () => {
+    const { summarizePosts } = await import("../aggregate");
+    const s = summarizePosts([post({ impressions: 4000, shares: 2, saves: 30 }), post({ impressions: 1000, shares: 3, saves: 10 })]);
+    expect(s.sharesPer1kViews).toBeCloseTo(1, 5);
+    expect(s.savesPer1kViews).toBeCloseTo(8, 5);
+    expect(summarizePosts([]).sharesPer1kViews).toBeNull();
+  });
+
+  it("reports the share of views that stayed past 3 seconds, weighted by views", async () => {
+    const { summarizePosts } = await import("../aggregate");
+    const s = summarizePosts([post({ impressions: 900, skipRate: 20 }), post({ impressions: 100, skipRate: 60 }), post({ impressions: 5000 })]);
+    expect(s.stayedPast3sPct).toBeCloseTo(76, 5);
+  });
+
+  it("uses the median so one viral post does not set the bar", async () => {
+    const { typicalViews } = await import("../aggregate");
+    const rows = [post({ impressions: 100 }), post({ impressions: 300 }), post({ impressions: 200 }), post({ impressions: 164000 })];
+    expect(typicalViews(rows, { format: "reel" })).toBe(250);
+  });
+
+  it("compares trial Reels only with trial Reels, and gives no baseline from fewer than 3 posts", async () => {
+    const { typicalViews } = await import("../aggregate");
+    const rows = [post({ impressions: 100 }), post({ impressions: 300 }), post({ impressions: 200 }), post({ impressions: 90, isTrial: true })];
+    expect(typicalViews(rows, { format: "reel", isTrial: true })).toBeNull();
+    expect(typicalViews(rows, { format: "reel" })).toBe(200);
+    expect(typicalViews(rows, { format: "carousel" })).toBeNull();
+  });
+});
+

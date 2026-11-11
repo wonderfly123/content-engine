@@ -7,12 +7,16 @@
  *   - follower growth (cumulative)
  */
 
+import { and, eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
+import { fetchInstagramDailyNewFollowers } from "@/lib/publishing/meta-graph";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import {
   buildEngagementTrend,
   buildFollowerTrend,
   buildReachTrend,
+  buildViewsTrend,
   filterRows,
 } from "@/lib/analytics/aggregate";
 import { activeChannel, parseFilters, resolveRange } from "@/lib/analytics/filters";
@@ -48,12 +52,32 @@ export async function GET(req: NextRequest) {
       loadLastSyncedAt(brandId),
     ]);
     const channel = activeChannel(filters);
+
+    // Instagram keeps daily new-follower counts for 30 days; show as many of them as the window covers.
+    let newFollowers: Array<{ date: string; newFollowers: number }> = [];
+    if (channel === "instagram") {
+      try {
+        const [conn] = await db
+          .select()
+          .from(schema.channelConnections)
+          .where(and(eq(schema.channelConnections.brandId, brandId), eq(schema.channelConnections.channel, "instagram")))
+          .limit(1);
+        const accountId = conn?.metaJson.igBusinessId ?? conn?.externalAccountId;
+        if (conn && conn.status === "connected" && accountId) {
+          newFollowers = await fetchInstagramDailyNewFollowers({ accountId, accessToken: conn.accessToken, days: filters.dateRange === "7d" ? 7 : 29 });
+        }
+      } catch {
+        // The chart simply stays empty.
+      }
+    }
     const currentRows = filterRows(rows, { ...filters, channels: [channel] }, { start, end });
     const split = "all" as const;
 
     return NextResponse.json({
       data: {
         reach: buildReachTrend(currentRows, split),
+        views: buildViewsTrend(currentRows),
+        newFollowers,
         engagement: buildEngagementTrend(currentRows),
         followers: buildFollowerTrend(followerSeries),
         split,

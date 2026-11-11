@@ -32,6 +32,10 @@ export interface AnalyticsPostRow {
   reach: number | null;
   views: number | null;
   avgWatchSec: number | null;
+  watchedPct: number | null;
+  stayedPast3sPct: number | null;
+  vsTypical: number | null;
+  isTrial: boolean;
   likes: number | null;
   comments: number | null;
   shares: number | null;
@@ -46,6 +50,8 @@ type SortKey = keyof Pick<
   | "reach"
   | "views"
   | "avgWatchSec"
+  | "stayedPast3sPct"
+  | "vsTypical"
   | "likes"
   | "comments"
   | "shares"
@@ -111,11 +117,14 @@ export function PostTable({
               <SortableHead k="publishedAt" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Published
               </SortableHead>
-              <SortableHead k="reach" current={sortKey} dir={sortDir} onClick={toggleSort}>
-                Reach
-              </SortableHead>
               <SortableHead k="views" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Views
+              </SortableHead>
+              <SortableHead k="vsTypical" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                vs typical
+              </SortableHead>
+              <SortableHead k="stayedPast3sPct" current={sortKey} dir={sortDir} onClick={toggleSort}>
+                Past 3s
               </SortableHead>
               <SortableHead k="avgWatchSec" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Watch
@@ -134,9 +143,6 @@ export function PostTable({
               </SortableHead>
               <SortableHead k="saves" current={sortKey} dir={sortDir} onClick={toggleSort}>
                 Saves
-              </SortableHead>
-              <SortableHead k="followsFromPost" current={sortKey} dir={sortDir} onClick={toggleSort}>
-                Follows Δ
               </SortableHead>
             </TableRow>
           </TableHeader>
@@ -199,13 +205,22 @@ export function PostTable({
                       : "—"}
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {(r.reach ?? 0).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
                     {(r.views ?? 0).toLocaleString()}
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {r.avgWatchSec == null ? "—" : `${r.avgWatchSec.toFixed(1)}s`}
+                    {r.vsTypical == null ? (
+                      <span className="text-muted-foreground">{r.isTrial ? "trial" : "—"}</span>
+                    ) : (
+                      <span className={r.vsTypical >= 1.5 ? "font-medium text-emerald-600 dark:text-emerald-400" : r.vsTypical < 0.5 ? "text-rose-600 dark:text-rose-400" : undefined}>
+                        {r.vsTypical >= 10 ? r.vsTypical.toFixed(0) : r.vsTypical.toFixed(1)}x
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {r.stayedPast3sPct == null ? "—" : `${r.stayedPast3sPct.toFixed(0)}%`}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {r.avgWatchSec == null ? "—" : r.watchedPct != null ? `${r.watchedPct.toFixed(0)}% · ${r.avgWatchSec.toFixed(1)}s` : `${r.avgWatchSec.toFixed(1)}s`}
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {(r.likes ?? 0).toLocaleString()}
@@ -221,9 +236,6 @@ export function PostTable({
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {(r.saves ?? 0).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {(r.followsFromPost ?? 0).toLocaleString()}
                   </TableCell>
                 </TableRow>
               ))

@@ -86,6 +86,20 @@ export async function pullAnalyticsNow(
   });
 }
 
+/** One-off: re-pull every published post regardless of age or last pull (used after adding a metric). */
+export async function pullAnalyticsAll(
+  deps: AnalyticsDeps = {},
+): Promise<AnalyticsResult> {
+  return pullAnalytics({
+    limit: 500,
+    ...deps,
+    minAgeMs: 0,
+    maxAgeMs: ARCHIVE_AGE_MS,
+    minIntervalMs: 0,
+    skipBrandMetrics: true,
+  });
+}
+
 interface PullOpts extends AnalyticsDeps {
   /** Set on secondary passes so follower counts are not fetched twice in one run. */
   skipBrandMetrics?: boolean;

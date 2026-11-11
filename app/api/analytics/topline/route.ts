@@ -20,7 +20,7 @@ import {
   loadFollowerSeries,
   loadPostAggRows,
 } from "@/lib/analytics/queries";
-import { fetchInstagramAccountTotals } from "@/lib/publishing/meta-graph";
+import { fetchInstagramAccountTotals, fetchInstagramFollowerFlow } from "@/lib/publishing/meta-graph";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
     let reach = summary.reach;
     let viewsSource: "account" | "posts" = "posts";
     let reachIsSummed = summary.postsPublished > 1;
+    let followerFlow: { gained: number; lost: number } | null = null;
     if (channel === "instagram" && filters.dateRange !== "all" && filters.dateRange !== "custom") {
       try {
         const [conn] = await db
@@ -65,11 +66,16 @@ export async function GET(req: NextRequest) {
           .limit(1);
         const accountId = conn?.metaJson.igBusinessId ?? conn?.externalAccountId;
         if (conn && conn.status === "connected" && accountId) {
-          const totals = await fetchInstagramAccountTotals({ accountId, accessToken: conn.accessToken, since: start, until: end });
+          const [totals, flow] = await Promise.all([
+            fetchInstagramAccountTotals({ accountId, accessToken: conn.accessToken, since: start, until: end }),
+            // Instagram's own count of follows and unfollows; a failure here must not lose the views.
+            fetchInstagramFollowerFlow({ accountId, accessToken: conn.accessToken, since: start, until: end }).catch(() => null),
+          ]);
           views = totals.views;
           reach = totals.reach;
           reachIsSummed = totals.reachIsSummed;
           viewsSource = "account";
+          followerFlow = flow;
         }
       } catch {
         // Fall back to the per-post sums already computed.
@@ -81,12 +87,21 @@ export async function GET(req: NextRequest) {
         channel,
         enabledChannels,
         current: {
-          followers: { total, change },
+          followers: {
+            total,
+            // Prefer Instagram's follows/unfollows for the window; fall back to our own daily snapshots.
+            gained: followerFlow?.gained ?? null,
+            lost: followerFlow?.lost ?? null,
+            net: followerFlow ? followerFlow.gained - followerFlow.lost : change,
+          },
           views,
           reach,
           reachIsSummed,
           viewsSource,
           avgWatchSec: summary.avgWatchSec,
+          stayedPast3sPct: summary.stayedPast3sPct,
+          sharesPer1kViews: summary.sharesPer1kViews,
+          savesPer1kViews: summary.savesPer1kViews,
           sharesAndSaves: summary.sharesAndSaves,
           postsPublished: summary.postsPublished,
         },

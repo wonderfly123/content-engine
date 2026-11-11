@@ -19,7 +19,7 @@ import {
   posts,
 } from "@/lib/db/schema";
 import { activeChannel, parseFilters, resolveRange } from "@/lib/analytics/filters";
-import { engagementOf, filterRows } from "@/lib/analytics/aggregate";
+import { engagementOf, filterRows, typicalViews } from "@/lib/analytics/aggregate";
 import {
   loadEnabledChannels,
   loadPostAggRows,
@@ -78,6 +78,13 @@ export async function GET(req: NextRequest) {
       if (!metaById.has(m.postId)) metaById.set(m.postId, m);
     });
 
+    // "Your typical post" comes from the whole history, not just the window being viewed.
+    const history = filterRows(
+      await loadPostAggRows(brandId, new Date("2010-01-01T00:00:00Z"), new Date(), enabledChannels),
+      { ...filters, channels: [activeChannel(filters)], formats: [], icpId: null },
+      { start: new Date("2010-01-01T00:00:00Z"), end: new Date() },
+    );
+
     const enriched = filtered.map((r) => {
       const m = metaById.get(r.postId);
       const er = engagementOf(r);
@@ -94,6 +101,14 @@ export async function GET(req: NextRequest) {
         reach: r.reach,
         views: r.impressions,
         avgWatchSec: r.avgWatchSec ?? null,
+        // Percent of the video watched, only where the length is known.
+        watchedPct: r.avgWatchSec != null && r.durationSec ? (r.avgWatchSec / r.durationSec) * 100 : null,
+        stayedPast3sPct: r.skipRate == null ? null : 100 - r.skipRate,
+        isTrial: Boolean(r.isTrial),
+        vsTypical: (() => {
+          const typical = typicalViews(history, r);
+          return typical && (r.impressions ?? 0) > 0 ? (r.impressions ?? 0) / typical : null;
+        })(),
         likes: r.likes,
         comments: r.comments,
         shares: r.shares,

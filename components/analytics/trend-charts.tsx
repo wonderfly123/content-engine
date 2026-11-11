@@ -31,28 +31,31 @@ interface TrendPoint {
 }
 
 export function TrendCharts({
-  reach,
+  views,
   engagement,
-  followers,
-  split,
+  newFollowers,
 }: {
-  reach: TrendPoint[];
+  /** Views by the day each post was published. */
+  views: TrendPoint[];
   engagement: TrendPoint[];
-  followers: TrendPoint[];
-  split: "all" | "channel";
+  /** New followers per day (Instagram keeps 30 days). */
+  newFollowers: TrendPoint[];
 }) {
+  const split = "all" as "all" | "channel";
+  const reach = views;
+  const followers = newFollowers;
   const reachConfig: ChartConfig =
     split === "channel"
       ? Object.fromEntries(
           channelValues.map((c, i) => [c, { label: cap(c), color: palette(i) }]),
         )
-      : { reach: { label: "Reach", color: "hsl(221 83% 53%)" } };
+      : { views: { label: "Views", color: "hsl(221 83% 53%)" } };
 
   const erConfig: ChartConfig = {
     er: { label: "Engagement rate", color: "hsl(142 71% 45%)" },
   };
   const followersConfig: ChartConfig = {
-    followers: { label: "Followers", color: "hsl(280 65% 60%)" },
+    newFollowers: { label: "New followers", color: "hsl(280 65% 60%)" },
   };
 
   // For ER reference line: brand average over the window.
@@ -64,10 +67,8 @@ export function TrendCharts({
     <div className="grid gap-4 lg:grid-cols-3">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Reach over time</CardTitle>
-          <CardDescription>
-            {split === "channel" ? "Stacked by channel" : "Single area"}
-          </CardDescription>
+          <CardTitle className="text-base">Views by post</CardTitle>
+          <CardDescription>Placed on the day each post went up</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={reachConfig} className="h-48">
@@ -90,10 +91,10 @@ export function TrendCharts({
                   ))
                 : (
                     <Area
-                      dataKey="reach"
+                      dataKey="views"
                       type="monotone"
-                      stroke="var(--color-reach)"
-                      fill="var(--color-reach)"
+                      stroke="var(--color-views)"
+                      fill="var(--color-views)"
                       fillOpacity={0.2}
                     />
                   )}
@@ -106,7 +107,7 @@ export function TrendCharts({
         <CardHeader>
           <CardTitle className="text-base">Engagement rate</CardTitle>
           <CardDescription>
-            Dotted line = brand avg ({(erAvg * 100).toFixed(1)}%)
+            Interactions per view · average ({(erAvg * 100).toFixed(1)}%)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -147,8 +148,8 @@ export function TrendCharts({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Follower growth</CardTitle>
-          <CardDescription>Cumulative follower count over time</CardDescription>
+          <CardTitle className="text-base">New followers per day</CardTitle>
+          <CardDescription>Last 30 days at most; Instagram keeps no more</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={followersConfig} className="h-48">
@@ -158,9 +159,9 @@ export function TrendCharts({
               <YAxis tickLine={false} axisLine={false} fontSize={10} width={42} />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Line
-                dataKey="followers"
+                dataKey="newFollowers"
                 type="monotone"
-                stroke="var(--color-followers)"
+                stroke="var(--color-newFollowers)"
                 strokeWidth={2}
                 dot={false}
               />

@@ -5,23 +5,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 /** Summary for one channel over the selected window (see /api/analytics/topline). */
 export interface ToplineMetrics {
-  followers: { total: number | null; change: number | null };
+  followers: { total: number | null; gained: number | null; lost: number | null; net: number | null };
   views: number;
-  reach: number;
-  /** True when reach is added up across posts or 30-day slices, so one person can count more than once. */
-  reachIsSummed: boolean;
-  /** "account" = everything people saw in the window; "posts" = only posts published in the window. */
-  viewsSource: "account" | "posts";
-  avgWatchSec: number | null;
-  sharesAndSaves: number;
+  sharesPer1kViews: number | null;
+  savesPer1kViews: number | null;
+  stayedPast3sPct: number | null;
   postsPublished: number;
 }
 
 const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toLocaleString()}`;
+const rate = (n: number | null) => (n == null ? "—" : n >= 10 ? n.toFixed(0) : n.toFixed(1));
 
+/** Ordered for follower growth: the goal first, then the things that drive it. */
 export function ToplineCards({
   current,
-  channel,
   loading,
 }: {
   current?: ToplineMetrics;
@@ -42,22 +39,19 @@ export function ToplineCards({
       </div>
     );
   }
-
+  const f = current.followers;
   return (
     <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <Tile label="Followers" value={f.total == null ? "—" : f.total.toLocaleString()} />
       <Tile
-        label="Followers"
-        value={current.followers.total == null ? "—" : current.followers.total.toLocaleString()}
-        note={current.followers.change == null ? undefined : signed(current.followers.change)}
+        label="Net new followers"
+        value={f.net == null ? "—" : signed(f.net)}
+        note={f.gained != null && f.lost != null ? `${f.gained.toLocaleString()} gained · ${f.lost.toLocaleString()} lost` : undefined}
       />
       <Tile label="Views" value={current.views.toLocaleString()} />
-      <Tile label="Reach" value={current.reach.toLocaleString()} />
-      <Tile
-        label="Avg watch time"
-        value={channel === "instagram" && current.avgWatchSec != null ? `${current.avgWatchSec.toFixed(1)}s` : "—"}
-      />
-      <Tile label="Shares + saves" value={current.sharesAndSaves.toLocaleString()} />
-      <Tile label="Posts published" value={current.postsPublished.toLocaleString()} />
+      <Tile label="Shares per 1K views" value={rate(current.sharesPer1kViews)} />
+      <Tile label="Saves per 1K views" value={rate(current.savesPer1kViews)} />
+      <Tile label="Stayed past 3 sec" value={current.stayedPast3sPct == null ? "—" : `${current.stayedPast3sPct.toFixed(0)}%`} />
     </div>
   );
 }

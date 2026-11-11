@@ -15,10 +15,9 @@ import { useBrandStore } from "@/lib/stores/brand-store";
 import type { Channel } from "@/lib/db/enums";
 
 interface TrendsPayload {
-  reach: Array<Record<string, number | string>>;
+  views: Array<Record<string, number | string>>;
   engagement: Array<Record<string, number | string>>;
-  followers: Array<Record<string, number | string>>;
-  split: "all" | "channel";
+  newFollowers: Array<Record<string, number | string>>;
 }
 
 export default function AnalyticsPage() {
@@ -108,10 +107,9 @@ export default function AnalyticsPage() {
 
       {trends ? (
         <TrendCharts
-          reach={trends.reach as never}
+          views={trends.views as never}
           engagement={trends.engagement as never}
-          followers={trends.followers as never}
-          split={trends.split}
+          newFollowers={trends.newFollowers as never}
         />
       ) : (
         <div className="grid h-48 gap-4 lg:grid-cols-3">
