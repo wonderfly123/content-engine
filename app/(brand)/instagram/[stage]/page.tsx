@@ -55,6 +55,8 @@ export default function InstagramPipelinePage() {
   cuts.sort((a, b) => order(a) - order(b) || a.job.localeCompare(b.job) || a.seconds - b.seconds);
   // The dialog follows the list: when a cut leaves this stage (approved, sent back), it closes by itself.
   const openCut = cuts.find((c) => keyOf(c) === openKey) ?? null;
+  // One section per video length, shortest first.
+  const lengths = [...new Set(cuts.map((c) => c.seconds))].sort((x, y) => x - y);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -73,8 +75,11 @@ export default function InstagramPipelinePage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {cuts.map((cut) => (
+      {lengths.map((len) => (
+      <section key={len} className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold">{len} seconds <span className="font-normal text-muted-foreground">· {cuts.filter((c) => c.seconds === len).length}</span></h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {cuts.filter((c) => c.seconds === len).map((cut) => (
           <Card key={keyOf(cut)} className="overflow-hidden">
             <CardContent className="flex flex-col gap-2 p-3">
               <button type="button" onClick={() => setOpenKey(keyOf(cut))} className="block w-full" aria-label={`Open ${cut.title}`}>
@@ -93,7 +98,9 @@ export default function InstagramPipelinePage() {
             </CardContent>
           </Card>
         ))}
-      </div>
+        </div>
+      </section>
+      ))}
 
       <Dialog open={Boolean(openCut)} onOpenChange={(o) => { if (!o) setOpenKey(null); }}>
         <DialogContent className="max-h-[94vh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl">
