@@ -2,7 +2,7 @@
  * Put a finished, approved video on the posting calendar as an Instagram Reel.
  * Scheduling IS the approval: the publish cron posts it at the scheduled time.
  *
- * Hosts the video (and a thumbnail) on the public Vercel Blob store so Instagram can
+ * Hosts the video and the confirmed cover frame on the public Vercel Blob store so Instagram can
  * fetch it, then creates asset -> brief -> draft -> post (queued).
  */
 import { execFileSync } from "node:child_process";
@@ -20,6 +20,8 @@ export interface ScheduleCutInput {
   caption: string;
   when: Date;
   mode: ReelMode;
+  /** Seconds into the video of the frame the reviewer confirmed as the cover. */
+  coverAt: number;
   title?: string;
 }
 
@@ -31,7 +33,7 @@ export interface ScheduledCut {
 }
 
 export async function scheduleCut(input: ScheduleCutInput): Promise<ScheduledCut> {
-  const { brandSlug, video, mode, when } = input;
+  const { brandSlug, video, mode, when, coverAt } = input;
   const caption = input.caption.trim();
   if (!existsSync(video) || !/\.(mp4|mov)$/i.test(video)) throw new Error(`not a video file: ${video}`);
   if (!caption) throw new Error("caption is empty");
@@ -45,8 +47,15 @@ export async function scheduleCut(input: ScheduleCutInput): Promise<ScheduledCut
   ) as { streams: Array<{ width: number; height: number }>; format: { duration: string } };
   const { width, height } = probe.streams[0];
   const durationSec = Math.round(Number(probe.format.duration));
-  const thumb = join(mkdtempSync(join(tmpdir(), "cut-")), "thumb.jpg");
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", video, "-frames:v", "1", "-vf", "scale=540:-2", thumb]);
+  if (!Number.isFinite(coverAt) || coverAt < 0 || coverAt > Number(probe.format.duration)) throw new Error("the cover frame is outside the video");
+  const work = mkdtempSync(join(tmpdir(), "cut-"));
+  const cover = join(work, "cover.jpg");
+  const thumb = join(work, "thumb.jpg");
+  // Stay a little inside the end so there is always a frame to grab.
+  const at = Math.max(0, Math.min(coverAt, Number(probe.format.duration) - 0.1)).toFixed(3);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", at, "-i", video, "-frames:v", "1", "-q:v", "2", cover]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", cover, "-vf", "scale=540:-2", thumb]);
+  if (!existsSync(cover) || !existsSync(thumb)) throw new Error("could not grab the cover frame");
 
   const { db, schema } = await import("@/lib/db");
   const { and, eq } = await import("drizzle-orm");
@@ -66,6 +75,7 @@ export async function scheduleCut(input: ScheduleCutInput): Promise<ScheduledCut
   const size = statSync(video).size;
   const hosted = await put(`reels/${stem}.mp4`, createReadStream(video), { access: "public", addRandomSuffix: true, contentType: "video/mp4", multipart: true });
   const hostedThumb = await put(`reels/${stem}.jpg`, readFileSync(thumb), { access: "public", addRandomSuffix: true, contentType: "image/jpeg" });
+  const hostedCover = await put(`reels/${stem}-cover.jpg`, readFileSync(cover), { access: "public", addRandomSuffix: true, contentType: "image/jpeg" });
 
   const [asset] = await db.insert(schema.assets).values({
     brandId: brand.id, kind: "video", label: title, tags: ["finished-cut"], storageUrl: hosted.url, thumbnailUrl: hostedThumb.url,
@@ -79,7 +89,14 @@ export async function scheduleCut(input: ScheduleCutInput): Promise<ScheduledCut
     briefId: brief.id, brandId: brand.id, channel: "instagram", format: "reel", caption, status: "scheduled", reviewedAt: new Date(),
     metaJson: { title, trialReel: mode === "normal" ? null : mode === "trial-auto" ? "auto" : "manual", sourceFile: video },
   }).returning({ id: schema.drafts.id });
-  await db.insert(schema.draftAssets).values({ draftId: draft.id, assetId: asset.id, slotIndex: 0, role: "primary" });
+  const [coverAsset] = await db.insert(schema.assets).values({
+    brandId: brand.id, kind: "image", label: `${title} cover`, tags: ["reel-cover"], storageUrl: hostedCover.url, thumbnailUrl: hostedThumb.url,
+    width, height, mimeType: "image/jpeg", sizeBytes: statSync(cover).size, source: "uploaded", notes: `frame at ${at}s of ${video}`,
+  }).returning({ id: schema.assets.id });
+  await db.insert(schema.draftAssets).values([
+    { draftId: draft.id, assetId: asset.id, slotIndex: 0, role: "primary" },
+    { draftId: draft.id, assetId: coverAsset.id, slotIndex: 1, role: "cover" },
+  ]);
   const [post] = await db.insert(schema.posts).values({
     draftId: draft.id, brandId: brand.id, channel: "instagram", status: "queued", scheduledFor: when,
   }).returning({ id: schema.posts.id });

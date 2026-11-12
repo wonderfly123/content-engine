@@ -30,6 +30,14 @@ export interface ReelCut {
   note?: string;
   changesRequested?: boolean;
   trial?: "manual" | "auto" | null;
+  /** Cover (thumbnail) frame, in seconds into the final video. Suggested by the editor, confirmed by the reviewer. */
+  coverAt?: number;
+  /** Opening on-screen text: drafts from the editor, the reviewer's pick, and what is currently in the final file. */
+  hookOptions?: string[];
+  hook?: string;
+  hookBurned?: string;
+  /** Set when the reviewer approved with opening text that is not on the video yet: the editor adds the text, then schedules with exactly these details. */
+  approval?: { when: string; mode: "trial-manual" | "trial-auto" | "normal"; coverAt: number };
   scheduledFor?: string;
   postId?: string;
   updatedAt?: string;

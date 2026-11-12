@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Mic, RotateCcw, Square, Upload } from "lucide-react";
+import { Check, Maximize2, Mic, RotateCcw, Square, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useBrandStore } from "@/lib/stores/brand-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ReelCutView } from "@/lib/reels/store";
@@ -16,7 +17,7 @@ import type { ReelCutView } from "@/lib/reels/store";
 const STAGES = {
   cuts: { title: "Cut review", blurb: "Watch each cut. Approve it, or say what should change.", show: ["cut_review"] },
   voiceover: { title: "Voice-over queue", blurb: "Approved voice-led cuts waiting for your recording.", show: ["voiceover"] },
-  final: { title: "Final review", blurb: "Finished videos. Approve the caption and pick a time to put them on the calendar.", show: ["final_review", "editing", "scheduled"] },
+  final: { title: "Final review", blurb: "Finished videos. Confirm the cover and caption, then pick a time to put them on the calendar.", show: ["final_review", "editing", "scheduled"] },
 } as const;
 type StageKey = keyof typeof STAGES;
 
@@ -36,6 +37,7 @@ export default function InstagramPipelinePage() {
   const brand = useBrandStore((s) => s.active);
   const qc = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: ["reels"] });
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["reels", brand?.slug],
@@ -51,6 +53,8 @@ export default function InstagramPipelinePage() {
   const cuts = (data ?? []).filter((c) => (stage.show as readonly string[]).includes(c.stage));
   const order = (c: ReelCutView) => stage.show.indexOf(c.stage as never);
   cuts.sort((a, b) => order(a) - order(b) || a.job.localeCompare(b.job) || a.seconds - b.seconds);
+  // The dialog follows the list: when a cut leaves this stage (approved, sent back), it closes by itself.
+  const openCut = cuts.find((c) => keyOf(c) === openKey) ?? null;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -69,42 +73,73 @@ export default function InstagramPipelinePage() {
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {cuts.map((cut) => (
-          <Card key={`${cut.job}/${cut.id}`} className="overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center justify-between gap-2 text-base">
-                <span className="truncate">{cut.title}</span>
-                <Badge variant="secondary">{cut.seconds}s · {cut.mode === "voice" ? "voice-led" : "music-led"}</Badge>
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">{cut.job}</p>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              {cut.stage === "cut_review" && <CutReview cut={cut} onDone={refresh} />}
-              {cut.stage === "voiceover" && <VoiceRecorder cut={cut} onDone={refresh} />}
-              {cut.stage === "final_review" && <FinalReview cut={cut} onDone={refresh} />}
-              {cut.stage === "editing" && (
-                <>
-                  <Player cut={cut} file={cut.preview} />
-                  <Badge variant="outline" className="w-fit">With the editor</Badge>
-                  <p className="text-sm text-muted-foreground">
-                    {cut.note ? `Changes requested: ${cut.note}` : cut.voiceover ? "Voice-over recorded. Waiting for the mix and captions." : "Waiting for the finished file and caption."}
-                  </p>
-                </>
-              )}
-              {cut.stage === "scheduled" && (
-                <>
-                  <Player cut={cut} file={cut.final ?? cut.preview} />
-                  <Badge className="w-fit">Scheduled</Badge>
-                  <p className="text-sm text-muted-foreground">
-                    {cut.scheduledFor ? new Date(cut.scheduledFor).toLocaleString() : ""} · {cut.trial ? "trial Reel" : "normal Reel"}. See the Calendar.
-                  </p>
-                </>
-              )}
+          <Card key={keyOf(cut)} className="overflow-hidden">
+            <CardContent className="flex flex-col gap-2 p-3">
+              <button type="button" onClick={() => setOpenKey(keyOf(cut))} className="block w-full" aria-label={`Open ${cut.title}`}>
+                <video src={`${mediaUrl(cut, cut.final ?? cut.preview)}#t=${(cut.coverAt ?? 1).toFixed(2)}`} muted playsInline preload="metadata" className="aspect-[9/16] w-full rounded-md bg-black object-cover" />
+              </button>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{cut.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{cut.job} · {cut.mode === "voice" ? "voice-led" : "music-led"}</p>
+                </div>
+                <button type="button" onClick={() => setOpenKey(keyOf(cut))} className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Expand ${cut.title}`}>
+                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+              <Button size="sm" variant={cut.stage === "editing" || cut.stage === "scheduled" ? "outline" : "default"} onClick={() => setOpenKey(keyOf(cut))}>{TILE_ACTION[cut.stage] ?? "Open"}</Button>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      <Dialog open={Boolean(openCut)} onOpenChange={(o) => { if (!o) setOpenKey(null); }}>
+        <DialogContent className="max-h-[94vh] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl">
+          {openCut && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{openCut.title}</DialogTitle>
+                <DialogDescription>{openCut.job} · {openCut.seconds}s · {openCut.mode === "voice" ? "voice-led" : "music-led"}</DialogDescription>
+              </DialogHeader>
+              {openCut.stage === "cut_review" && <CutReview key={keyOf(openCut)} cut={openCut} onDone={refresh} />}
+              {openCut.stage === "voiceover" && <VoiceRecorder key={keyOf(openCut)} cut={openCut} onDone={refresh} />}
+              {openCut.stage === "final_review" && <FinalReview key={keyOf(openCut)} cut={openCut} onDone={refresh} />}
+              {openCut.stage === "editing" && (
+                <Split video={<Player cut={openCut} file={openCut.preview} />}>
+                  <Badge variant="outline" className="w-fit">With the editor</Badge>
+                  <p className="text-sm text-muted-foreground">
+                    {openCut.note ? `Changes requested: ${openCut.note}` : openCut.voiceover ? "Voice-over recorded. Waiting for the mix and captions." : "Waiting for the finished file and caption."}
+                  </p>
+                </Split>
+              )}
+              {openCut.stage === "scheduled" && (
+                <Split video={<Player cut={openCut} file={openCut.final ?? openCut.preview} />}>
+                  <Badge className="w-fit">Scheduled</Badge>
+                  <p className="text-sm text-muted-foreground">
+                    {openCut.scheduledFor ? new Date(openCut.scheduledFor).toLocaleString() : ""} · {openCut.trial ? "trial Reel" : "normal Reel"}. See the Calendar.
+                  </p>
+                  {openCut.caption && <p className="whitespace-pre-wrap text-sm">{openCut.caption}</p>}
+                </Split>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const keyOf = (cut: ReelCutView) => `${cut.job}/${cut.id}`;
+const TILE_ACTION: Record<string, string> = { cut_review: "Review cut", voiceover: "Record", final_review: "Review and schedule", editing: "With the editor", scheduled: "Scheduled" };
+
+/** Video on the left, everything else on the right; stacks on a narrow screen. */
+function Split({ video, children }: { video: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-6 md:grid-cols-[minmax(0,19rem)_minmax(0,1fr)]">
+      <div>{video}</div>
+      <div className="flex min-w-0 flex-col gap-3">{children}</div>
     </div>
   );
 }
@@ -131,10 +166,9 @@ function CutReview({ cut, onDone }: { cut: ReelCutView; onDone: () => void }) {
     onError: (e) => toast.error((e as Error).message),
   });
   return (
-    <>
-      <Player cut={cut} file={cut.preview} />
+    <Split video={<Player cut={cut} file={cut.preview} />}>
       {cut.changesRequested && cut.note && <p className="text-sm text-muted-foreground">Waiting on changes: {cut.note}</p>}
-      <Textarea placeholder="What should change? (only needed if you send it back)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+      <Textarea placeholder="What should change? (only needed if you send it back)" value={note} onChange={(e) => setNote(e.target.value)} rows={5} />
       <div className="flex gap-2">
         <Button className="flex-1" onClick={() => act.mutate("approve_cut")} disabled={act.isPending}>
           <Check className="mr-2 h-4 w-4" aria-hidden="true" />Approve cut
@@ -143,7 +177,7 @@ function CutReview({ cut, onDone }: { cut: ReelCutView; onDone: () => void }) {
           Request changes
         </Button>
       </div>
-    </>
+    </Split>
   );
 }
 
@@ -215,7 +249,7 @@ function VoiceRecorder({ cut, onDone }: { cut: ReelCutView; onDone: () => void }
   };
 
   return (
-    <>
+    <Split video={
       <div className="relative">
         <Player cut={cut} file={cut.preview} videoRef={videoRef} muted />
         {phase === "countdown" && (
@@ -223,30 +257,31 @@ function VoiceRecorder({ cut, onDone }: { cut: ReelCutView; onDone: () => void }
         )}
         {phase === "recording" && <Badge variant="destructive" className="absolute left-2 top-2">● Recording</Badge>}
       </div>
+    }>
       {cut.script ? (
-        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-sm leading-relaxed">{cut.script}</div>
+        <div className="max-h-[55vh] overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-sm leading-relaxed">{cut.script}</div>
       ) : (
         <p className="text-sm text-muted-foreground">No draft script for this cut. Talk through what the footage shows.</p>
       )}
       {takeUrl && <audio ref={audioRef} src={takeUrl} className="hidden" />}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {phase === "idle" && <Button className="flex-1" onClick={start}><Mic className="mr-2 h-4 w-4" aria-hidden="true" />Record voice-over</Button>}
         {phase === "countdown" && <Button className="flex-1" disabled>Get ready…</Button>}
         {phase === "recording" && <Button className="flex-1" variant="destructive" onClick={stop}><Square className="mr-2 h-4 w-4" aria-hidden="true" />Stop</Button>}
         {(phase === "review" || phase === "saving") && (
           <>
-            <Button variant="outline" onClick={playTake} disabled={phase === "saving"}>Play back</Button>
-            <Button variant="outline" onClick={() => { setTake(null); setTakeUrl(null); setPhase("idle"); }} disabled={phase === "saving"}>
+            <Button className="flex-1" variant="outline" onClick={playTake} disabled={phase === "saving"}>Play back</Button>
+            <Button className="flex-1" variant="outline" onClick={() => { setTake(null); setTakeUrl(null); setPhase("idle"); }} disabled={phase === "saving"}>
               <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />Redo
             </Button>
-            <Button className="flex-1" onClick={save} disabled={phase === "saving"}>
+            <Button className="w-full" onClick={save} disabled={phase === "saving"}>
               <Upload className="mr-2 h-4 w-4" aria-hidden="true" />{phase === "saving" ? "Saving…" : "Use this take"}
             </Button>
           </>
         )}
       </div>
       <p className="text-xs text-muted-foreground">The cut plays silently while you record, so your read lines up with the picture. Recording stops when the video ends.</p>
-    </>
+    </Split>
   );
 }
 
@@ -260,15 +295,24 @@ function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => void }) 
   const [when, setWhen] = useState(() => { const d = new Date(Date.now() + 24 * 3600_000); d.setHours(9, 0, 0, 0); return localDateTimeValue(d); });
   const [mode, setMode] = useState<"trial-manual" | "trial-auto" | "normal">("trial-manual");
   const [note, setNote] = useState("");
+  // The cover is the frame people see on the profile grid. It must be confirmed here, even when the editor suggested one.
+  const [coverAt, setCoverAt] = useState<number | null>(cut.coverAt ?? null);
+  const [coverConfirmed, setCoverConfirmed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const file = cut.final ?? cut.preview;
 
   const schedule = useMutation({
     mutationFn: () => send("/api/reels/schedule", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job: cut.job, id: cut.id, caption, when: new Date(when).toISOString(), mode }),
+      body: JSON.stringify({ job: cut.job, id: cut.id, caption, when: new Date(when).toISOString(), mode, coverAt, hook: hook.trim() }),
     }),
-    onSuccess: () => { toast.success("Approved and on the calendar"); onDone(); },
+    onSuccess: () => { toast.success(textChanges ? "Approved. The editor adds the text, then it goes on the calendar." : "Approved and on the calendar"); onDone(); },
     onError: (e) => toast.error((e as Error).message),
   });
+  // Opening on-screen text: one of the editor's drafts, the reviewer's own words, or none. It travels with the approval.
+  const burned = cut.hookBurned ?? "";
+  const [hook, setHook] = useState(cut.hook ?? burned);
+  const textChanges = hook.trim() !== burned;
   const sendBack = useMutation({
     mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note }),
     onSuccess: () => { toast.success("Sent back with your note"); onDone(); },
@@ -277,8 +321,39 @@ function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => void }) 
   const busy = schedule.isPending || sendBack.isPending;
 
   return (
-    <>
-      <Player cut={cut} file={cut.final ?? cut.preview} />
+    <Split video={<Player cut={cut} file={file} videoRef={videoRef} />}>
+      <label className="text-xs font-medium text-muted-foreground">Opening text (first seconds of the video)</label>
+      <div className="flex flex-col gap-1" role="radiogroup" aria-label="Opening text">
+        {["", ...(cut.hookOptions ?? [])].map((o, i) => (
+          <button key={o || "none"} type="button" role="radio" aria-checked={hook.trim() === o} onClick={() => setHook(o)}
+            className={`rounded-md border px-3 py-1.5 text-left text-sm ${hook.trim() === o ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted"}`}>
+            {o ? <><span className="mr-2 text-muted-foreground">{i}</span>{o}</> : <span className="text-muted-foreground">No opening text</span>}
+          </button>
+        ))}
+      </div>
+      <Input value={hook} onChange={(e) => setHook(e.target.value)} maxLength={120} placeholder="Or write your own" aria-label="Write your own opening text" />
+      <p className="text-xs text-muted-foreground">
+        {textChanges
+          ? hook.trim() ? "Not on the video yet. When you approve, the editor adds this text and then puts it on the calendar at the time below." : "When you approve, the editor takes the text off and then puts it on the calendar."
+          : burned ? `On the video now: "${burned}"` : "No text on the video."}
+      </p>
+      <label className="text-xs font-medium text-muted-foreground">Cover (thumbnail)</label>
+      <div className="flex items-center gap-3">
+        {coverAt === null ? (
+          <div className="flex aspect-[9/16] w-16 shrink-0 items-center justify-center rounded-md border border-dashed text-[10px] text-muted-foreground">none</div>
+        ) : (
+          <video key={coverAt} src={`${mediaUrl(cut, file)}#t=${coverAt.toFixed(2)}`} muted playsInline preload="metadata" className="aspect-[9/16] w-16 shrink-0 rounded-md bg-black object-cover" aria-label="Chosen cover frame" />
+        )}
+        <div className="flex flex-1 flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            {coverAt === null ? "Pause the video on the frame you want as the cover." : coverConfirmed ? `Cover confirmed at ${coverAt.toFixed(1)}s.` : `Suggested cover at ${coverAt.toFixed(1)}s. Confirm it or pick another frame.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setCoverAt(Number((videoRef.current?.currentTime ?? 0).toFixed(2))); setCoverConfirmed(true); }}>Use current frame</Button>
+            {coverAt !== null && !coverConfirmed && <Button size="sm" onClick={() => setCoverConfirmed(true)}>Confirm cover</Button>}
+          </div>
+        </div>
+      </div>
       <label className="text-xs font-medium text-muted-foreground">Post caption</label>
       <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Caption for the post" />
       <div className="flex gap-2">
@@ -289,13 +364,13 @@ function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => void }) 
           <option value="normal">Normal Reel</option>
         </select>
       </div>
-      <Button onClick={() => schedule.mutate()} disabled={busy || !caption.trim() || !when}>
-        <Check className="mr-2 h-4 w-4" aria-hidden="true" />{schedule.isPending ? "Hosting and scheduling…" : "Approve and schedule"}
+      <Button onClick={() => schedule.mutate()} disabled={busy || !caption.trim() || !when || coverAt === null || !coverConfirmed}>
+        <Check className="mr-2 h-4 w-4" aria-hidden="true" />{schedule.isPending ? (textChanges ? "Saving…" : "Hosting and scheduling…") : "Approve and schedule"}
       </Button>
       <div className="flex gap-2">
         <Input placeholder="Or say what should change" value={note} onChange={(e) => setNote(e.target.value)} />
         <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || !note.trim()}>Send back</Button>
       </div>
-    </>
+    </Split>
   );
 }
