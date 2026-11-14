@@ -21,7 +21,7 @@ export type DbOrTx = typeof defaultDb;
 
 export interface EnqueueJobInput {
   kind: JobKind;
-  brandId?: string | null;
+  brandId: string;
   payload?: JobPayload;
   /** When omitted, defaults to NOW() (immediately runnable). */
   scheduledFor?: Date;
@@ -35,7 +35,7 @@ export async function enqueueJob(
     .insert(schema.jobs)
     .values({
       kind: input.kind,
-      brandId: input.brandId ?? null,
+      brandId: input.brandId,
       payloadJson: input.payload ?? {},
       scheduledFor: input.scheduledFor ?? new Date(),
       status: "queued",

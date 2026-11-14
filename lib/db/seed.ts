@@ -11,6 +11,7 @@
 import { config as loadEnv } from "dotenv";
 import { db } from "./index";
 import { brands, cadenceSettings, icps } from "./schema";
+import { workspaceForScript } from "./script-workspace";
 import type { BrandSettings, Persona, Voice } from "./types";
 
 async function main(): Promise<void> {
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   const [brand] = await db
     .insert(brands)
     .values({
+      workspaceId: await workspaceForScript(),
       name: "Wonderfly",
       slug: "wonderfly",
       status: "active",

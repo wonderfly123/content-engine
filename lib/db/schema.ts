@@ -102,8 +102,9 @@ export const brands = pgTable(
   "brands",
   {
     id: uuid().primaryKey().defaultRandom(),
-    /** Nullable only until the second migration step makes it required. */
-    workspaceId: uuid("workspace_id").references(() => workspaces.id),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
     name: text().notNull(),
     slug: text().notNull(),
     status: brandStatusEnum().notNull().default("draft"),
@@ -124,7 +125,8 @@ export const brands = pgTable(
     updatedAt: ts(),
   },
   (t) => [
-    uniqueIndex("brands_slug_unique").on(t.slug),
+    // Slugs are unique inside a workspace, not across the whole database.
+    uniqueIndex("brands_workspace_slug_unique").on(t.workspaceId, t.slug),
     index("brands_workspace_idx").on(t.workspaceId),
   ],
 );
@@ -433,9 +435,9 @@ export const brandMetricsSnapshots = pgTable("brand_metrics_snapshots", {
 export const jobs = pgTable("jobs", {
   id: uuid().primaryKey().defaultRandom(),
   kind: jobKindEnum().notNull(),
-  brandId: uuid("brand_id").references(() => brands.id, {
-    onDelete: "cascade",
-  }),
+  brandId: uuid("brand_id")
+    .notNull()
+    .references(() => brands.id, { onDelete: "cascade" }),
   payloadJson: jsonb("payload_json").$type<JobPayload>().notNull().default({}),
   scheduledFor: timestamp("scheduled_for", { withTimezone: true })
     .notNull()

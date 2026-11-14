@@ -16,6 +16,7 @@ import { config as loadEnv } from "dotenv";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
+import { workspaceForScript } from "@/lib/db/script-workspace";
 import type { Persona, Voice, BrandSettings } from "@/lib/db/types";
 
 async function main(): Promise<void> {
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   const [brand] = await db
     .insert(brands)
     .values({
+      workspaceId: await workspaceForScript(),
       name,
       slug,
       status: "active",

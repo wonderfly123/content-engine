@@ -22,10 +22,11 @@ async function main(): Promise<void> {
 
   const { db, schema } = await import("@/lib/db");
   const { and, eq } = await import("drizzle-orm");
+  const { workspaceForScript } = await import("@/lib/db/script-workspace");
 
   let [brand] = await db.select().from(schema.brands).where(eq(schema.brands.slug, slug)).limit(1);
   if (!brand) {
-    [brand] = await db.insert(schema.brands).values({ name, slug, status: "active" }).returning();
+    [brand] = await db.insert(schema.brands).values({ workspaceId: await workspaceForScript(), name, slug, status: "active" }).returning();
     console.log(`created brand ${brand.name} (${brand.id})`);
   } else {
     console.log(`brand exists: ${brand.name} (${brand.id})`);
