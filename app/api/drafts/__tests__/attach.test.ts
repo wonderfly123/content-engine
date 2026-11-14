@@ -84,6 +84,14 @@ vi.mock("drizzle-orm", () => ({
   eq: (a: unknown, b: unknown) => ({ _eq: [a, b] }),
 }));
 
+// The ownership check is proven in app/api/__tests__/separation.test.ts; here every id is the caller's.
+vi.mock("@/lib/auth/workspace", () => ({
+  guard: <A extends unknown[]>(handler: (...args: A) => unknown) => handler,
+  requireBrand: async (brandId: string) => ({ brandId }),
+  requireOwned: async () => ({ brandId: "11111111-1111-1111-1111-111111111111" }),
+  listBrandIds: async () => ["11111111-1111-1111-1111-111111111111"],
+}));
+
 const { POST } = await import("../[id]/attach/route");
 
 function req(url: string, body: unknown) {
@@ -138,7 +146,7 @@ describe("POST /api/drafts/[id]/attach", () => {
     expect(res.status).toBe(404);
   });
 
-  it("rejects when asset belongs to a different brand", async () => {
+  it("answers 404 when asset belongs to a different brand", async () => {
     selectQueue.push([
       { id: DRAFT_ID, brandId: BRAND_ID, format: "reel", status: "awaiting_assets" },
     ]);
@@ -149,7 +157,8 @@ describe("POST /api/drafts/[id]/attach", () => {
       }),
       { params: Promise.resolve({ id: DRAFT_ID }) },
     );
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(404);
+    expect(lastInsertValues).toBeNull();
   });
 
   it("rejects when slot already occupied by a different asset", async () => {

@@ -4,19 +4,22 @@
  *          and onboarding entry "Continue setup" list.
  *   POST → create a draft brand from { websiteUrl?, description? }.
  *
- * Brand isolation: this endpoint operates across all brands (single-user app).
+ * Brand isolation: lists only the caller's brands; creates in the caller's workspace.
  * Per-brand reads MUST go through /api/brands/[id].
  */
 
 import { NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { brands, events } from "@/lib/db/schema";
 import { createBrandSchema } from "@/lib/onboarding/types";
+import { guard, listBrandIds, requireWorkspace } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export const GET = guard(async () => {
+  const brandIds = await listBrandIds();
+  if (brandIds.length === 0) return NextResponse.json({ brands: [] });
   try {
     const rows = await db
       .select({
@@ -28,6 +31,7 @@ export async function GET() {
         updatedAt: brands.updatedAt,
       })
       .from(brands)
+      .where(inArray(brands.id, brandIds))
       .orderBy(desc(brands.updatedAt));
     return NextResponse.json({ brands: rows });
   } catch (err) {
@@ -36,9 +40,11 @@ export async function GET() {
       { status: 500 },
     );
   }
-}
+});
 
-export async function POST(req: Request) {
+export const POST = guard(async (req: Request) => {
+  const { workspaceId } = await requireWorkspace();
+
   let body: unknown;
   try {
     body = await req.json();
@@ -67,6 +73,7 @@ export async function POST(req: Request) {
     const [row] = await db
       .insert(brands)
       .values({
+        workspaceId,
         name: provisionalName,
         slug,
         status: "draft",
@@ -86,6 +93,7 @@ export async function POST(req: Request) {
     await db.insert(events).values({
       entityType: "brand",
       entityId: row.id,
+      brandId: row.id,
       toStatus: "draft",
       actor: "user",
       note: "Onboarding step 1: created draft brand",
@@ -98,4 +106,4 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
-}
+});

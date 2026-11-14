@@ -11,6 +11,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 import { z } from "zod";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
@@ -32,7 +33,7 @@ function clampDays(raw: string | null): number {
   return Math.min(90, Math.max(7, Math.trunc(n)));
 }
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({ brandId: sp.get("brandId") });
   if (!parsed.success) {
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
     );
   }
   const { brandId } = parsed.data;
+  await requireBrand(brandId);
   const days = clampDays(sp.get("days"));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -100,4 +102,4 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

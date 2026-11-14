@@ -9,13 +9,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { researchBundles } from "@/lib/db/schema";
 import { enqueueJob } from "@/lib/pipelines/jobs";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
 const querySchema = z.object({ brandId: z.string().uuid() });
 const postSchema = z.object({ brandId: z.string().uuid() });
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = querySchema.safeParse(q);
   if (!parsed.success) {
@@ -24,16 +25,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+  const { brandId } = await requireBrand(parsed.data.brandId);
   const [bundle] = await db
     .select()
     .from(researchBundles)
-    .where(eq(researchBundles.brandId, parsed.data.brandId))
+    .where(eq(researchBundles.brandId, brandId))
     .orderBy(desc(researchBundles.pulledAt))
     .limit(1);
   return NextResponse.json({ bundle: bundle ?? null });
-}
+});
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   const json = await req.json().catch(() => null);
   const parsed = postSchema.safeParse(json);
   if (!parsed.success) {
@@ -42,10 +44,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+  const { brandId } = await requireBrand(parsed.data.brandId);
   const jobId = await enqueueJob({
     kind: "research_pull",
-    brandId: parsed.data.brandId,
+    brandId,
     payload: { source: "manual" },
   });
   return NextResponse.json({ ok: true, jobId }, { status: 202 });
-}
+});

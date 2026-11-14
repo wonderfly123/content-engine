@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { ROLE_KEY, STATUS_KEY, type Role, type Status } from "@/lib/auth/access";
 import { requireAdmin } from "@/lib/auth/session";
-import { createAdminClient } from "@/lib/supabase/server";
+import { guard } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +18,8 @@ export interface AdminUser {
 }
 
 async function listAll(youId: string): Promise<AdminUser[]> {
+  // Loaded here, after the admin check, so nothing with the service key is touched for other callers.
+  const { createAdminClient } = await import("@/lib/supabase/server");
   const admin = createAdminClient();
   const out: AdminUser[] = [];
   for (let page = 1; page <= 20; page++) {
@@ -41,21 +43,21 @@ async function listAll(youId: string): Promise<AdminUser[]> {
   return out.sort((a, b) => rank[a.status] - rank[b.status] || a.email.localeCompare(b.email));
 }
 
-export async function GET(): Promise<NextResponse> {
+export const GET = guard(async (): Promise<NextResponse> => {
   try {
     const me = await requireAdmin();
     return NextResponse.json({ users: await listAll(me.userId) });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 403 });
   }
-}
+});
 
 const patchSchema = z.object({
   id: z.string().uuid(),
   action: z.enum(["approve", "disable", "make_admin", "make_user"]),
 });
 
-export async function PATCH(req: NextRequest): Promise<NextResponse> {
+export const PATCH = guard(async (req: NextRequest): Promise<NextResponse> => {
   let me;
   try {
     me = await requireAdmin();
@@ -70,6 +72,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "You can't remove your own access. Ask another admin." }, { status: 400 });
   }
   try {
+    const { createAdminClient } = await import("@/lib/supabase/server");
     const admin = createAdminClient();
     const { data, error } = await admin.auth.admin.getUserById(id);
     if (error || !data.user) throw new Error("user not found");
@@ -85,4 +88,4 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
-}
+});

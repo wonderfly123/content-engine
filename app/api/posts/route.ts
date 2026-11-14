@@ -13,6 +13,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { drafts, posts } from "@/lib/db/schema";
 import { channelValues, postStatusValues } from "@/lib/db/enums";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).default(200),
 });
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({
     brandId: sp.get("brandId"),
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { brandId, status, channels, from, to, limit } = parsed.data;
+  const { status, channels, from, to, limit } = parsed.data;
+  const { brandId } = await requireBrand(parsed.data.brandId);
 
   const where = [eq(posts.brandId, brandId)];
   if (status && status.length) where.push(inArray(posts.status, status));
@@ -84,4 +86,4 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

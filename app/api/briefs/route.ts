@@ -5,10 +5,12 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { briefs, events } from "@/lib/db/schema";
+import { briefs, events, icps } from "@/lib/db/schema";
+import { guard, listBrandIds, requireBrand } from "@/lib/auth/workspace";
+
 import {
   briefStatusValues,
   channelValues,
@@ -37,7 +39,7 @@ const createSchema = z.object({
   icpId: z.string().uuid().optional(),
 });
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = listQuerySchema.safeParse(q);
   if (!parsed.success) {
@@ -48,18 +50,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
   const { brandId, status, channel } = parsed.data;
   const conds = [];
-  if (brandId) conds.push(eq(briefs.brandId, brandId));
+  if (brandId) {
+    const access = await requireBrand(brandId);
+    conds.push(eq(briefs.brandId, access.brandId));
+  } else {
+    const brandIds = await listBrandIds();
+    if (brandIds.length === 0) return NextResponse.json({ briefs: [] });
+    conds.push(inArray(briefs.brandId, brandIds));
+  }
   if (status) conds.push(eq(briefs.status, status));
   if (channel) conds.push(eq(briefs.channel, channel));
   const rows = await db
     .select()
     .from(briefs)
-    .where(conds.length > 0 ? and(...conds) : undefined)
+    .where(and(...conds))
     .orderBy(desc(briefs.createdAt));
   return NextResponse.json({ briefs: rows });
-}
+});
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   const json = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(json);
   if (!parsed.success) {
@@ -69,10 +78,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const v = parsed.data;
+  const access = await requireBrand(v.brandId);
+  if (v.icpId) {
+    const [icp] = await db
+      .select({ id: icps.id })
+      .from(icps)
+      .where(and(eq(icps.id, v.icpId), eq(icps.brandId, access.brandId)));
+    if (!icp) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
   const [row] = await db
     .insert(briefs)
     .values({
-      brandId: v.brandId,
+      brandId: access.brandId,
       channel: v.channel,
       format: v.format,
       title: v.title,
@@ -92,9 +109,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await db.insert(events).values({
     entityType: "brief",
     entityId: row.id,
+    brandId: access.brandId,
     toStatus: "pending_review",
     actor: "user",
     note: "manual brief created",
   });
   return NextResponse.json({ brief: row }, { status: 201 });
-}
+});

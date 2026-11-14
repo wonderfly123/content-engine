@@ -7,6 +7,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { ReelEdits } from "./edits";
 
 export const REEL_STAGES = ["cut_review", "voiceover", "editing", "final_review", "scheduled", "posted"] as const;
 export type ReelStage = (typeof REEL_STAGES)[number];
@@ -15,11 +16,15 @@ export interface ReelCut {
   id: string;
   title: string;
   seconds: number;
-  /** music = music-led, no voice-over. voice = voice-led, needs a recorded voice-over. */
+  /** music = no voice-over. voice = has a recorded voice-over (and so gets captions). The editor's suggestion until the reviewer chooses in cut review. */
   mode: "music" | "voice";
   stage: ReelStage;
   /** Paths relative to the job's _cuts folder. */
   preview: string;
+  /** The clip list (EDL) the preview was rendered from. With it, the reviewer can edit individual clips in the app. */
+  edl?: string;
+  /** Set once the reviewer edits clips in the app: `edl` and `preview` are then theirs, and this is what the editor made. */
+  original?: { edl: string; preview: string };
   final?: string;
   voiceover?: string;
   /** Draft voice-over script shown while recording. */
@@ -29,10 +34,12 @@ export interface ReelCut {
   /** Reviewer's note back to the editor. */
   note?: string;
   changesRequested?: boolean;
+  /** Light edits from cut review (trim, sections cut out), for the editor to apply. The voice-over is timed to the edited cut. */
+  edits?: ReelEdits;
   trial?: "manual" | "auto" | null;
   /** Cover (thumbnail) frame, in seconds into the final video. Suggested by the editor, confirmed by the reviewer. */
   coverAt?: number;
-  /** Opening on-screen text: drafts from the editor, the reviewer's pick, and what is currently in the final file. */
+  /** Opening on-screen text: drafts from the editor, the reviewer's pick (made in cut review, changeable in final review), and what is currently in the final file. */
   hookOptions?: string[];
   hook?: string;
   hookBurned?: string;
@@ -64,6 +71,20 @@ const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 export function cutsDir(job: string): string {
   if (!SAFE_NAME.test(job)) throw new Error("invalid job name");
   return path.join(jobsDir(), job, "_cuts");
+}
+
+/** The job's footage folder; clip lists name their source files relative to it. */
+export function jobDir(job: string): string {
+  if (!SAFE_NAME.test(job)) throw new Error("invalid job name");
+  return path.join(jobsDir(), job);
+}
+
+/** Resolve a clip's source file, refusing anything outside the job's footage folder. */
+export function resolveInJob(job: string, relative: string): string {
+  const root = jobDir(job);
+  const full = path.resolve(root, relative);
+  if (!full.startsWith(root + path.sep)) throw new Error("path escapes the job folder");
+  return full;
 }
 
 /** Resolve a manifest-relative path, refusing anything that escapes the job's _cuts folder. */

@@ -13,13 +13,14 @@ import {
 import { probeUrl } from "@/lib/assets/probe";
 import { validateAsset } from "@/lib/assets/validate";
 import { generateThumbnail } from "@/lib/assets/thumbnail";
+import { AccessError, guard, requireBrand, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
 // ---------------------------------------------------------------------------
 // GET /api/assets
 // ---------------------------------------------------------------------------
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = listAssetsQuerySchema.safeParse(q);
   if (!parsed.success) {
@@ -28,7 +29,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
-  const { brandId, kind, tag, search, archived, pending } = parsed.data;
+  const { kind, tag, search, archived, pending } = parsed.data;
+  const { brandId } = await requireBrand(parsed.data.brandId);
 
   const conds = [eq(assets.brandId, brandId)];
   if (archived === "false") conds.push(eq(assets.archived, false));
@@ -65,12 +67,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const enriched = rows.map((r) => ({ ...r, usageCount: usage[r.id] ?? 0 }));
   return NextResponse.json({ assets: enriched });
-}
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/assets
 // ---------------------------------------------------------------------------
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   const json = await req.json().catch(() => null);
   const parsed = createAssetRequestSchema.safeParse(json);
   if (!parsed.success) {
@@ -80,6 +82,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const body = parsed.data;
+
+  // Ownership: the brand must be the caller's, and the draft (if any) must be in that same brand.
+  const { brandId } = await requireBrand(body.brandId);
+  if (body.draftId) {
+    const draftAccess = await requireOwned(drafts, body.draftId);
+    if (draftAccess.brandId !== brandId) throw new AccessError(404, "Not found.");
+  }
 
   // 1) Probe + validate
   let probed;
@@ -115,7 +124,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const [inserted] = await db
     .insert(assets)
     .values({
-      brandId: body.brandId,
+      brandId,
       kind: body.kind,
       label: body.label ?? "",
       tags: body.tags ?? [],
@@ -145,7 +154,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       role,
     });
     attached = true;
-    draftTransitioned = await maybeTransitionDraft(body.draftId);
+    draftTransitioned = await maybeTransitionDraft(body.draftId, brandId);
   }
 
   return NextResponse.json(
@@ -157,7 +166,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
     { status: 201 },
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -192,11 +201,11 @@ function inferMime(url: string, kind: string): string {
  * Note: Task 6 owns the draft state machine; this is an intentionally
  * narrow inline update guarded by the explicit conditions above.
  */
-async function maybeTransitionDraft(draftId: string): Promise<boolean> {
+async function maybeTransitionDraft(draftId: string, brandId: string): Promise<boolean> {
   const [d] = await db
     .select({ status: drafts.status, format: drafts.format })
     .from(drafts)
-    .where(eq(drafts.id, draftId));
+    .where(and(eq(drafts.id, draftId), eq(drafts.brandId, brandId)));
   if (!d || d.status !== "awaiting_assets") return false;
 
   const rows = await db
@@ -214,7 +223,7 @@ async function maybeTransitionDraft(draftId: string): Promise<boolean> {
     .update(drafts)
     .set({ status: "awaiting_final_review" })
     .where(
-      and(eq(drafts.id, draftId), eq(drafts.status, "awaiting_assets")),
+      and(eq(drafts.id, draftId), eq(drafts.brandId, brandId), eq(drafts.status, "awaiting_assets")),
     );
   return true;
 }

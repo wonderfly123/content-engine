@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { tryOwned } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { assets, draftAssets, drafts } from "@/lib/db/schema";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,13 @@ interface PageProps {
 export default async function DraftDetailPage({ params }: PageProps) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-  const [draft] = await db.select().from(drafts).where(eq(drafts.id, id));
+  // Someone else's draft answers 404, the same as one that does not exist.
+  const access = await tryOwned(drafts, id);
+  if (!access) notFound();
+  const [draft] = await db
+    .select()
+    .from(drafts)
+    .where(and(eq(drafts.id, id), eq(drafts.brandId, access.brandId)));
   if (!draft) notFound();
 
   const attached = await db

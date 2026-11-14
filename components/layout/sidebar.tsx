@@ -8,7 +8,6 @@ import {
   Clapperboard,
   FolderOpen,
   LayoutDashboard,
-  Mic,
   Plus,
   Settings,
   ShieldCheck,
@@ -33,8 +32,7 @@ const mainLinks = [
 
 // Review Pipeline: each group is one pipeline, its links are the stages in order.
 const instagramStages = [
-  { href: "/instagram/cuts", icon: Clapperboard, label: "Cut review" },
-  { href: "/instagram/voiceover", icon: Mic, label: "Voice-over" },
+  { href: "/instagram/cuts", icon: Clapperboard, label: "Review and edit" },
   { href: "/instagram/final", icon: BadgeCheck, label: "Final review" },
 ];
 

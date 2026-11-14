@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { enqueueJob } from "@/lib/pipelines/jobs";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ const bodySchema = z.object({
   brandId: z.string().uuid(),
 });
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   const json = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
@@ -23,10 +24,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+  const access = await requireBrand(parsed.data.brandId);
   const jobId = await enqueueJob({
     kind: "brief_batch",
-    brandId: parsed.data.brandId,
+    brandId: access.brandId,
     payload: { source: "manual" },
   });
   return NextResponse.json({ ok: true, jobId }, { status: 202 });
-}
+});

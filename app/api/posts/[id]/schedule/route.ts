@@ -12,12 +12,13 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { drafts, posts } from "@/lib/db/schema";
 import { assertDraftTransition } from "@/lib/pipelines/state";
 import { recordEvent } from "@/lib/pipelines/events";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,7 @@ const bodySchema = z.object({
   scheduledFor: z.string().datetime(),
 });
 
-export async function POST(req: NextRequest, ctx: RouteContext) {
+export const POST = guard(async (req: NextRequest, ctx: RouteContext) => {
   const { id: draftId } = await ctx.params;
   const json = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     );
   }
 
+  const access = await requireOwned(drafts, draftId);
+  const mine = and(eq(drafts.id, draftId), eq(drafts.brandId, access.brandId));
   const draftRows = await db
     .select({
       id: drafts.id,
@@ -56,7 +59,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       status: drafts.status,
     })
     .from(drafts)
-    .where(eq(drafts.id, draftId))
+    .where(mine)
     .limit(1);
   const draft = draftRows[0];
   if (!draft) {
@@ -97,11 +100,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     await db
       .update(drafts)
       .set({ status: "scheduled", reviewedAt: new Date() })
-      .where(eq(drafts.id, draft.id));
+      .where(mine);
 
     await recordEvent({
       entityType: "draft",
       entityId: draft.id,
+      brandId: access.brandId,
       fromStatus: draft.status,
       toStatus: "scheduled",
       actor: "user",
@@ -110,6 +114,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     await recordEvent({
       entityType: "post",
       entityId: postRow.id,
+      brandId: access.brandId,
       toStatus: "queued",
       actor: "user",
       note: "Created by schedule action",
@@ -123,4 +128,4 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       { status: 500 },
     );
   }
-}
+});

@@ -130,6 +130,18 @@ describe("listSystemAlerts", () => {
     expect(alerts).toHaveLength(1);
   });
 
+  it("returns nothing for a caller with no brands, whatever the tables hold", async () => {
+    const now = new Date();
+    const db = makeDb({
+      jobs: [{ id: "j1", kind: "publish", brandId: "b1", lastError: "x", completedAt: now, scheduledFor: now }],
+      conns: [],
+      posts: [],
+    });
+    // @ts-expect-error
+    const alerts = await listSystemAlerts({ db, brandIds: [] });
+    expect(alerts).toEqual([]);
+  });
+
   it("returns empty when no failures exist", async () => {
     const db = makeDb({ jobs: [], conns: [], posts: [] });
     // @ts-expect-error

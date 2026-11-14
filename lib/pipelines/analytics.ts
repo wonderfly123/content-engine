@@ -29,6 +29,8 @@ export interface AnalyticsDeps {
   ) => Publisher;
   now?: () => Date;
   limit?: number;
+  /** Limit the pull to one brand (the "Refresh now" button). Crons leave it unset and pull for all. */
+  brandId?: string;
 }
 
 export interface AnalyticsResult {
@@ -132,6 +134,7 @@ async function pullAnalytics(opts: PullOpts): Promise<AnalyticsResult> {
     .where(
       and(
         eq(schema.posts.status, "published"),
+        opts.brandId ? eq(schema.posts.brandId, opts.brandId) : undefined,
         isNotNull(schema.posts.externalPostId),
         isNotNull(schema.posts.publishedAt),
         lt(schema.posts.publishedAt, ceilingPublishedAt),
@@ -283,21 +286,23 @@ async function refreshBrandMetrics(
 
   for (const conn of connections) {
     if (conn.channel !== "instagram" && conn.channel !== "facebook") continue;
-    // Has a row in the last 24h? skip.
-    const recent = await db
-      .select({ id: schema.brandMetricsSnapshots.id })
-      .from(schema.brandMetricsSnapshots)
-      .where(
-        and(
-          eq(schema.brandMetricsSnapshots.brandId, conn.brandId),
-          eq(schema.brandMetricsSnapshots.channel, conn.channel),
-          gte(schema.brandMetricsSnapshots.pulledAt, oneDayAgo),
-        ),
-      )
-      .limit(1);
-    if (recent[0]) continue;
-
+    // Everything for this connection sits inside the try, so one brand's failed
+    // read, expired token or failed write cannot stop the brands after it.
     try {
+      // Has a row in the last 24h? skip.
+      const recent = await db
+        .select({ id: schema.brandMetricsSnapshots.id })
+        .from(schema.brandMetricsSnapshots)
+        .where(
+          and(
+            eq(schema.brandMetricsSnapshots.brandId, conn.brandId),
+            eq(schema.brandMetricsSnapshots.channel, conn.channel),
+            gte(schema.brandMetricsSnapshots.pulledAt, oneDayAgo),
+          ),
+        )
+        .limit(1);
+      if (recent[0]) continue;
+
       const accountId =
         conn.channel === "instagram"
           ? (conn.metaJson.igBusinessId ?? conn.externalAccountId)

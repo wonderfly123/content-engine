@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { generateThumbnail } from "@/lib/assets/thumbnail";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -17,12 +18,14 @@ interface RouteContext {
  * it. Otherwise, generate one (image only — see thumbnail.ts for the video
  * caveat) and persist back to the row.
  */
-export async function GET(
+export const GET = guard(async (
   _req: NextRequest,
   ctx: RouteContext,
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
-  const [row] = await db.select().from(assets).where(eq(assets.id, id));
+  const { brandId } = await requireOwned(assets, id);
+  const owned = and(eq(assets.id, id), eq(assets.brandId, brandId));
+  const [row] = await db.select().from(assets).where(owned);
   if (!row) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
@@ -34,11 +37,11 @@ export async function GET(
     await db
       .update(assets)
       .set({ thumbnailUrl: thumb.url })
-      .where(eq(assets.id, id));
+      .where(owned);
   }
   return NextResponse.json({
     url: thumb.url,
     cached: false,
     note: thumb.note,
   });
-}
+});

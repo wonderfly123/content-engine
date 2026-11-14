@@ -199,6 +199,7 @@ export async function generateDraftForBrief(
     {
       entityType: "draft",
       entityId: draftId,
+      brandId: brief.brandId,
       toStatus: "pending_review",
       note: `from brief=${briefId} channel=${brief.channel} format=${brief.format}`,
     },
@@ -241,7 +242,7 @@ export async function approveBriefAndGenerateDraft(
   const now = deps.now ?? (() => new Date());
 
   const rows = await db
-    .select({ id: schema.briefs.id, status: schema.briefs.status })
+    .select({ id: schema.briefs.id, status: schema.briefs.status, brandId: schema.briefs.brandId })
     .from(schema.briefs)
     .where(eq(schema.briefs.id, briefId))
     .limit(1);
@@ -257,6 +258,7 @@ export async function approveBriefAndGenerateDraft(
     {
       entityType: "brief",
       entityId: briefId,
+      brandId: brief.brandId,
       fromStatus: brief.status,
       toStatus: "approved",
       actor: deps.actor ?? "user",
@@ -305,6 +307,7 @@ export async function scheduleDraft(
     {
       entityType: "draft",
       entityId: draftId,
+      brandId: draft.brandId,
       fromStatus: draft.status,
       toStatus: "scheduled",
       note: `post=${postId}`,
@@ -315,6 +318,7 @@ export async function scheduleDraft(
     {
       entityType: "post",
       entityId: postId,
+      brandId: draft.brandId,
       toStatus: "queued",
       note: `scheduled_for=${scheduledFor.toISOString()}`,
     },

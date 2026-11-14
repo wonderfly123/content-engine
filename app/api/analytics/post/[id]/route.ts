@@ -10,7 +10,8 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { asc, eq, inArray } from "drizzle-orm";
+import { guard, requireOwned } from "@/lib/auth/workspace";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   analyticsSnapshots,
@@ -29,8 +30,9 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export const GET = guard(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const { brandId } = await requireOwned(posts, id);
 
   const postRows = await db
     .select({
@@ -41,7 +43,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     .from(posts)
     .innerJoin(drafts, eq(drafts.id, posts.draftId))
     .innerJoin(briefs, eq(briefs.id, drafts.briefId))
-    .where(eq(posts.id, id))
+    .where(and(eq(posts.id, id), eq(posts.brandId, brandId)))
     .limit(1);
 
   const head = postRows[0];
@@ -54,14 +56,14 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
   // ICP (nullable on brief).
   const icpRows = head.brief.icpId
-    ? await db.select().from(icps).where(eq(icps.id, head.brief.icpId)).limit(1)
+    ? await db.select().from(icps).where(and(eq(icps.id, head.brief.icpId), eq(icps.brandId, brandId))).limit(1)
     : [];
 
   // Snapshots oldest → newest so the retention chart renders left → right.
   const snapshots = await db
     .select()
     .from(analyticsSnapshots)
-    .where(eq(analyticsSnapshots.postId, id))
+    .where(and(eq(analyticsSnapshots.postId, id), eq(analyticsSnapshots.brandId, brandId)))
     .orderBy(asc(analyticsSnapshots.pulledAt));
 
   // Assets attached to the draft, in slot order.
@@ -73,7 +75,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     .from(draftAssets)
     .innerJoin(assets, eq(assets.id, draftAssets.assetId))
-    .where(eq(draftAssets.draftId, head.draft.id))
+    .where(and(eq(draftAssets.draftId, head.draft.id), eq(assets.brandId, brandId)))
     .orderBy(asc(draftAssets.slotIndex));
 
   // Provenance trail: events rows for the chain.
@@ -82,7 +84,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   const trail = await db
     .select()
     .from(events)
-    .where(inArray(events.entityId, chainIds))
+    .where(and(inArray(events.entityId, chainIds), eq(events.brandId, brandId)))
     .orderBy(asc(events.at));
 
   return NextResponse.json({
@@ -97,4 +99,4 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     },
     error: null,
   });
-}
+});

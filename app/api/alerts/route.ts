@@ -1,12 +1,13 @@
 /**
  * GET /api/alerts
  *   ?brandId=<uuid>  — alerts for one brand (default for sidebar badge)
- *   ?scope=all       — alerts across all brands (cross-brand Home view)
+ *   ?scope=all       — alerts across all of the caller's brands (cross-brand Home view)
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { listSystemAlerts } from "@/lib/alerts/system-alerts";
+import { guard, listBrandIds, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ const querySchema = z.object({
   scope: z.enum(["all", "brand"]).optional(),
 });
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = querySchema.safeParse(q);
   if (!parsed.success) {
@@ -25,10 +26,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
   const { brandId, scope } = parsed.data;
+  // One brand: it must be the caller's. No brand named: only the caller's brands.
+  const brandIds = scope !== "all" && brandId ? [(await requireBrand(brandId)).brandId] : await listBrandIds();
   try {
-    const alerts = await listSystemAlerts({
-      brandId: scope === "all" ? null : brandId ?? null,
-    });
+    const alerts = await listSystemAlerts({ brandIds });
     return NextResponse.json({ alerts });
   } catch (err) {
     return NextResponse.json(
@@ -36,4 +37,4 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 500 },
     );
   }
-}
+});

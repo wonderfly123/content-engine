@@ -22,10 +22,10 @@ async function fetchCuts(brandSlug: string): Promise<ReelCutView[]> {
 }
 
 /** Instagram Reel stages that are waiting on the user, in pipeline order. */
-const WAITING_ON_YOU: Array<{ stage: ReelStage; label: string; href: string }> = [
-  { stage: "cut_review", label: "Cuts to review", href: "/instagram/cuts" },
-  { stage: "voiceover", label: "Voice-overs to record", href: "/instagram/voiceover" },
-  { stage: "final_review", label: "Finished videos to approve and schedule", href: "/instagram/final" },
+const WAITING_ON_YOU: Array<{ key: string; stages: ReelStage[]; label: string; href: string }> = [
+  // "voiceover" is the old separate recording stage; those cuts now finish in the same review-and-edit step.
+  { key: "cuts", stages: ["cut_review", "voiceover"], label: "Cuts to review and edit", href: "/instagram/cuts" },
+  { key: "final", stages: ["final_review"], label: "Finished videos to approve and schedule", href: "/instagram/final" },
 ];
 
 export function NeedsReviewCard({ brandSlug }: { brandSlug: string }) {
@@ -35,9 +35,9 @@ export function NeedsReviewCard({ brandSlug }: { brandSlug: string }) {
     retry: 1,
     refetchInterval: 30_000,
   });
-  const count = (stage: ReelStage) => cutsQ.data?.filter((c) => c.stage === stage).length;
+  const count = (...stages: ReelStage[]) => cutsQ.data?.filter((c) => stages.includes(c.stage)).length;
   const withEditor = count("editing") ?? 0;
-  const nothingWaiting = cutsQ.isSuccess && WAITING_ON_YOU.every((w) => count(w.stage) === 0);
+  const nothingWaiting = cutsQ.isSuccess && WAITING_ON_YOU.every((w) => count(...w.stages) === 0);
 
   return (
     <Card>
@@ -50,7 +50,6 @@ export function NeedsReviewCard({ brandSlug }: { brandSlug: string }) {
           <div className="space-y-2">
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
           </div>
         ) : nothingWaiting ? (
           <p className="text-sm text-muted-foreground">Nothing waiting on you.</p>
@@ -58,10 +57,10 @@ export function NeedsReviewCard({ brandSlug }: { brandSlug: string }) {
           <ul className="space-y-2" role="list">
             {WAITING_ON_YOU.map((w) => (
               <ReviewRow
-                key={w.stage}
+                key={w.key}
                 label={w.label}
                 href={w.href}
-                count={count(w.stage)}
+                count={count(...w.stages)}
                 error={cutsQ.isError}
                 errorLabel="Couldn't load the review pipeline."
               />

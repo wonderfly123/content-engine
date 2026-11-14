@@ -10,6 +10,7 @@
  * summed from the posts published in the window instead; `viewsSource` says which.
  */
 import { NextResponse, type NextRequest } from "next/server";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/lib/db";
@@ -27,13 +28,14 @@ export const dynamic = "force-dynamic";
 
 const querySchema = z.object({ brandId: z.string().uuid() });
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({ brandId: sp.get("brandId") });
   if (!parsed.success) {
     return NextResponse.json({ data: null, error: { code: "invalid_query" } }, { status: 400 });
   }
   const { brandId } = parsed.data;
+  await requireBrand(brandId);
   const filters = parseFilters(sp);
   const channel = activeChannel(filters);
   const { start, end } = resolveRange(filters);
@@ -114,4 +116,4 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

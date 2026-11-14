@@ -30,6 +30,8 @@ import {
   keywordStatusEnum,
   postStatusEnum,
   researchBundleStatusEnum,
+  workspaceRoleEnum,
+  workspaceStatusEnum,
 } from "./enums";
 import { encryptedText } from "./crypto";
 import type {
@@ -60,6 +62,39 @@ const ts = () => timestamp({ withTimezone: true }).defaultNow().notNull();
 const tsNullable = () => timestamp({ withTimezone: true });
 
 // =========================================================================
+// Accounts: a workspace owns brands; members are signed-in users with a role
+// =========================================================================
+//
+// Separation rule: every other table reaches its workspace through its brand.
+// A caller may touch a brand only through a `workspace_members` row
+// (see lib/auth/workspace.ts, the single place that check is made).
+
+export const workspaces = pgTable("workspaces", {
+  id: uuid().primaryKey().defaultRandom(),
+  name: text().notNull(),
+  status: workspaceStatusEnum().notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Supabase auth user id (auth.users.id; the foreign key lives in the database). */
+    userId: uuid("user_id").notNull(),
+    role: workspaceRoleEnum().notNull().default("owner"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.userId] }),
+    index("workspace_members_user_idx").on(t.userId),
+  ],
+);
+
+// =========================================================================
 // Core: brand + brand-scoped configuration
 // =========================================================================
 
@@ -67,6 +102,8 @@ export const brands = pgTable(
   "brands",
   {
     id: uuid().primaryKey().defaultRandom(),
+    /** Nullable only until the second migration step makes it required. */
+    workspaceId: uuid("workspace_id").references(() => workspaces.id),
     name: text().notNull(),
     slug: text().notNull(),
     status: brandStatusEnum().notNull().default("draft"),
@@ -86,7 +123,10 @@ export const brands = pgTable(
     createdAt: ts(),
     updatedAt: ts(),
   },
-  (t) => [uniqueIndex("brands_slug_unique").on(t.slug)],
+  (t) => [
+    uniqueIndex("brands_slug_unique").on(t.slug),
+    index("brands_workspace_idx").on(t.workspaceId),
+  ],
 );
 
 export const icps = pgTable("icps", {
@@ -411,6 +451,8 @@ export const events = pgTable("events", {
   id: uuid().primaryKey().defaultRandom(),
   entityType: text("entity_type").notNull(),
   entityId: uuid("entity_id").notNull(),
+  /** The brand the entity belongs to, so the audit log separates by workspace like everything else. */
+  brandId: uuid("brand_id").references(() => brands.id, { onDelete: "cascade" }),
   fromStatus: text("from_status"),
   toStatus: text("to_status"),
   actor: eventActorEnum().notNull().default("system"),

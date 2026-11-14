@@ -83,7 +83,11 @@ export default function AnalyticsPage() {
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch("/api/analytics/refresh", { method: "POST" });
+      const res = await fetch("/api/analytics/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ brandId: brand?.id }),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setReloadKey((k) => k + 1);
     } catch {

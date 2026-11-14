@@ -13,6 +13,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { assets, drafts, draftAssets, events } from "@/lib/db/schema";
 import { draftAssetRoleValues } from "@/lib/db/enums";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -24,10 +25,10 @@ const bodySchema = z.object({
   role: z.enum(draftAssetRoleValues).default("primary"),
 });
 
-export async function POST(
+export const POST = guard(async (
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
   if (!idSchema.safeParse(id).success) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
@@ -41,6 +42,7 @@ export async function POST(
     );
   }
   const { assetId, slotIndex, role } = parsed.data;
+  const access = await requireOwned(drafts, id);
 
   const [draft] = await db
     .select({
@@ -50,7 +52,7 @@ export async function POST(
       status: drafts.status,
     })
     .from(drafts)
-    .where(eq(drafts.id, id));
+    .where(and(eq(drafts.id, id), eq(drafts.brandId, access.brandId)));
   if (!draft) {
     return NextResponse.json({ error: "draft_not_found" }, { status: 404 });
   }
@@ -59,14 +61,9 @@ export async function POST(
     .select({ id: assets.id, brandId: assets.brandId })
     .from(assets)
     .where(eq(assets.id, assetId));
-  if (!asset) {
+  // An asset from any other brand answers the same as one that does not exist.
+  if (!asset || asset.brandId !== access.brandId) {
     return NextResponse.json({ error: "asset_not_found" }, { status: 404 });
-  }
-  if (asset.brandId !== draft.brandId) {
-    return NextResponse.json(
-      { error: "brand_mismatch", detail: "Asset belongs to a different brand" },
-      { status: 422 },
-    );
   }
 
   // Slot validation: same slot can't be filled twice (composite PK enforces it
@@ -109,11 +106,16 @@ export async function POST(
       .update(drafts)
       .set({ status: "awaiting_final_review" })
       .where(
-        and(eq(drafts.id, id), eq(drafts.status, "awaiting_assets")),
+        and(
+          eq(drafts.id, id),
+          eq(drafts.brandId, access.brandId),
+          eq(drafts.status, "awaiting_assets"),
+        ),
       );
     await db.insert(events).values({
       entityType: "draft",
       entityId: id,
+      brandId: access.brandId,
       fromStatus: "awaiting_assets",
       toStatus: "awaiting_final_review",
       actor: "system",
@@ -126,7 +128,7 @@ export async function POST(
     { ok: true, transitioned, attachedCount: attached.length },
     { status: 201 },
   );
-}
+});
 
 function isFullyAttached(
   format: string,

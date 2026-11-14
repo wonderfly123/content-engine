@@ -128,8 +128,17 @@ export async function publishDuePosts(
         else failed++;
       }
     } catch (err) {
-      await markPostFailed(post, (err as Error).message, deps);
       failed++;
+      // Recording the failure can itself fail (a database write for this post).
+      // That must not stop the posts after it, which may be other brands'.
+      try {
+        await markPostFailed(post, (err as Error).message, deps);
+      } catch (markErr) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[publish] post=${post.id} brand=${post.brandId} could not be marked failed: ${(markErr as Error).message}`,
+        );
+      }
     }
   }
 
@@ -155,6 +164,7 @@ async function publishQueuedPost(
     {
       entityType: "post",
       entityId: post.id,
+      brandId: post.brandId,
       fromStatus: "queued",
       toStatus: "publishing",
     },
@@ -219,6 +229,7 @@ async function publishQueuedPost(
       {
         entityType: "post",
         entityId: post.id,
+        brandId: post.brandId,
         toStatus: "publishing",
         note: `container=${result.containerId}`,
       },
@@ -321,6 +332,7 @@ async function markPostPublished(
     {
       entityType: "post",
       entityId: post.id,
+      brandId: post.brandId,
       fromStatus: post.status,
       toStatus: "published",
       note: `external_id=${externalId}`,
@@ -350,6 +362,7 @@ async function markPostFailed(
     {
       entityType: "post",
       entityId: post.id,
+      brandId: post.brandId,
       fromStatus: post.status,
       toStatus: "failed",
       note: `attempt=${attempts} error=${errorMessage}`,
@@ -465,21 +478,30 @@ export async function requeueFailedPosts(
       ] ?? 60;
     const eligibleAt = new Date(post.lastErrorAt.getTime() + delaySec * 1000);
     if (eligibleAt > now()) continue;
-    await db
-      .update(schema.posts)
-      .set({ status: "queued", updatedAt: new Date() })
-      .where(eq(schema.posts.id, post.id));
-    await recordEvent(
-      {
-        entityType: "post",
-        entityId: post.id,
-        fromStatus: "failed",
-        toStatus: "queued",
-        note: `retry after ${delaySec}s backoff`,
-      },
-      db,
-    );
-    requeued++;
+    // One post's failed write must not stop the posts after it (other brands').
+    try {
+      await db
+        .update(schema.posts)
+        .set({ status: "queued", updatedAt: new Date() })
+        .where(eq(schema.posts.id, post.id));
+      await recordEvent(
+        {
+          entityType: "post",
+          entityId: post.id,
+          brandId: post.brandId,
+          fromStatus: "failed",
+          toStatus: "queued",
+          note: `retry after ${delaySec}s backoff`,
+        },
+        db,
+      );
+      requeued++;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[publish] requeue post=${post.id} brand=${post.brandId} failed: ${(err as Error).message}`,
+      );
+    }
   }
 
   return { requeued };

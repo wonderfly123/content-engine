@@ -10,6 +10,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 import { z } from "zod";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
@@ -34,7 +35,7 @@ function numOrNull(v: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({ brandId: sp.get("brandId") });
   if (!parsed.success) {
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
     );
   }
   const { brandId } = parsed.data;
+  await requireBrand(brandId);
   const since = new Date(Date.now() - AGG_WINDOW_DAYS * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
@@ -127,4 +129,4 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

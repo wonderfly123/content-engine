@@ -22,6 +22,8 @@ export interface RecordEventInput {
     | "job"
     | (string & {});
   entityId: string;
+  /** The brand the entity belongs to; the audit log is separated by workspace through it. */
+  brandId: string;
   fromStatus?: string | null;
   toStatus?: string | null;
   actor?: EventActor;
@@ -43,6 +45,7 @@ export async function recordEvent(
     .values({
       entityType: input.entityType,
       entityId: input.entityId,
+      brandId: input.brandId,
       fromStatus: input.fromStatus ?? null,
       toStatus: input.toStatus ?? null,
       actor: input.actor ?? "system",

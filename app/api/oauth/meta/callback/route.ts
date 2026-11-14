@@ -21,6 +21,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { channelConnections, events } from "@/lib/db/schema";
 import type { ConnectedAdAccount } from "@/lib/db/types";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -85,7 +86,7 @@ async function graphGet<T>(path: string, params: Record<string, string>): Promis
   return (await res.json()) as T;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const code = sp.get("code");
   const stateRaw = sp.get("state");
@@ -112,7 +113,8 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   }
-  const { brandId } = stateParsed.data;
+  // The brand named in `state` must be the signed-in caller's, before any token exchange or write.
+  const { brandId } = await requireBrand(stateParsed.data.brandId);
 
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
@@ -286,6 +288,7 @@ export async function GET(req: NextRequest) {
     await db.insert(events).values({
       entityType: "brand",
       entityId: brandId,
+      brandId,
       actor: "user",
       note:
         `Onboarding step 7: connected Meta ` +
@@ -301,6 +304,7 @@ export async function GET(req: NextRequest) {
     await db.insert(events).values({
       entityType: "brand",
       entityId: brandId,
+      brandId,
       actor: "system",
       note: `Meta OAuth failed: ${detail}`,
     });
@@ -309,7 +313,7 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});
 
 interface UpsertArgs {
   externalAccountId: string;

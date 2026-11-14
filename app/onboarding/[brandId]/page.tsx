@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
+import { tryBrand } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
 import { StepIndicator } from "@/components/onboarding/step-indicator";
@@ -35,7 +36,15 @@ export default async function WizardPage({ params, searchParams }: PageProps) {
   // UUID-ish guard — Drizzle will fail loudly if this is malformed.
   if (!/^[0-9a-f-]{8,}$/i.test(brandId)) notFound();
 
-  const [brand] = await db.select().from(brands).where(eq(brands.id, brandId));
+  // Someone else's brand answers 404, the same as one that does not exist.
+  // The step components below only ever receive this checked brand.
+  const access = await tryBrand(brandId);
+  if (!access) notFound();
+
+  const [brand] = await db
+    .select()
+    .from(brands)
+    .where(eq(brands.id, access.brandId));
   if (!brand) notFound();
 
   if (brand.status === "active") {

@@ -16,22 +16,23 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { brands, events } from "@/lib/db/schema";
 import { runAnalysis } from "@/lib/onboarding/analyze";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const idSchema = z.string().uuid();
 
-export async function POST(
+export const POST = guard(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const idParse = idSchema.safeParse(id);
   if (!idParse.success) {
     return NextResponse.json({ error: "Invalid brand id" }, { status: 400 });
   }
-  const brandId = idParse.data;
+  const { brandId } = await requireBrand(idParse.data);
 
   const [brand] = await db
     .select()
@@ -71,6 +72,7 @@ export async function POST(
     await db.insert(events).values({
       entityType: "brand",
       entityId: brandId,
+      brandId,
       toStatus: "draft",
       actor: "system",
       note: "Onboarding step 2: analysis complete",
@@ -82,6 +84,7 @@ export async function POST(
     await db.insert(events).values({
       entityType: "brand",
       entityId: brandId,
+      brandId,
       actor: "system",
       note: `Onboarding step 2: analysis failed — ${detail}`,
     });
@@ -90,4 +93,4 @@ export async function POST(
       { status: 500 },
     );
   }
-}
+});

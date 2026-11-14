@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets, draftAssets, drafts } from "@/lib/db/schema";
 import { updateAssetRequestSchema } from "@/lib/assets/types";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -10,12 +11,13 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(
+export const GET = guard(async (
   _req: NextRequest,
   ctx: RouteContext,
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
-  const [row] = await db.select().from(assets).where(eq(assets.id, id));
+  const { brandId } = await requireOwned(assets, id);
+  const [row] = await db.select().from(assets).where(and(eq(assets.id, id), eq(assets.brandId, brandId)));
   if (!row) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
@@ -29,7 +31,7 @@ export async function GET(
     })
     .from(draftAssets)
     .innerJoin(drafts, eq(drafts.id, draftAssets.draftId))
-    .where(eq(draftAssets.assetId, id));
+    .where(and(eq(draftAssets.assetId, id), eq(drafts.brandId, brandId)));
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -40,12 +42,12 @@ export async function GET(
     asset: { ...row, usageCount: Number(count) },
     usedBy,
   });
-}
+});
 
-export async function PATCH(
+export const PATCH = guard(async (
   req: NextRequest,
   ctx: RouteContext,
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
   const json = await req.json().catch(() => null);
   const parsed = updateAssetRequestSchema.safeParse(json);
@@ -65,34 +67,36 @@ export async function PATCH(
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
+  const { brandId } = await requireOwned(assets, id);
 
   const [row] = await db
     .update(assets)
     .set(update)
-    .where(eq(assets.id, id))
+    .where(and(eq(assets.id, id), eq(assets.brandId, brandId)))
     .returning();
   if (!row) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   return NextResponse.json({ asset: row });
-}
+});
 
 /**
  * DELETE — soft-archive only. Real deletion happens (if ever) via an admin
  * sweep, because `draft_assets.asset_id` uses `ON DELETE RESTRICT`.
  */
-export async function DELETE(
+export const DELETE = guard(async (
   _req: NextRequest,
   ctx: RouteContext,
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
+  const { brandId } = await requireOwned(assets, id);
   const [row] = await db
     .update(assets)
     .set({ archived: true })
-    .where(eq(assets.id, id))
+    .where(and(eq(assets.id, id), eq(assets.brandId, brandId)))
     .returning();
   if (!row) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   return NextResponse.json({ asset: row });
-}
+});

@@ -113,6 +113,14 @@ vi.mock("@/lib/pipelines/events", () => ({
   },
 }));
 
+// The ownership check is proven in app/api/__tests__/separation.test.ts; here every id is the caller's.
+vi.mock("@/lib/auth/workspace", () => ({
+  guard: <A extends unknown[]>(handler: (...args: A) => unknown) => handler,
+  requireBrand: async (brandId: string) => ({ brandId }),
+  requireOwned: async () => ({ brandId: "11111111-1111-1111-1111-111111111111" }),
+  listBrandIds: async () => ["11111111-1111-1111-1111-111111111111"],
+}));
+
 const { GET: listGet } = await import("../route");
 const { POST: schedulePost } = await import("../[id]/schedule/route");
 const { PATCH: postPatch } = await import("../[id]/route");

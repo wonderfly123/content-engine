@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { drafts, draftAssets, assets, events } from "@/lib/db/schema";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -15,15 +16,19 @@ const patchSchema = z.object({
   markEdited: z.boolean().optional(),
 });
 
-export async function GET(
+export const GET = guard(async (
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
   if (!idSchema.safeParse(id).success) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   }
-  const [row] = await db.select().from(drafts).where(eq(drafts.id, id));
+  const access = await requireOwned(drafts, id);
+  const [row] = await db
+    .select()
+    .from(drafts)
+    .where(and(eq(drafts.id, id), eq(drafts.brandId, access.brandId)));
   if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   // Attached assets
@@ -40,15 +45,15 @@ export async function GET(
     })
     .from(draftAssets)
     .innerJoin(assets, eq(draftAssets.assetId, assets.id))
-    .where(eq(draftAssets.draftId, id));
+    .where(and(eq(draftAssets.draftId, id), eq(assets.brandId, access.brandId)));
 
   return NextResponse.json({ draft: row, assets: links });
-}
+});
 
-export async function PATCH(
+export const PATCH = guard(async (
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
-): Promise<NextResponse> {
+): Promise<NextResponse> => {
   const { id } = await ctx.params;
   if (!idSchema.safeParse(id).success) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 });
@@ -62,21 +67,24 @@ export async function PATCH(
     );
   }
   const v = parsed.data;
+  const access = await requireOwned(drafts, id);
+  const mine = and(eq(drafts.id, id), eq(drafts.brandId, access.brandId));
   const patch: Record<string, unknown> = {};
   if (v.caption !== undefined) patch.caption = v.caption;
   if (v.body !== undefined) patch.body = v.body;
   if (v.imagePrompts !== undefined) patch.imagePrompts = v.imagePrompts;
   if (v.markEdited) patch.status = "edited";
-  await db.update(drafts).set(patch).where(eq(drafts.id, id));
+  await db.update(drafts).set(patch).where(mine);
   if (v.markEdited) {
     await db.insert(events).values({
       entityType: "draft",
       entityId: id,
+      brandId: access.brandId,
       toStatus: "edited",
       actor: "user",
       note: "draft edited",
     });
   }
-  const [row] = await db.select().from(drafts).where(eq(drafts.id, id));
+  const [row] = await db.select().from(drafts).where(mine);
   return NextResponse.json({ draft: row });
-}
+});

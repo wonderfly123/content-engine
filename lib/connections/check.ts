@@ -72,7 +72,12 @@ export async function checkConnections(fetchImpl: typeof fetch = fetch): Promise
       lastCheckError = `could not reach Meta: ${(err as Error).message}`;
     }
     const metaJson = { ...row.metaJson, accountName, lastCheckedAt: new Date().toISOString(), lastCheckError };
-    await db.update(schema.channelConnections).set({ status, metaJson }).where(eq(schema.channelConnections.id, row.id));
+    // One connection's failed write must not stop the connections after it (other brands').
+    try {
+      await db.update(schema.channelConnections).set({ status, metaJson }).where(eq(schema.channelConnections.id, row.id));
+    } catch (err) {
+      console.error(`[connections] brand=${row.brandId} ${row.channel}: could not save the check result: ${(err as Error).message}`);
+    }
     out.push(toStatus({ ...row, status, metaJson }, brand));
   }
   return out;

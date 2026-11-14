@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { tryOwned } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { briefs } from "@/lib/db/schema";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,13 @@ interface PageProps {
 export default async function BriefDetailPage({ params }: PageProps) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-  const [brief] = await db.select().from(briefs).where(eq(briefs.id, id));
+  // Someone else's brief answers 404, the same as one that does not exist.
+  const access = await tryOwned(briefs, id);
+  if (!access) notFound();
+  const [brief] = await db
+    .select()
+    .from(briefs)
+    .where(and(eq(briefs.id, id), eq(briefs.brandId, access.brandId)));
   if (!brief) notFound();
 
   return (

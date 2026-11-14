@@ -9,11 +9,12 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { drafts, posts } from "@/lib/db/schema";
 import { recordEvent } from "@/lib/pipelines/events";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -25,8 +26,9 @@ const patchSchema = z.object({
   scheduledFor: z.string().datetime(),
 });
 
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export const GET = guard(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const access = await requireOwned(posts, id);
   const rows = await db
     .select({
       id: posts.id,
@@ -47,7 +49,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     .from(posts)
     .innerJoin(drafts, eq(drafts.id, posts.draftId))
-    .where(eq(posts.id, id))
+    .where(and(eq(posts.id, id), eq(posts.brandId, access.brandId)))
     .limit(1);
   const row = rows[0];
   if (!row) {
@@ -57,9 +59,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     );
   }
   return NextResponse.json({ data: { post: row }, error: null });
-}
+});
 
-export async function PATCH(req: NextRequest, ctx: RouteContext) {
+export const PATCH = guard(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
@@ -78,10 +80,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     );
   }
 
+  const access = await requireOwned(posts, id);
+  const mine = and(eq(posts.id, id), eq(posts.brandId, access.brandId));
   const existing = await db
     .select({ id: posts.id, status: posts.status })
     .from(posts)
-    .where(eq(posts.id, id))
+    .where(mine)
     .limit(1);
   const row = existing[0];
   if (!row) {
@@ -100,25 +104,28 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const [updated] = await db
     .update(posts)
     .set({ scheduledFor: target, updatedAt: new Date() })
-    .where(eq(posts.id, id))
+    .where(mine)
     .returning();
 
   await recordEvent({
     entityType: "post",
     entityId: id,
+    brandId: access.brandId,
     actor: "user",
     note: `Rescheduled to ${target.toISOString()}`,
   });
 
   return NextResponse.json({ data: { post: updated }, error: null });
-}
+});
 
-export async function DELETE(_req: NextRequest, ctx: RouteContext) {
+export const DELETE = guard(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const access = await requireOwned(posts, id);
+  const mine = and(eq(posts.id, id), eq(posts.brandId, access.brandId));
   const existing = await db
     .select({ id: posts.id, status: posts.status })
     .from(posts)
-    .where(eq(posts.id, id))
+    .where(mine)
     .limit(1);
   const row = existing[0];
   if (!row) {
@@ -133,13 +140,14 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
       { status: 409 },
     );
   }
-  await db.delete(posts).where(eq(posts.id, id));
+  await db.delete(posts).where(mine);
   await recordEvent({
     entityType: "post",
     entityId: id,
+    brandId: access.brandId,
     fromStatus: "queued",
     toStatus: "cancelled",
     actor: "user",
   });
   return NextResponse.json({ data: { ok: true }, error: null });
-}
+});

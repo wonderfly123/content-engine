@@ -19,6 +19,8 @@ export interface SyncResult {
   found: number;
   imported: number;
   failed: number;
+  /** Set when the whole brand could not be synced (expired token, Graph API down, database error). */
+  error?: string;
 }
 
 function formatOf(m: InstagramMediaItem): "reel" | "carousel" | "image" | "story" | "post" {
@@ -149,6 +151,15 @@ export async function syncAllInstagramMedia(db: Db = defaultDb): Promise<SyncRes
     .from(schema.channelConnections)
     .where(and(eq(schema.channelConnections.channel, "instagram"), eq(schema.channelConnections.status, "connected")));
   const out: SyncResult[] = [];
-  for (const c of conns) out.push(await syncInstagramMedia(c.brandId, db));
+  for (const c of conns) {
+    // One brand's expired token or failed write must not stop the brands after it.
+    try {
+      out.push(await syncInstagramMedia(c.brandId, db));
+    } catch (err) {
+      const error = (err as Error).message;
+      console.error(`[sync-instagram] brand=${c.brandId} failed: ${error}`);
+      out.push({ brandId: c.brandId, found: 0, imported: 0, failed: 0, error });
+    }
+  }
   return out;
 }

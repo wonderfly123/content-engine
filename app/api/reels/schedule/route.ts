@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { AccessError, guard, requireBrandBySlug, requireLocalReels } from "@/lib/auth/workspace";
 import { REEL_MODES, scheduleCut } from "@/lib/reels/schedule";
 import { readManifest, resolveInCuts, updateCut } from "@/lib/reels/store";
 
@@ -19,7 +20,8 @@ const bodySchema = z.object({
 });
 
 /** Final approval: hosts the finished file and queues it on the calendar. */
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
+  await requireLocalReels();
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid request" }, { status: 400 });
   const { job, id, caption, when, mode, coverAt } = parsed.data;
@@ -28,6 +30,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const manifest = await readManifest(job);
     const cut = manifest?.cuts.find((c) => c.id === id);
     if (!manifest || !cut) throw new Error("cut not found");
+    const { workspaceId } = await requireBrandBySlug(manifest.brand);
     if (cut.stage !== "final_review" || !cut.final) throw new Error("this cut is not ready for final approval");
     if (hook !== (cut.hookBurned ?? "")) {
       // The approved text is not on the video yet. Keep the approval; the editor changes the text and schedules with these details.
@@ -45,6 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     const done = await scheduleCut({
       brandSlug: manifest.brand,
+      workspaceId,
       video: resolveInCuts(job, cut.final),
       caption,
       when: new Date(when),
@@ -62,6 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     return NextResponse.json({ cut: updated });
   } catch (err) {
+    if (err instanceof AccessError) throw err;
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
-}
+});

@@ -207,6 +207,7 @@ export async function runBriefBatchForBrand(
       {
         entityType: "brief",
         entityId: id,
+        brandId,
         toStatus: "pending_review",
         note: `slot=${slot.channel}/${slot.format} date=${slot.date}`,
       },

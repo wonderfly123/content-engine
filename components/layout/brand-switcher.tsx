@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  DEFAULT_BRANDS,
   DEFAULT_BRAND_SLUG,
   useBrandStore,
   type Brand,
@@ -43,7 +42,7 @@ export function BrandSwitcher({ collapsed = false }: BrandSwitcherProps) {
   const router = useRouter();
   const { active, brands, setActive, setBrands } = useBrandStore();
 
-  // Live brand list from the API; falls back to the persisted store on error.
+  // Live brand list from the API; on error the store keeps what it had (nothing, for a new user).
   const { data, error } = useQuery({
     queryKey: ["brands"],
     queryFn: fetchBrands,
@@ -56,14 +55,13 @@ export function BrandSwitcher({ collapsed = false }: BrandSwitcherProps) {
     const activeOnly = data
       .filter((b) => b.status === "active")
       .map((b) => ({ id: b.id, name: b.name, slug: b.slug }));
-    const next = activeOnly.length > 0 ? activeOnly : DEFAULT_BRANDS;
+    const next = activeOnly;
     setBrands(next);
     if (!active || !next.some((b) => b.id === active.id)) {
       setActive(next.find((b) => b.slug === DEFAULT_BRAND_SLUG) ?? next[0] ?? null);
     }
   }, [data, active, setActive, setBrands]);
 
-  // On error, keep hardcoded fallback (already in store).
   void error;
 
   const handleSelect = (brand: Brand) => {

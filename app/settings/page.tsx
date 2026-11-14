@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { listBrandIds, tryBrand } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,29 +56,33 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const sp = (await searchParams) ?? {};
   const statuses = envStatuses();
 
-  // Resolve a brand to operate on. Prefer ?brandId=; fall back to first active.
+  // Resolve a brand to operate on. Prefer ?brandId= (only if it is the caller's);
+  // fall back to the caller's most recently updated active brand. The brand tabs
+  // below only ever receive this checked brand.
   let activeBrand:
     | (typeof brands.$inferSelect & { _exists: true })
     | null = null;
   try {
-    if (sp.brandId && /^[0-9a-f-]{36}$/i.test(sp.brandId)) {
+    const requested = sp.brandId ? await tryBrand(sp.brandId) : null;
+    if (requested) {
       const [row] = await db
         .select()
         .from(brands)
-        .where(eq(brands.id, sp.brandId));
+        .where(eq(brands.id, requested.brandId));
       if (row) activeBrand = { ...row, _exists: true };
     }
-    if (!activeBrand) {
+    const brandIds = activeBrand ? [] : await listBrandIds();
+    if (!activeBrand && brandIds.length > 0) {
       const [row] = await db
         .select()
         .from(brands)
-        .where(eq(brands.status, "active"))
+        .where(and(eq(brands.status, "active"), inArray(brands.id, brandIds)))
         .orderBy(desc(brands.updatedAt))
         .limit(1);
       if (row) activeBrand = { ...row, _exists: true };
     }
   } catch {
-    // DB not reachable (e.g. build-time without env). Render env tab only.
+    // DB not reachable (e.g. build-time without env) or not signed in. Render env tab only.
   }
 
   const defaultTab = sp.tab ?? "app";

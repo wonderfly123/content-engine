@@ -8,6 +8,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -29,7 +30,7 @@ export const runtime = "nodejs";
 
 const querySchema = z.object({ brandId: z.string().uuid() });
 
-export async function GET(req: NextRequest) {
+export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({ brandId: sp.get("brandId") });
   if (!parsed.success) {
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     );
   }
   const { brandId } = parsed.data;
+  await requireBrand(brandId);
   const filters = parseFilters(sp);
   const { start, end } = resolveRange(filters);
 
@@ -125,5 +127,5 @@ export async function GET(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});
 

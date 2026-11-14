@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { AccessError, listBrandIds } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StartForm } from "./start-form";
@@ -10,7 +11,12 @@ import { StartForm } from "./start-form";
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingEntryPage() {
-  const drafts = await db
+  // Only the caller's own unfinished brands. Not signed in / no workspace: none.
+  const brandIds = await listBrandIds().catch((err: unknown) => {
+    if (err instanceof AccessError) return [] as string[];
+    throw err;
+  });
+  const drafts = brandIds.length === 0 ? [] : await db
     .select({
       id: brands.id,
       name: brands.name,
@@ -20,7 +26,7 @@ export default async function OnboardingEntryPage() {
       updatedAt: brands.updatedAt,
     })
     .from(brands)
-    .where(eq(brands.status, "draft"))
+    .where(and(eq(brands.status, "draft"), inArray(brands.id, brandIds)))
     .orderBy(desc(brands.updatedAt));
 
   return (

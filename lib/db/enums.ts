@@ -10,6 +10,14 @@ export const brandStatusValues = ["draft", "active", "archived"] as const;
 export const brandStatusEnum = pgEnum("brand_status", brandStatusValues);
 export type BrandStatus = (typeof brandStatusValues)[number];
 
+export const workspaceRoleValues = ["owner", "staff"] as const;
+export const workspaceRoleEnum = pgEnum("workspace_role", workspaceRoleValues);
+export type WorkspaceRole = (typeof workspaceRoleValues)[number];
+
+export const workspaceStatusValues = ["active", "disabled"] as const;
+export const workspaceStatusEnum = pgEnum("workspace_status", workspaceStatusValues);
+export type WorkspaceStatus = (typeof workspaceStatusValues)[number];
+
 export const channelValues = [
   "instagram",
   "facebook",

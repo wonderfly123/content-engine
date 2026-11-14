@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { uploadUrlRequestSchema } from "@/lib/assets/types";
+import { guard, requireBrand, requireUser } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -19,8 +20,19 @@ export const runtime = "nodejs";
  * `clientPayload` carries the JSON-encoded {brandId, kind, filename, contentType}
  * we validate before issuing a token.
  */
-export async function POST(req: NextRequest): Promise<NextResponse> {
-  const body = (await req.json()) as HandleUploadBody;
+export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
+  const body = (await req.json().catch(() => null)) as HandleUploadBody | null;
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+  }
+
+  // Leg 2 (`blob.upload-completed`) is called by Vercel Blob, not the browser: it carries no
+  // session and is authenticated by the signature `handleUpload` verifies. Everything else is a
+  // signed-in caller asking for an upload token, and the brand it names must be theirs.
+  if (body.type !== "blob.upload-completed") {
+    await requireUser();
+    await requireBrand(brandIdOf((body as { payload?: { clientPayload?: unknown } }).payload?.clientPayload));
+  }
 
   try {
     const json = await handleUpload({
@@ -33,7 +45,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         if (!parsed.success) {
           throw new Error(`invalid clientPayload: ${parsed.error.message}`);
         }
-        const { brandId, kind, contentType } = parsed.data;
+        const { kind, contentType } = parsed.data;
+        const { brandId } = await requireBrand(parsed.data.brandId);
         return {
           // Restrict accepted content types to the kind requested
           allowedContentTypes: allowedContentTypesFor(kind, contentType),
@@ -54,6 +67,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { error: (e as Error).message },
       { status: 400 },
     );
+  }
+});
+
+/** The brand id inside the client payload (a JSON string), or undefined when it has none. */
+function brandIdOf(clientPayload: unknown): unknown {
+  if (typeof clientPayload !== "string") return undefined;
+  try {
+    return (JSON.parse(clientPayload) as { brandId?: unknown } | null)?.brandId;
+  } catch {
+    return undefined;
   }
 }
 

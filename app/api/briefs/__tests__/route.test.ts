@@ -78,6 +78,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/db/schema", () => ({
   briefs: { _name: "briefs", id: "id", brandId: "brand_id", status: "status", channel: "channel", createdAt: "created_at" },
   events: { _name: "events" },
+  icps: { _name: "icps", id: "id", brandId: "brand_id" },
   drafts: { _name: "drafts", id: "id", briefId: "brief_id", status: "status" },
   brands: { _name: "brands", id: "id" },
   jobs: { _name: "jobs", id: "id" },
@@ -95,6 +96,14 @@ vi.mock("drizzle-orm", () => ({
   sql: Object.assign((..._: unknown[]) => ({ _sql: true }), {
     raw: (s: string) => ({ _raw: s }),
   }),
+}));
+
+// The ownership check is proven in app/api/__tests__/separation.test.ts; here every id is the caller's.
+vi.mock("@/lib/auth/workspace", () => ({
+  guard: <A extends unknown[]>(handler: (...args: A) => unknown) => handler,
+  requireBrand: async (brandId: string) => ({ brandId }),
+  requireOwned: async () => ({ brandId: "11111111-1111-1111-1111-111111111111" }),
+  listBrandIds: async () => ["11111111-1111-1111-1111-111111111111"],
 }));
 
 // Track pipeline call

@@ -274,6 +274,7 @@ export async function runResearchForBrand(
     {
       entityType: "research_bundle",
       entityId: bundleId,
+      brandId,
       toStatus: status,
       note: `competitors=${competitorsPulled}/${competitorRows.length} keywords=${keywordsPulled}/${keywordRows.length} sites=${sitesScraped}`,
     },

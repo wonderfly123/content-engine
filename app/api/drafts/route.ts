@@ -3,11 +3,12 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { drafts } from "@/lib/db/schema";
 import { channelValues, draftStatusValues } from "@/lib/db/enums";
+import { guard, listBrandIds, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ const querySchema = z.object({
   channel: z.enum(channelValues).optional(),
 });
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = querySchema.safeParse(q);
   if (!parsed.success) {
@@ -27,13 +28,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
   const conds = [];
-  if (parsed.data.brandId) conds.push(eq(drafts.brandId, parsed.data.brandId));
+  if (parsed.data.brandId) {
+    const access = await requireBrand(parsed.data.brandId);
+    conds.push(eq(drafts.brandId, access.brandId));
+  } else {
+    const brandIds = await listBrandIds();
+    if (brandIds.length === 0) return NextResponse.json({ drafts: [] });
+    conds.push(inArray(drafts.brandId, brandIds));
+  }
   if (parsed.data.status) conds.push(eq(drafts.status, parsed.data.status));
   if (parsed.data.channel) conds.push(eq(drafts.channel, parsed.data.channel));
   const rows = await db
     .select()
     .from(drafts)
-    .where(conds.length > 0 ? and(...conds) : undefined)
+    .where(and(...conds))
     .orderBy(desc(drafts.createdAt));
   return NextResponse.json({ drafts: rows });
-}
+});

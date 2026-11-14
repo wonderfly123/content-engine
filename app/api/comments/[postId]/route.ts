@@ -7,9 +7,10 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { posts } from "@/lib/db/schema";
+import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -24,14 +25,15 @@ export interface CommentRow {
   at: string;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export const GET = guard(async (_req: NextRequest, ctx: RouteContext) => {
   const { postId } = await ctx.params;
+  const access = await requireOwned(posts, postId);
 
   // Confirm the post exists + is published before pretending to fetch.
   const [row] = await db
     .select({ id: posts.id, status: posts.status })
     .from(posts)
-    .where(eq(posts.id, postId))
+    .where(and(eq(posts.id, postId), eq(posts.brandId, access.brandId)))
     .limit(1);
   if (!row) {
     return NextResponse.json(
@@ -43,4 +45,4 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   // TODO: when Publisher.fetchComments lands, call it here.
   const comments: CommentRow[] = [];
   return NextResponse.json({ data: { comments }, error: null });
-}
+});

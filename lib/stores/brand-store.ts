@@ -16,19 +16,15 @@ interface BrandState {
   setBrands: (brands: Brand[]) => void;
 }
 
-// Hard-coded for now; Task 5 wires real data.
-export const DEFAULT_BRANDS: Brand[] = [
-  { id: "wonderfly", name: "Wonderfly", slug: "wonderfly" },
-];
-
 /** Brand opened by default when nothing is selected yet. */
 export const DEFAULT_BRAND_SLUG = "personal";
 
 export const useBrandStore = create<BrandState>()(
   persist(
     (set) => ({
-      active: DEFAULT_BRANDS[0] ?? null,
-      brands: DEFAULT_BRANDS,
+      // No brand until the caller's real list loads (see BrandSwitcher).
+      active: null,
+      brands: [],
       setActive: (active) => set({ active }),
       setBrands: (brands) => set({ brands }),
     }),

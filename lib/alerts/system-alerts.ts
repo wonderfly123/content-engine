@@ -36,6 +36,11 @@ export interface SystemAlert {
 export interface ListAlertsOptions {
   /** When set, restrict to one brand. When null/undefined, return all brands. */
   brandId?: string | null;
+  /**
+   * Restrict to these brands (the caller's). An empty list returns nothing. Callers acting for a
+   * signed-in user must pass this or `brandId`; rows with no brand are then left out.
+   */
+  brandIds?: string[];
   /** Limit per source (defaults to 50). */
   limit?: number;
   db?: DbOrTx;
@@ -47,6 +52,8 @@ export async function listSystemAlerts(
   const db = options.db ?? defaultDb;
   const limit = options.limit ?? 50;
   const scopedBrand = options.brandId;
+  const brandIds = options.brandIds;
+  if (brandIds && brandIds.length === 0) return [];
 
   const out: SystemAlert[] = [];
 
@@ -57,6 +64,7 @@ export async function listSystemAlerts(
       gte(schema.jobs.attempts, 3),
     ];
     if (scopedBrand) conds.push(eq(schema.jobs.brandId, scopedBrand));
+    if (brandIds) conds.push(inArray(schema.jobs.brandId, brandIds));
     const rows = await db
       .select({
         id: schema.jobs.id,
@@ -94,6 +102,7 @@ export async function listSystemAlerts(
       ]),
     ];
     if (scopedBrand) conds.push(eq(schema.channelConnections.brandId, scopedBrand));
+    if (brandIds) conds.push(inArray(schema.channelConnections.brandId, brandIds));
     const rows = await db
       .select({
         id: schema.channelConnections.id,
@@ -130,6 +139,7 @@ export async function listSystemAlerts(
       gte(schema.posts.publishAttempts, 3),
     ];
     if (scopedBrand) conds.push(eq(schema.posts.brandId, scopedBrand));
+    if (brandIds) conds.push(inArray(schema.posts.brandId, brandIds));
     const rows = await db
       .select({
         id: schema.posts.id,

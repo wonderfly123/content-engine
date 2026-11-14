@@ -104,6 +104,25 @@ vi.mock("drizzle-orm", () => ({
   }),
 }));
 
+// The access layer is covered by the separation test; here every brand/draft is the caller's.
+vi.mock("@/lib/auth/workspace", () => {
+  class AccessError extends Error {
+    constructor(
+      public readonly status: number,
+      message: string,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    AccessError,
+    guard: <A extends unknown[]>(handler: (...args: A) => unknown) => handler,
+    requireBrand: async (brandId: string) => ({ brandId }),
+    // Drafts in these tests belong to the one brand under test.
+    requireOwned: async () => ({ brandId: "11111111-1111-1111-1111-111111111111" }),
+  };
+});
+
 // Mock probe and thumbnail to avoid filesystem + network.
 const probeUrlMock = vi.fn();
 vi.mock("@/lib/assets/probe", () => ({

@@ -1,6 +1,7 @@
 import { createReadStream, promises as fs } from "node:fs";
 import type { NextRequest } from "next/server";
-import { resolveInCuts } from "@/lib/reels/store";
+import { guard, requireLocalReels } from "@/lib/auth/workspace";
+import { resolveInCuts, resolveInJob } from "@/lib/reels/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,16 +9,21 @@ export const dynamic = "force-dynamic";
 const TYPES: Record<string, string> = { ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "audio/webm", ".m4a": "audio/mp4", ".wav": "audio/wav", ".jpg": "image/jpeg" };
 
 /** Streams a local review file (with Range support so the player can seek). */
-export async function GET(req: NextRequest): Promise<Response> {
+export const GET = guard(async (req: NextRequest): Promise<Response> => {
+  await requireLocalReels();
   const job = req.nextUrl.searchParams.get("job") ?? "";
   const file = req.nextUrl.searchParams.get("file") ?? "";
+  // footage=1 serves a clip's source file from the job folder (video only), for the clip editor.
+  const footage = req.nextUrl.searchParams.get("footage") === "1";
   let full: string;
   try {
-    full = resolveInCuts(job, file);
+    full = footage ? resolveInJob(job, file) : resolveInCuts(job, file);
   } catch {
     return new Response("bad path", { status: 400 });
   }
-  const type = TYPES[full.slice(full.lastIndexOf(".")).toLowerCase()];
+  const ext = full.slice(full.lastIndexOf(".")).toLowerCase();
+  // Phone footage is .MOV; browsers are happier playing it when it is labelled as mp4.
+  const type = footage ? (ext === ".mov" || ext === ".mp4" || ext === ".m4v" ? "video/mp4" : undefined) : TYPES[ext];
   const stat = await fs.stat(full).catch(() => null);
   if (!type || !stat?.isFile()) return new Response("not found", { status: 404 });
 
@@ -71,4 +77,4 @@ export async function GET(req: NextRequest): Promise<Response> {
       ...(range ? { "Content-Range": `bytes ${start}-${end}/${stat.size}` } : {}),
     },
   });
-}
+});

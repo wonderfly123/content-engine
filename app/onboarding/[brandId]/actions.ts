@@ -5,7 +5,9 @@
  *
  * Every action:
  *  - Validates input with Zod (rejects with typed error)
- *  - Filters DB writes by brandId from the URL parameter
+ *  - Checks the caller owns the brand (`tryBrand`) before any read or write;
+ *    someone else's brand answers "Brand not found", like a missing one
+ *  - Filters DB writes by the checked brand id
  *  - Writes an `events` row to record the transition
  *  - Returns a discriminated-union result so client components can branch
  *    on error vs ok without throwing across the server/client boundary.
@@ -13,8 +15,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
+import { tryBrand, tryWorkspace } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import {
   brands,
@@ -64,6 +67,12 @@ export async function createBrand(
     return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
   }
 
+  // New brands belong to the caller's workspace.
+  const workspace = await tryWorkspace();
+  if (!workspace) {
+    return { ok: false, error: "You are not a member of a workspace" };
+  }
+
   const provisionalName = parsed.data.websiteUrl
     ? new URL(parsed.data.websiteUrl).hostname.replace(/^www\./, "")
     : "Untitled brand";
@@ -72,6 +81,7 @@ export async function createBrand(
   const [row] = await db
     .insert(brands)
     .values({
+      workspaceId: workspace.workspaceId,
       name: provisionalName,
       slug,
       status: "draft",
@@ -88,6 +98,7 @@ export async function createBrand(
   await db.insert(events).values({
     entityType: "brand",
     entityId: row.id,
+    brandId: row.id,
     toStatus: "draft",
     actor: "user",
     note: "Onboarding step 1: created draft brand",
@@ -106,11 +117,13 @@ export async function startAnalysis(
   if (!idParse.success) {
     return { ok: false, error: "Invalid brand id" };
   }
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
 
   const [brand] = await db
     .select()
     .from(brands)
-    .where(eq(brands.id, idParse.data));
+    .where(eq(brands.id, access.brandId));
   if (!brand) return { ok: false, error: "Brand not found" };
 
   try {
@@ -137,6 +150,7 @@ export async function startAnalysis(
     await db.insert(events).values({
       entityType: "brand",
       entityId: idParse.data,
+      brandId: idParse.data,
       actor: "system",
       note: "Onboarding step 2: analysis complete",
     });
@@ -160,13 +174,24 @@ export async function saveProfile(
     return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
   }
 
-  // Slug must remain unique. Surface a friendly error instead of leaking the
-  // raw constraint violation.
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
+
+  // Slug must remain unique inside the workspace. Surface a friendly error
+  // instead of leaking the raw constraint violation. Other workspaces' slugs
+  // are not looked at, so this never reveals what someone else has taken.
   const [clash] = await db
     .select({ id: brands.id })
     .from(brands)
-    .where(eq(brands.slug, parsed.data.slug));
-  if (clash && clash.id !== idParse.data) {
+    .where(
+      and(
+        eq(brands.slug, parsed.data.slug),
+        eq(brands.workspaceId, access.workspaceId),
+        ne(brands.id, access.brandId),
+      ),
+    )
+    .limit(1);
+  if (clash) {
     return {
       ok: false,
       error: `Slug "${parsed.data.slug}" is already taken`,
@@ -231,6 +256,7 @@ export async function saveProfile(
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
+    brandId: idParse.data,
     actor: "user",
     note: "Onboarding step 3: profile saved",
   });
@@ -250,6 +276,9 @@ export async function saveICPs(
   if (!parsed.success) {
     return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
   }
+
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
 
   // Enforce single default; if none flagged, mark the first.
   const rows = parsed.data.icps.map((icp, i, arr) => ({
@@ -312,6 +341,7 @@ export async function saveICPs(
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
+    brandId: idParse.data,
     actor: "user",
     note: `Onboarding step 4: saved ${rows.length} ICPs`,
   });
@@ -331,6 +361,9 @@ export async function saveCompetitorsInspiration(
   if (!parsed.success) {
     return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
   }
+
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
 
   // Replace-all strategy keeps the action simple for the wizard. Settings
   // tab does the same. Audit trail captures aggregate counts.
@@ -368,6 +401,7 @@ export async function saveCompetitorsInspiration(
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
+    brandId: idParse.data,
     actor: "user",
     note: `Onboarding step 5: ${parsed.data.competitors.length} competitors, ${parsed.data.inspiration.length} inspiration accounts`,
   });
@@ -387,6 +421,9 @@ export async function saveCadence(
   if (!parsed.success) {
     return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
   }
+
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
 
   const rows =
     parsed.data.preset === "custom"
@@ -413,6 +450,7 @@ export async function saveCadence(
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
+    brandId: idParse.data,
     actor: "user",
     note: `Onboarding step 6: cadence preset=${parsed.data.preset}`,
   });
@@ -428,6 +466,8 @@ export async function markActive(
 ): Promise<ActionResult<{ slug: string }>> {
   const idParse = brandIdSchema.safeParse(brandId);
   if (!idParse.success) return { ok: false, error: "Invalid brand id" };
+  const access = await tryBrand(idParse.data);
+  if (!access) return { ok: false, error: "Brand not found" };
 
   const [brand] = await db
     .select({ slug: brands.slug, status: brands.status })
@@ -456,6 +496,7 @@ export async function markActive(
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
+    brandId: idParse.data,
     fromStatus: brand.status,
     toStatus: "active",
     actor: "user",
@@ -472,6 +513,7 @@ export async function markActive(
     await db.insert(events).values({
       entityType: "brand",
       entityId: idParse.data,
+      brandId: idParse.data,
       actor: "user",
       note: "Onboarding step 8: research_pull job enqueued",
     });

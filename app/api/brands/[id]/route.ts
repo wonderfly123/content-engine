@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { brands, events } from "@/lib/db/schema";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
@@ -30,18 +31,19 @@ const patchSchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
 });
 
-export async function GET(
+export const GET = guard(async (
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const idParse = idSchema.safeParse(id);
   if (!idParse.success) {
     return NextResponse.json({ error: "Invalid brand id" }, { status: 400 });
   }
+  const access = await requireBrand(idParse.data);
 
   try {
-    const [row] = await db.select().from(brands).where(eq(brands.id, idParse.data));
+    const [row] = await db.select().from(brands).where(eq(brands.id, access.brandId));
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -52,12 +54,12 @@ export async function GET(
       { status: 500 },
     );
   }
-}
+});
 
-export async function PATCH(
+export const PATCH = guard(async (
   req: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+) => {
   const { id } = await params;
   const idParse = idSchema.safeParse(id);
   if (!idParse.success) {
@@ -81,12 +83,13 @@ export async function PATCH(
   if (Object.keys(parsed.data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
+  const access = await requireBrand(idParse.data);
 
   try {
     const [prev] = await db
       .select({ status: brands.status })
       .from(brands)
-      .where(eq(brands.id, idParse.data));
+      .where(eq(brands.id, access.brandId));
     if (!prev) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -94,13 +97,14 @@ export async function PATCH(
     const [updated] = await db
       .update(brands)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(brands.id, idParse.data))
+      .where(eq(brands.id, access.brandId))
       .returning();
 
     if (parsed.data.status && parsed.data.status !== prev.status) {
       await db.insert(events).values({
         entityType: "brand",
-        entityId: idParse.data,
+        entityId: access.brandId,
+        brandId: access.brandId,
         fromStatus: prev.status,
         toStatus: parsed.data.status,
         actor: "user",
@@ -115,4 +119,4 @@ export async function PATCH(
       { status: 500 },
     );
   }
-}
+});

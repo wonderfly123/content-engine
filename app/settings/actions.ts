@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { tryBrand, tryOwned } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands, keywords, events, jobs } from "@/lib/db/schema";
 import { channelValues } from "@/lib/db/enums";
@@ -21,6 +22,15 @@ export type ActionResult<T = undefined> =
   | { ok: false; error: string };
 
 const idSchema = z.string().uuid();
+
+/**
+ * The caller's access to a keyword, only when it belongs to the brand named in the same call.
+ * Null for a keyword that is missing, someone else's, or filed under a different brand.
+ */
+async function ownedKeyword(input: { brandId: string; keywordId: string }) {
+  const access = await tryOwned(keywords, input.keywordId);
+  return access && access.brandId === input.brandId ? access : null;
+}
 
 const enabledChannelsSchema = z.array(z.enum(channelValues)).max(
   channelValues.length,
@@ -43,10 +53,13 @@ export async function setEnabledChannels(input: {
   }
   const channels = Array.from(new Set(parsed.data));
 
+  const access = await tryBrand(input.brandId);
+  if (!access) return { ok: false, error: "Brand not found" };
+
   const [brand] = await db
     .select({ settingsJson: brands.settingsJson })
     .from(brands)
-    .where(eq(brands.id, input.brandId))
+    .where(eq(brands.id, access.brandId))
     .limit(1);
   if (!brand) return { ok: false, error: "Brand not found" };
 
@@ -57,10 +70,11 @@ export async function setEnabledChannels(input: {
   await db
     .update(brands)
     .set({ settingsJson: settings, updatedAt: new Date() })
-    .where(eq(brands.id, input.brandId));
+    .where(eq(brands.id, access.brandId));
   await db.insert(events).values({
     entityType: "brand",
-    entityId: input.brandId,
+    entityId: access.brandId,
+    brandId: access.brandId,
     actor: "user",
     note: `analytics channels updated: ${channels.join(", ") || "none"}`,
   });
@@ -78,14 +92,17 @@ export async function addKeyword(input: {
   const term = input.term.trim();
   if (!term) return { ok: false, error: "Term is required" };
   if (term.length > 80) return { ok: false, error: "Term is too long" };
+  const access = await tryBrand(input.brandId);
+  if (!access) return { ok: false, error: "Brand not found" };
   const [row] = await db
     .insert(keywords)
-    .values({ brandId: input.brandId, term, status: "active" })
+    .values({ brandId: access.brandId, term, status: "active" })
     .returning({ id: keywords.id });
   if (!row) return { ok: false, error: "Insert failed" };
   await db.insert(events).values({
     entityType: "brand",
-    entityId: input.brandId,
+    entityId: access.brandId,
+    brandId: access.brandId,
     actor: "user",
     note: `keyword added: ${term}`,
   });
@@ -101,13 +118,18 @@ export async function setKeywordStatus(input: {
   if (!idSchema.safeParse(input.keywordId).success) {
     return { ok: false, error: "Invalid keyword id" };
   }
+  if (input.status !== "active" && input.status !== "paused") {
+    return { ok: false, error: "Invalid status" };
+  }
+  const access = await ownedKeyword(input);
+  if (!access) return { ok: false, error: "Keyword not found" };
   await db
     .update(keywords)
     .set({ status: input.status })
     .where(
       and(
         eq(keywords.id, input.keywordId),
-        eq(keywords.brandId, input.brandId),
+        eq(keywords.brandId, access.brandId),
       ),
     );
   revalidatePath("/settings");
@@ -121,12 +143,14 @@ export async function deleteKeyword(input: {
   if (!idSchema.safeParse(input.keywordId).success) {
     return { ok: false, error: "Invalid keyword id" };
   }
+  const access = await ownedKeyword(input);
+  if (!access) return { ok: false, error: "Keyword not found" };
   await db
     .delete(keywords)
     .where(
       and(
         eq(keywords.id, input.keywordId),
-        eq(keywords.brandId, input.brandId),
+        eq(keywords.brandId, access.brandId),
       ),
     );
   revalidatePath("/settings");
@@ -140,11 +164,13 @@ export async function pullKeywordNow(input: {
   if (!idSchema.safeParse(input.keywordId).success) {
     return { ok: false, error: "Invalid keyword id" };
   }
+  const access = await ownedKeyword(input);
+  if (!access) return { ok: false, error: "Keyword not found" };
   const [row] = await db
     .insert(jobs)
     .values({
       kind: "research_pull",
-      brandId: input.brandId,
+      brandId: access.brandId,
       payloadJson: { source: "manual_keyword", keywordId: input.keywordId },
       status: "queued",
     })

@@ -15,6 +15,8 @@ export type ReelMode = (typeof REEL_MODES)[number];
 
 export interface ScheduleCutInput {
   brandSlug: string;
+  /** The workspace the brand must belong to (slugs are only unique inside a workspace). Left out by the command-line script. */
+  workspaceId?: string;
   /** Absolute path to the finished video on this machine. */
   video: string;
   caption: string;
@@ -61,7 +63,13 @@ export async function scheduleCut(input: ScheduleCutInput): Promise<ScheduledCut
   const { and, eq } = await import("drizzle-orm");
   const { put } = await import("@vercel/blob");
 
-  const [brand] = await db.select().from(schema.brands).where(eq(schema.brands.slug, brandSlug)).limit(1);
+  const matches = await db
+    .select()
+    .from(schema.brands)
+    .where(input.workspaceId ? and(eq(schema.brands.slug, brandSlug), eq(schema.brands.workspaceId, input.workspaceId)) : eq(schema.brands.slug, brandSlug))
+    .limit(2);
+  if (matches.length > 1) throw new Error(`more than one brand has the slug "${brandSlug}"; say which workspace it belongs to`);
+  const [brand] = matches;
   if (!brand) throw new Error(`no brand with slug "${brandSlug}"`);
   const [conn] = await db
     .select({ status: schema.channelConnections.status })

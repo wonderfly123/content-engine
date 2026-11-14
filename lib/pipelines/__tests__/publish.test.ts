@@ -258,3 +258,67 @@ describe("requeueFailedPosts — exponential backoff 1m / 5m / 30m", () => {
     expect(db.store.get("posts")?.[0]?.status).toBe("failed");
   });
 });
+
+describe("one post's failure does not stop the posts after it (other brands')", () => {
+  /** Makes the first `n` writes to the database fail, as if one brand's rows could not be saved. */
+  function failFirstUpdates(db: FakeDB, n: number): void {
+    const real = db.update;
+    let calls = 0;
+    db.update = (table) => {
+      if (calls++ < n) throw new Error("db write failed");
+      return real(table);
+    };
+  }
+
+  function twoBrands(status: "queued" | "failed"): FakeDB {
+    const db = buildDb({ postStatus: status, publishAttempts: status === "failed" ? 1 : 0, lastErrorAt: status === "failed" ? new Date(Date.now() - 65_000) : null });
+    const first = db.store.get("posts")![0]!;
+    db.store.get("posts")!.push({ ...first, id: "p2", brandId: "b2" });
+    return db;
+  }
+
+  it("publishDuePosts: a post that cannot even be marked failed is skipped, the next one publishes", async () => {
+    const db = twoBrands("queued");
+    failFirstUpdates(db, 2); // p1's status write, then p1's "mark failed" write
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const publisher = mkPublisher({ publish: vi.fn().mockResolvedValue({ externalId: "ig_media_2", url: "https://instagram.com/p/two" }) });
+
+    const result = await publishDuePosts({
+      db: db as unknown as NonNullable<Parameters<typeof publishDuePosts>[0]>["db"],
+      getPublisherFor: () => publisher,
+    });
+
+    expect(result).toEqual({ processed: 2, published: 1, pending: 0, failed: 1 });
+    expect(publisher.publish).toHaveBeenCalledTimes(1);
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("post=p1 brand=b1"));
+    errors.mockRestore();
+  });
+
+  it("requeueFailedPosts: a failed write for one post still requeues the next", async () => {
+    const db = twoBrands("failed");
+    failFirstUpdates(db, 1);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await requeueFailedPosts({
+      db: db as unknown as NonNullable<Parameters<typeof requeueFailedPosts>[0]>["db"],
+    });
+
+    expect(result.requeued).toBe(1);
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("post=p1 brand=b1"));
+    errors.mockRestore();
+  });
+});
+
+describe("audit log", () => {
+  it("every event carries the post's brand", async () => {
+    const db = buildDb();
+    const publisher = mkPublisher({ publish: vi.fn().mockResolvedValue({ externalId: "ig_media_1", url: "https://instagram.com/p/abc" }) });
+    await publishDuePosts({
+      db: db as unknown as NonNullable<Parameters<typeof publishDuePosts>[0]>["db"],
+      getPublisherFor: () => publisher,
+    });
+    const events = db.store.get("events") ?? [];
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.brandId === "b1")).toBe(true);
+  });
+});

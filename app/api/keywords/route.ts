@@ -7,12 +7,13 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { keywords } from "@/lib/db/schema";
+import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 
 const querySchema = z.object({ brandId: z.string().uuid() });
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const parsed = querySchema.safeParse(q);
   if (!parsed.success) {
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+  const { brandId } = await requireBrand(parsed.data.brandId);
   const rows = await db
     .select({
       id: keywords.id,
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       lastPulledAt: keywords.lastPulledAt,
     })
     .from(keywords)
-    .where(eq(keywords.brandId, parsed.data.brandId))
+    .where(eq(keywords.brandId, brandId))
     .orderBy(desc(keywords.createdAt));
   return NextResponse.json({ keywords: rows });
-}
+});
