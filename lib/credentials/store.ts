@@ -11,8 +11,20 @@ import { credentialProviderValues, type CredentialProvider } from "@/lib/db/enum
 
 export const PROVIDERS = credentialProviderValues;
 
-export const PROVIDER_INFO: Record<CredentialProvider, { name: string; usedFor: string; required: boolean; getKeyUrl: string }> = {
-  anthropic: { name: "Anthropic (Claude)", usedFor: "Brand analysis, briefs and drafts", required: true, getKeyUrl: "https://console.anthropic.com/settings/keys" },
+export const PROVIDER_INFO: Record<CredentialProvider, { name: string; usedFor: string; required: boolean; getKeyUrl: string; steps: string[] }> = {
+  anthropic: {
+    name: "Anthropic (Claude)",
+    usedFor: "The video editor, brand analysis, briefs and drafts. Your workspace pays for its own AI use with this key.",
+    required: true,
+    getKeyUrl: "https://console.anthropic.com/settings/keys",
+    steps: [
+      "Open the Anthropic Console and sign in, or create an account.",
+      "Under Billing, add a payment method or buy credit. Anthropic bills you directly for what your editor uses.",
+      "Optional but recommended: set a monthly spend limit, so your AI costs can never run past it.",
+      "Under API keys, create a key and name it \"Nekter\".",
+      "Copy the key, paste it into the box above, and press Test and save. You won't see it again after saving.",
+    ],
+  },
 };
 
 /** Thrown when a feature needs a key the workspace has not connected. */

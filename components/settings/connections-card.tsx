@@ -17,6 +17,7 @@ export interface ConnectionItem {
   usedFor: string;
   required: boolean;
   getKeyUrl: string;
+  steps: string[];
   connected: boolean;
   status: "ok" | "failing" | null;
   lastCheckError: string | null;
@@ -123,10 +124,20 @@ function ConnectionRow({ item, canEdit }: { item: ConnectionItem; canEdit: boole
                 {error}
               </p>
             )}
-            <a href={item.getKeyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:underline">
-              Where to get a key
-              <ExternalLink className="h-3 w-3" aria-hidden="true" />
-            </a>
+            <details className="group rounded-md border bg-muted/30 px-3 py-2 text-sm" open={!item.connected}>
+              <summary className="cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden">
+                How to get a key <span className="text-muted-foreground group-open:hidden">({item.steps.length} steps)</span>
+              </summary>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-muted-foreground">
+                {item.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <a href={item.getKeyUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline">
+                Open the Anthropic Console
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            </details>
           </div>
         )}
       </CardContent>

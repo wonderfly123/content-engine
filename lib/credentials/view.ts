@@ -15,6 +15,7 @@ export interface ConnectionView {
     usedFor: string;
     required: boolean;
     getKeyUrl: string;
+    steps: string[];
     connected: boolean;
     status: "ok" | "failing" | null;
     lastCheckError: string | null;
