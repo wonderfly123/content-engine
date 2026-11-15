@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
+import { STORAGE_LIMIT_BYTES } from "@/lib/limits/storage";
 import { z } from "zod";
 import { AccessError, guard, requireUser } from "@/lib/auth/workspace";
 import { db, schema } from "@/lib/db";
@@ -16,6 +17,10 @@ export interface AdminWorkspace {
   members: Array<{ email: string; role: "owner" | "staff" }>;
   brands: number;
   storageBytes: number;
+  /** The allowance in force (its own, or the default). */
+  storageLimitBytes: number;
+  /** True when the workspace has its own allowance rather than the default. */
+  customLimit: boolean;
   /** True when the admin looking at the list belongs to this workspace. */
   isYours: boolean;
 }
@@ -34,7 +39,7 @@ async function emailsById(): Promise<Map<string, string>> {
 }
 
 async function listAll(youId: string): Promise<AdminWorkspace[]> {
-  const [workspaces, members, brandCounts, storage, emails] = await Promise.all([
+  const [workspaces, members, brandCounts, storage, media, emails] = await Promise.all([
     db.select().from(schema.workspaces),
     db.select().from(schema.workspaceMembers),
     db.select({ workspaceId: schema.brands.workspaceId, n: sql<number>`count(*)::int` }).from(schema.brands).groupBy(schema.brands.workspaceId),
@@ -43,6 +48,11 @@ async function listAll(youId: string): Promise<AdminWorkspace[]> {
       .from(schema.assets)
       .innerJoin(schema.brands, eq(schema.brands.id, schema.assets.brandId))
       .groupBy(schema.brands.workspaceId),
+    db
+      .select({ workspaceId: schema.mediaObjects.workspaceId, bytes: sql<string>`coalesce(sum(${schema.mediaObjects.sizeBytes}), 0)` })
+      .from(schema.mediaObjects)
+      .where(isNull(schema.mediaObjects.deletedAt))
+      .groupBy(schema.mediaObjects.workspaceId),
     emailsById(),
   ]);
   return workspaces
@@ -55,7 +65,9 @@ async function listAll(youId: string): Promise<AdminWorkspace[]> {
         createdAt: w.createdAt.toISOString(),
         members: mine.map((m) => ({ email: emails.get(m.userId) ?? "(unknown)", role: m.role })),
         brands: brandCounts.find((b) => b.workspaceId === w.id)?.n ?? 0,
-        storageBytes: Number(storage.find((s) => s.workspaceId === w.id)?.bytes ?? 0),
+        storageBytes: Number(storage.find((s) => s.workspaceId === w.id)?.bytes ?? 0) + Number(media.find((m) => m.workspaceId === w.id)?.bytes ?? 0),
+        storageLimitBytes: w.storageLimitBytes && w.storageLimitBytes > 0 ? w.storageLimitBytes : STORAGE_LIMIT_BYTES,
+        customLimit: Boolean(w.storageLimitBytes && w.storageLimitBytes > 0),
         isYours: mine.some((m) => m.userId === youId),
       };
     })
@@ -69,7 +81,11 @@ export const GET = guard(async (): Promise<NextResponse> => {
   return NextResponse.json({ workspaces: await listAll(me.userId) });
 });
 
-const patchSchema = z.object({ id: z.string().uuid(), status: z.enum(workspaceStatusValues) });
+// Either disable / re-enable a workspace, or set its storage allowance in GB (null goes back to the default).
+const patchSchema = z.union([
+  z.object({ id: z.string().uuid(), status: z.enum(workspaceStatusValues) }),
+  z.object({ id: z.string().uuid(), storageLimitGb: z.number().int().min(1).max(10000).nullable() }),
+]);
 
 /** Disable or re-enable a workspace. A disabled workspace's members can reach none of its brands. */
 export const PATCH = guard(async (req: NextRequest): Promise<NextResponse> => {
@@ -77,6 +93,14 @@ export const PATCH = guard(async (req: NextRequest): Promise<NextResponse> => {
   if (me.role !== "admin") throw new AccessError(403, "Admins only.");
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid request" }, { status: 400 });
+  if ("storageLimitGb" in parsed.data) {
+    const { id, storageLimitGb } = parsed.data;
+    await db
+      .update(schema.workspaces)
+      .set({ storageLimitBytes: storageLimitGb === null ? null : storageLimitGb * 1024 ** 3, updatedAt: new Date() })
+      .where(eq(schema.workspaces.id, id));
+    return NextResponse.json({ workspaces: await listAll(me.userId) });
+  }
   const { id, status } = parsed.data;
   if (status === "disabled") {
     const [own] = await db.select({ userId: schema.workspaceMembers.userId }).from(schema.workspaceMembers).where(sql`${schema.workspaceMembers.workspaceId} = ${id} and ${schema.workspaceMembers.userId} = ${me.userId}`).limit(1);

@@ -52,3 +52,13 @@ describe("workspace storage allowance", () => {
     expect(await storageRoom(a.workspaceId, 1000)).toMatchObject({ usedBytes: 1000, full: true });
   });
 });
+
+describe("per-workspace allowance", () => {
+  it("uses the default until the workspace has its own allowance", async () => {
+    const { storageRoom: room, STORAGE_LIMIT_BYTES } = await import("../storage");
+    expect((await room(a.workspaceId)).limitBytes).toBe(STORAGE_LIMIT_BYTES);
+    await db.execute(sql`update workspaces set storage_limit_bytes = ${100 * 1024 ** 3} where id = ${a.workspaceId}`);
+    expect((await room(a.workspaceId)).limitBytes).toBe(100 * 1024 ** 3);
+    expect((await room(b.workspaceId)).limitBytes).toBe(STORAGE_LIMIT_BYTES);
+  });
+});

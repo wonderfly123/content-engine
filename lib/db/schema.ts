@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   date,
   index,
@@ -78,6 +79,8 @@ export const workspaces = pgTable("workspaces", {
   id: uuid().primaryKey().defaultRandom(),
   name: text().notNull(),
   status: workspaceStatusEnum().notNull().default("active"),
+  /** Storage allowance in bytes; null means the default (lib/limits/storage.ts). Set by the platform admin. */
+  storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

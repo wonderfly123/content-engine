@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ConnectionStatus } from "@/lib/connections/check";
 import type { AdminUser } from "@/app/api/admin/users/route";
@@ -21,7 +23,9 @@ async function load(method: "GET" | "POST"): Promise<ConnectionStatus[]> {
 
 const USER_STATUS: Record<AdminUser["status"], string> = { pending: "Not set up yet", active: "Active", disabled: "Disabled" };
 
-async function workspacesRequest(body?: { id: string; status: "active" | "disabled" }): Promise<AdminWorkspace[]> {
+type WorkspaceChange = { id: string; status: "active" | "disabled" } | { id: string; storageLimitGb: number | null };
+
+async function workspacesRequest(body?: WorkspaceChange): Promise<AdminWorkspace[]> {
   const res = await fetch("/api/admin/workspaces", body
     ? { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : { cache: "no-store" });
@@ -37,7 +41,7 @@ function WorkspacesCard() {
   const qc = useQueryClient();
   const { data, isLoading, isError } = useQuery({ queryKey: ["admin-workspaces"], queryFn: () => workspacesRequest(), refetchInterval: 60_000 });
   const act = useMutation({
-    mutationFn: (v: { id: string; status: "active" | "disabled" }) => workspacesRequest(v),
+    mutationFn: (v: WorkspaceChange) => workspacesRequest(v),
     onSuccess: (rows) => { qc.setQueryData(["admin-workspaces"], rows); toast.success("Updated"); },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -58,8 +62,9 @@ function WorkspacesCard() {
                 {w.members.map((m) => `${m.email} (${m.role})`).join(", ") || "No members"}
               </p>
               <p className="text-sm text-muted-foreground">
-                {w.brands} {w.brands === 1 ? "brand" : "brands"} · {gigabytes(w.storageBytes)} stored · created {new Date(w.createdAt).toLocaleDateString()}
+                {w.brands} {w.brands === 1 ? "brand" : "brands"} · created {new Date(w.createdAt).toLocaleDateString()}
               </p>
+              <StorageLimit workspace={w} saving={act.isPending} onSave={(gb) => act.mutate({ id: w.id, storageLimitGb: gb })} />
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={w.status === "active" ? "default" : "destructive"}>{w.status === "active" ? "Active" : "Disabled"}</Badge>
@@ -73,6 +78,31 @@ function WorkspacesCard() {
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+/** Storage used against the allowance, with a field to change the allowance (blank = the default). */
+function StorageLimit({ workspace: w, saving, onSave }: { workspace: AdminWorkspace; saving: boolean; onSave: (gb: number | null) => void }) {
+  const current = Math.round(w.storageLimitBytes / 1024 ** 3);
+  const [value, setValue] = useState(w.customLimit ? String(current) : "");
+  const pct = Math.min(100, Math.round((w.storageBytes / w.storageLimitBytes) * 100));
+  const parsed = value.trim() === "" ? null : Number(value);
+  const valid = parsed === null || (Number.isInteger(parsed) && parsed >= 1 && parsed <= 10000);
+  const changed = (parsed ?? null) !== (w.customLimit ? current : null);
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-sm text-muted-foreground">
+        {gigabytes(w.storageBytes)} of {current} GB used ({pct}%){w.customLimit ? "" : " · default allowance"}
+      </p>
+      <div className="h-1.5 w-56 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        <div className={pct >= 90 ? "h-full bg-destructive" : "h-full bg-primary"} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={`limit-${w.id}`} className="text-xs text-muted-foreground">Allowance (GB)</label>
+        <Input id={`limit-${w.id}`} inputMode="numeric" className="h-8 w-24" placeholder="default" value={value} onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ""))} />
+        <Button size="sm" variant="outline" disabled={!valid || !changed || saving} onClick={() => onSave(parsed)}>Save</Button>
+      </div>
+    </div>
   );
 }
 

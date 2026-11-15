@@ -5,8 +5,18 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
-/** Included storage per workspace. */
+/** Included storage per workspace, unless the platform admin has set a different allowance. */
 export const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
+
+/** The workspace's allowance: its own if one is set, else the default. */
+export async function workspaceStorageLimit(workspaceId: string): Promise<number> {
+  const [row] = await db
+    .select({ limit: schema.workspaces.storageLimitBytes })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return row?.limit && row.limit > 0 ? row.limit : STORAGE_LIMIT_BYTES;
+}
 
 /**
  * Bytes of uploaded files across the workspace: its brands' assets plus its media objects on R2
@@ -32,8 +42,11 @@ export interface StorageRoom {
   full: boolean;
 }
 
-export async function storageRoom(workspaceId: string, limitBytes: number = STORAGE_LIMIT_BYTES): Promise<StorageRoom> {
-  const usedBytes = await workspaceStorageBytes(workspaceId);
+export async function storageRoom(workspaceId: string, limitOverride?: number): Promise<StorageRoom> {
+  const [usedBytes, limitBytes] = await Promise.all([
+    workspaceStorageBytes(workspaceId),
+    limitOverride ?? workspaceStorageLimit(workspaceId),
+  ]);
   return { usedBytes, limitBytes, full: usedBytes >= limitBytes };
 }
 
