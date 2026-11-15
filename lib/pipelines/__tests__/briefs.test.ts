@@ -5,7 +5,58 @@ vi.hoisted(() => {
   process.env.TOKEN_ENCRYPTION_KEY ??=
     "0000000000000000000000000000000000000000000000000000000000000000";
 });
-import { computeSlots, nextMonday } from "../briefs";
+import { computeSlots, nextMonday, runBriefBatchForBrand } from "../briefs";
+import type { BriefInput, LLMProvider } from "@/lib/llm";
+import { makeFakeDb } from "./_helpers";
+
+describe("runBriefBatchForBrand", () => {
+  it("generates a brief per cadence slot from the brand alone", async () => {
+    const db = makeFakeDb({
+      brands: [
+        {
+          id: "b1",
+          personaJson: { mission: "Make great widgets", traits: ["practical"] },
+          voiceJson: { readingLevel: "general" },
+        },
+      ],
+      icps: [{ id: "i1", brandId: "b1", name: "Makers", description: "People who build" }],
+      cadence_settings: [
+        { brandId: "b1", channel: "instagram", format: "reel", perWeek: 2, enabled: true },
+      ],
+    });
+    const generateBrief = vi.fn(async (_input: BriefInput) => ({
+      hook: "A hook",
+      angle: "An angle",
+      key_message: "A message",
+      suggested_hashtags: ["#widgets"],
+      suggested_cta: null,
+      inspiration_post_refs: [],
+    }));
+    const llm = { generateBrief } as unknown as LLMProvider;
+
+    const result = await runBriefBatchForBrand("b1", {
+      db: db as never,
+      llm,
+      now: () => new Date("2026-05-08T12:00:00.000Z"),
+    });
+
+    expect(result).toEqual({ brandId: "b1", briefsCreated: 2, briefIds: expect.any(Array) });
+    expect(generateBrief).toHaveBeenCalledTimes(2);
+    const input = generateBrief.mock.calls[0]![0];
+    expect(Object.keys(input).sort()).toEqual(
+      ["channel", "format", "icp", "persona", "rejections", "target_date", "voice"],
+    );
+    expect(input.persona).toMatchObject({ mission: "Make great widgets" });
+    expect(input.icp).toMatchObject({ name: "Makers" });
+
+    const briefs = db.store.get("briefs") ?? [];
+    expect(briefs).toHaveLength(2);
+    for (const b of briefs) {
+      expect(b).toMatchObject({ brandId: "b1", icpId: "i1", status: "pending_review", hook: "A hook" });
+      expect(b).not.toHaveProperty("researchBundleId");
+    }
+  });
+});
 
 describe("computeSlots", () => {
   it("returns total = sum of cadence_settings.per_week", () => {

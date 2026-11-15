@@ -1,6 +1,6 @@
 /**
  * /api/brands/[id]/analyze
- *   POST → Run Step 2 analysis (Firecrawl scrape + LLM persona extraction).
+ *   POST → Run Step 2 analysis (LLM persona extraction from the description).
  *
  * Returns the drafted profile and persists it to `brands.settings_json.draft_profile`
  * so Step 3 can preload the LLM-drafted values and the user can compare

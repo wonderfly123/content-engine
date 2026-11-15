@@ -39,6 +39,13 @@ export const routes: RouteAttack[] = [
     build: (victim) => ({ body: { id: victim.user.userId, action: "disable" } }),
     skipOwnerControl: ADMIN_ONLY,
   },
+  { route: "app/api/admin/workspaces/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
+  {
+    route: "app/api/admin/workspaces/route.ts",
+    method: "PATCH",
+    build: (victim) => ({ body: { id: victim.workspaceId, status: "disabled" } }),
+    skipOwnerControl: ADMIN_ONLY,
+  },
 
   // Reels (jobs on the machine's disk)
   { route: "app/api/reels/route.ts", method: "GET", build: (victim) => ({ query: { brand: victim.slug } }), skipOwnerControl: LOCAL_REELS },

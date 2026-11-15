@@ -1,5 +1,12 @@
 /**
- * Who may use the app. Role and status live in each user's Supabase `app_metadata`
+ * Who may use the app. Two separate things decide what a person can do:
+ *
+ *  - Platform level (this file): `role` is "admin" for whoever runs the platform, "user" for
+ *    everyone else; `status` is "active", "disabled", or "pending" (signed in but not set up yet).
+ *  - Workspace level (lib/auth/workspace.ts): owner or staff of a workspace, which decides
+ *    which brands they can touch. Platform admin grants nothing there.
+ *
+ * Role and status live in each user's Supabase `app_metadata`
  * (only the secret key can write it), so they arrive inside the verified session token
  * and the middleware can authorize without a database round trip.
  */
@@ -16,7 +23,7 @@ export interface Access {
 export const ROLE_KEY = "ce_role";
 export const STATUS_KEY = "ce_status";
 
-/** Reads access from verified JWT claims. A signed-in user with no role yet is `pending`. */
+/** Reads access from verified JWT claims. A signed-in user who has not been set up yet is `pending`. */
 export function accessFromClaims(claims: Record<string, unknown> | null | undefined): Access | null {
   const sub = claims?.sub;
   if (typeof sub !== "string" || !sub) return null;
@@ -32,6 +39,8 @@ export type Decision =
   | { kind: "deny"; status: 401 | 403; message: string };
 
 const PUBLIC_PREFIXES = ["/login", "/auth/"];
+/** Finishes a first sign-in (public: it checks the session itself). */
+export const SETUP_PATH = "/auth/welcome";
 const ADMIN_PREFIXES = ["/admin", "/api/admin"];
 const matches = (pathname: string, prefixes: string[]) =>
   prefixes.some((p) => pathname === p || pathname === p.replace(/\/$/, "") || pathname.startsWith(p.endsWith("/") ? p : `${p}/`));
@@ -47,6 +56,10 @@ export function decideAccess(pathname: string, access: Access | null): Decision 
   if (!access) {
     return isApi ? { kind: "deny", status: 401, message: "Sign in required." } : { kind: "redirect", to: "/login" };
   }
+  if (access.status === "pending") {
+    // Signed in but not set up yet: /auth/welcome gives them their access and a workspace.
+    return isApi ? { kind: "deny", status: 403, message: "Your account is not set up yet." } : { kind: "redirect", to: SETUP_PATH };
+  }
   if (access.status !== "active") {
     if (pathname === "/pending") return { kind: "allow" };
     return isApi ? { kind: "deny", status: 403, message: "Your access is not active." } : { kind: "redirect", to: "/pending" };
@@ -59,9 +72,10 @@ export function decideAccess(pathname: string, access: Access | null): Decision 
 }
 
 /**
- * First sign-in: the very first account becomes the active admin; everyone after that waits
- * for an admin to approve them. `existingAdmins` is how many admins exist right now.
+ * First sign-in: the very first account becomes the platform admin; everyone after that is an
+ * ordinary user, active straight away (no approval step). `existingAdmins` is how many admins
+ * exist right now. An admin can still disable an account later.
  */
 export function initialAccess(existingAdmins: number): { role: Role; status: Status } {
-  return existingAdmins === 0 ? { role: "admin", status: "active" } : { role: "user", status: "pending" };
+  return { role: existingAdmins === 0 ? "admin" : "user", status: "active" };
 }

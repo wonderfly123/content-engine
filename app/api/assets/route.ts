@@ -11,6 +11,7 @@ import {
   listAssetsQuerySchema,
 } from "@/lib/assets/types";
 import { probeUrl } from "@/lib/assets/probe";
+import { storageFullBody, storageRoom } from "@/lib/limits/storage";
 import { validateAsset } from "@/lib/assets/validate";
 import { generateThumbnail } from "@/lib/assets/thumbnail";
 import { AccessError, guard, requireBrand, requireOwned } from "@/lib/auth/workspace";
@@ -84,7 +85,9 @@ export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   const body = parsed.data;
 
   // Ownership: the brand must be the caller's, and the draft (if any) must be in that same brand.
-  const { brandId } = await requireBrand(body.brandId);
+  const { brandId, workspaceId } = await requireBrand(body.brandId);
+  const room = await storageRoom(workspaceId);
+  if (room.full) return NextResponse.json(storageFullBody(room), { status: 413 });
   if (body.draftId) {
     const draftAccess = await requireOwned(drafts, body.draftId);
     if (draftAccess.brandId !== brandId) throw new AccessError(404, "Not found.");

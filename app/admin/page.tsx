@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ConnectionStatus } from "@/lib/connections/check";
 import type { AdminUser } from "@/app/api/admin/users/route";
+import type { AdminWorkspace } from "@/app/api/admin/workspaces/route";
 
 const CHANNEL_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook" };
 const STATUS_LABEL: Record<ConnectionStatus["status"], string> = { connected: "Active", expired: "Expired", revoked: "Revoked", error: "Error" };
@@ -18,7 +19,62 @@ async function load(method: "GET" | "POST"): Promise<ConnectionStatus[]> {
   return ((await res.json()) as { connections: ConnectionStatus[] }).connections;
 }
 
-const USER_STATUS: Record<AdminUser["status"], string> = { pending: "Waiting for approval", active: "Active", disabled: "Disabled" };
+const USER_STATUS: Record<AdminUser["status"], string> = { pending: "Not set up yet", active: "Active", disabled: "Disabled" };
+
+async function workspacesRequest(body?: { id: string; status: "active" | "disabled" }): Promise<AdminWorkspace[]> {
+  const res = await fetch("/api/admin/workspaces", body
+    ? { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    : { cache: "no-store" });
+  const json = (await res.json().catch(() => ({}))) as { workspaces?: AdminWorkspace[]; error?: string };
+  if (!res.ok || !json.workspaces) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json.workspaces;
+}
+
+const gigabytes = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+
+/** Every workspace on the platform. Only the platform admin sees this; members see only their own. */
+function WorkspacesCard() {
+  const qc = useQueryClient();
+  const { data, isLoading, isError } = useQuery({ queryKey: ["admin-workspaces"], queryFn: () => workspacesRequest(), refetchInterval: 60_000 });
+  const act = useMutation({
+    mutationFn: (v: { id: string; status: "active" | "disabled" }) => workspacesRequest(v),
+    onSuccess: (rows) => { qc.setQueryData(["admin-workspaces"], rows); toast.success("Updated"); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Workspaces</CardTitle>
+        <p className="text-sm text-muted-foreground">Each account that signs up gets its own workspace. Disabling one locks its members out of its brands.</p>
+      </CardHeader>
+      <CardContent className="flex flex-col divide-y">
+        {isLoading && <p className="py-3 text-sm text-muted-foreground">Loading…</p>}
+        {isError && <p className="py-3 text-sm text-muted-foreground">Couldn&apos;t load workspaces.</p>}
+        {data?.map((w) => (
+          <div key={w.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{w.name}{w.isYours ? " (yours)" : ""}</p>
+              <p className="truncate text-sm text-muted-foreground">
+                {w.members.map((m) => `${m.email} (${m.role})`).join(", ") || "No members"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {w.brands} {w.brands === 1 ? "brand" : "brands"} · {gigabytes(w.storageBytes)} stored · created {new Date(w.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={w.status === "active" ? "default" : "destructive"}>{w.status === "active" ? "Active" : "Disabled"}</Badge>
+              {!w.isYours && (
+                <Button size="sm" variant={w.status === "active" ? "ghost" : "outline"} onClick={() => act.mutate({ id: w.id, status: w.status === "active" ? "disabled" : "active" })} disabled={act.isPending}>
+                  {w.status === "active" ? "Disable" : "Re-enable"}
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 async function usersRequest(body?: { id: string; action: string }): Promise<AdminUser[]> {
   const res = await fetch("/api/admin/users", body
@@ -41,7 +97,7 @@ function UsersCard() {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">People</CardTitle>
-        <p className="text-sm text-muted-foreground">New sign-ins wait here until you approve them. Changes can take up to an hour to reach someone already signed in.</p>
+        <p className="text-sm text-muted-foreground">Everyone who has signed up. New accounts are active straight away; you can disable one here. Changes can take up to an hour to reach someone already signed in.</p>
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
         {isLoading && <p className="py-3 text-sm text-muted-foreground">Loading…</p>}
@@ -56,7 +112,7 @@ function UsersCard() {
               </p>
             </div>
             <div className="flex gap-2">
-              {u.status !== "active" && <Button size="sm" onClick={() => act.mutate({ id: u.id, action: "approve" })} disabled={act.isPending}>{u.status === "disabled" ? "Re-enable" : "Approve"}</Button>}
+              {u.status !== "active" && <Button size="sm" onClick={() => act.mutate({ id: u.id, action: "approve" })} disabled={act.isPending}>{u.status === "disabled" ? "Re-enable" : "Activate"}</Button>}
               {u.status === "active" && !u.isYou && u.role === "user" && <Button size="sm" variant="outline" onClick={() => act.mutate({ id: u.id, action: "make_admin" })} disabled={act.isPending}>Make admin</Button>}
               {u.status === "active" && !u.isYou && u.role === "admin" && <Button size="sm" variant="outline" onClick={() => act.mutate({ id: u.id, action: "make_user" })} disabled={act.isPending}>Remove admin</Button>}
               {u.status !== "disabled" && !u.isYou && <Button size="sm" variant="ghost" onClick={() => act.mutate({ id: u.id, action: "disable" })} disabled={act.isPending}>Disable</Button>}
@@ -93,6 +149,7 @@ export default function AdminPage() {
         </Button>
       </header>
 
+      <WorkspacesCard />
       <UsersCard />
 
       <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Connections</h2>

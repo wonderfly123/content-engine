@@ -1,5 +1,5 @@
 /**
- * Each workspace's own keys for outside services (Anthropic, Firecrawl, Apify).
+ * Each workspace's own keys for outside services (today: Anthropic).
  *
  * Secrets are encrypted at rest (the `secret` column) and decrypted only here, on the server, at
  * the moment of use. Nothing in this file returns a secret to a caller that could send it to the
@@ -13,8 +13,6 @@ export const PROVIDERS = credentialProviderValues;
 
 export const PROVIDER_INFO: Record<CredentialProvider, { name: string; usedFor: string; required: boolean; getKeyUrl: string }> = {
   anthropic: { name: "Anthropic (Claude)", usedFor: "Brand analysis, briefs and drafts", required: true, getKeyUrl: "https://console.anthropic.com/settings/keys" },
-  firecrawl: { name: "Firecrawl", usedFor: "Reading your website and keyword research", required: false, getKeyUrl: "https://www.firecrawl.dev/app/api-keys" },
-  apify: { name: "Apify", usedFor: "Competitor and inspiration account research", required: false, getKeyUrl: "https://console.apify.com/settings/integrations" },
 };
 
 /** Thrown when a feature needs a key the workspace has not connected. */

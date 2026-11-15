@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Connect, replace or remove one of the workspace's own keys (Anthropic, Firecrawl, Apify).
+ * Connect, replace or remove one of the workspace's own keys (today: Anthropic).
  * A key is tested against its service before it is stored, and is never sent back to the browser.
  */
 import { revalidatePath } from "next/cache";

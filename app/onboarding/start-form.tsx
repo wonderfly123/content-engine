@@ -61,7 +61,7 @@ export function StartForm() {
               onChange={(e) => setDescription(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Provide a URL, a description, or both.
+              The brand is drafted from this description. The website is optional.
             </p>
           </div>
           <div className="flex justify-end">

@@ -172,6 +172,7 @@ export const icps = pgTable("icps", {
   updatedAt: ts(),
 });
 
+// Not used by the app at present; kept for a possible return of research.
 export const competitors = pgTable("competitors", {
   id: uuid().primaryKey().defaultRandom(),
   brandId: uuid("brand_id")
@@ -186,6 +187,7 @@ export const competitors = pgTable("competitors", {
   createdAt: ts(),
 });
 
+// Not used by the app at present; kept for a possible return of research.
 export const inspirationAccounts = pgTable("inspiration_accounts", {
   id: uuid().primaryKey().defaultRandom(),
   brandId: uuid("brand_id")
@@ -200,6 +202,7 @@ export const inspirationAccounts = pgTable("inspiration_accounts", {
   createdAt: ts(),
 });
 
+// Not used by the app at present; kept for a possible return of research.
 export const keywords = pgTable("keywords", {
   id: uuid().primaryKey().defaultRandom(),
   brandId: uuid("brand_id")
@@ -263,6 +266,7 @@ export const cadenceSettings = pgTable(
 // Pipeline: research → briefs → drafts → assets → posts → analytics
 // =========================================================================
 
+// Not used by the app at present; kept for a possible return of research.
 export const researchBundles = pgTable("research_bundles", {
   id: uuid().primaryKey().defaultRandom(),
   brandId: uuid("brand_id")

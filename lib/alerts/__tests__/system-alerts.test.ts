@@ -52,7 +52,7 @@ describe("listSystemAlerts", () => {
           id: "j1",
           kind: "research_pull",
           brandId: "b1",
-          lastError: "Firecrawl 500",
+          lastError: "Service 500",
           completedAt: now,
           scheduledFor: now,
         },

@@ -8,8 +8,6 @@ export type VerifyResult = { ok: true } | { ok: false; error: string; /** True w
 
 const CHECKS: Record<CredentialProvider, (secret: string) => { url: string; headers: Record<string, string> }> = {
   anthropic: (secret) => ({ url: "https://api.anthropic.com/v1/models?limit=1", headers: { "x-api-key": secret, "anthropic-version": "2023-06-01" } }),
-  firecrawl: (secret) => ({ url: "https://api.firecrawl.dev/v1/team/credit-usage", headers: { authorization: `Bearer ${secret}` } }),
-  apify: (secret) => ({ url: "https://api.apify.com/v2/users/me", headers: { authorization: `Bearer ${secret}` } }),
 };
 
 export async function verifyCredential(provider: CredentialProvider, secret: string, fetchImpl: typeof fetch = fetch): Promise<VerifyResult> {

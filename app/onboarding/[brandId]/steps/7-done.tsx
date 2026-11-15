@@ -2,14 +2,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cadenceSettings, channelConnections } from "@/lib/db/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DoneActions } from "./8-actions";
+import { DoneActions } from "./7-actions";
 import type { Brand } from "../page";
 
-interface Step8Props {
+interface Step7Props {
   brand: Brand;
 }
 
-export async function Step8Done({ brand }: Step8Props) {
+export async function Step7Done({ brand }: Step7Props) {
   const [channels, cadence] = await Promise.all([
     db
       .select({ channel: channelConnections.channel })

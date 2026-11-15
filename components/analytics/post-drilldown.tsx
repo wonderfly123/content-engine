@@ -36,7 +36,6 @@ export interface DrilldownData {
     title: string;
     angle: string;
     keyMessage: string;
-    inspirationPostRefs: Array<{ externalUrl: string; why?: string }>;
   };
   icp: { id: string; name: string } | null;
   assets: Array<{
@@ -86,9 +85,6 @@ export function PostDrilldown({ data }: { data: DrilldownData }) {
           <ProvenanceTrail
             events={data.provenance}
             briefTitle={data.brief.title}
-            inspirationHandles={data.brief.inspirationPostRefs.map(
-              (r) => new URL(r.externalUrl).hostname,
-            )}
             assetCount={data.assets.length}
           />
         </CardContent>

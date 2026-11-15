@@ -21,10 +21,9 @@ const CHECKS = /\b(tryBrand|tryOwned|tryWorkspace|requireBrand|requireOwned|requ
  */
 const RENDERED_BY_A_CHECKED_PAGE = [
   "app/onboarding/[brandId]/steps/4-icps.tsx", // props: { brand }
-  "app/onboarding/[brandId]/steps/5-competitors-inspiration.tsx", // props: { brand }
-  "app/onboarding/[brandId]/steps/6-cadence.tsx", // props: { brand }
-  "app/onboarding/[brandId]/steps/7-channels.tsx", // props: { brand }
-  "app/onboarding/[brandId]/steps/8-done.tsx", // props: { brand }
+  "app/onboarding/[brandId]/steps/5-cadence.tsx", // props: { brand }
+  "app/onboarding/[brandId]/steps/6-channels.tsx", // props: { brand }
+  "app/onboarding/[brandId]/steps/7-done.tsx", // props: { brand }
 ];
 
 function walk(dir: string): string[] {

@@ -106,7 +106,7 @@ export class MetaPublisher implements Publisher {
   }
 
   /**
-   * Task 4 stub. Real OAuth flow lands in Task 5 (onboarding step 7) and Task 6.
+   * Task 4 stub. Real OAuth flow lands in Task 5 (onboarding step 6) and Task 6.
    *
    * Planned Graph endpoints:
    *   - GET https://www.facebook.com/{version}/dialog/oauth

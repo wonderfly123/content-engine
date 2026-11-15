@@ -1,12 +1,16 @@
+import { redirect } from "next/navigation";
+import { SETUP_PATH } from "@/lib/auth/access";
 import { getAccess } from "@/lib/auth/session";
 import { PendingActions } from "./pending-actions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Waiting for approval · Content Engine" };
+export const metadata = { title: "Account disabled · Content Engine" };
 
 export default async function PendingPage() {
   const access = await getAccess();
   const disabled = access?.status === "disabled";
+  // Nobody waits for approval any more: anyone not disabled is set up and sent on.
+  if (!disabled) redirect(SETUP_PATH);
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
       <div className="w-full max-w-md rounded-xl border bg-card p-8 text-center shadow-sm">

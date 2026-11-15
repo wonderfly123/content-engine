@@ -1,25 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { analyzeBrand } from "../analyze";
 import type { LLMProvider, PersonaDraft } from "@/lib/llm/types";
-import type { Researcher, ScrapedSite } from "@/lib/research/types";
-
-function stubResearcher(
-  fn?: (url: string) => Promise<ScrapedSite>,
-): Researcher {
-  return {
-    scrapeSite: vi.fn(
-      fn ??
-        (async (url: string) => ({
-          url,
-          title: "Acme — fast widgets",
-          description: "Widgets for makers",
-          markdown: "# Acme\nWidgets for makers.",
-          scraped_at: "2026-05-08T00:00:00Z",
-        })),
-    ),
-    searchKeyword: vi.fn(async () => []),
-  };
-}
 
 function stubLLM(persona?: Partial<PersonaDraft>): LLMProvider {
   const full: PersonaDraft = {
@@ -40,50 +21,53 @@ function stubLLM(persona?: Partial<PersonaDraft>): LLMProvider {
 
 describe("analyzeBrand", () => {
   it("rejects when neither url nor description provided", async () => {
-    await expect(
-      analyzeBrand({}, { researcher: stubResearcher(), llm: stubLLM() }),
-    ).rejects.toThrow(/websiteUrl or description/);
+    await expect(analyzeBrand({}, { llm: stubLLM() })).rejects.toThrow(
+      /websiteUrl or description/,
+    );
   });
 
-  it("scrapes the site and extracts persona for url-only input", async () => {
-    const researcher = stubResearcher();
+  it("asks for a description when only a website is given", async () => {
     const llm = stubLLM();
+    await expect(
+      analyzeBrand({ websiteUrl: "https://acme.example" }, { llm }),
+    ).rejects.toThrow(/Add a description/);
+    expect(llm.extractPersona).not.toHaveBeenCalled();
+  });
+
+  it("extracts the persona from the description", async () => {
+    const llm = stubLLM({ archetype: "sage" });
+
     const result = await analyzeBrand(
-      { websiteUrl: "https://acme.example" },
-      { researcher, llm },
+      { description: "Tools for thoughtful makers" },
+      { llm },
     );
 
-    expect(researcher.scrapeSite).toHaveBeenCalledWith("https://acme.example");
     expect(llm.extractPersona).toHaveBeenCalledTimes(1);
-
-    expect(result.profile.name).toBe("Acme");
-    expect(result.profile.slug).toBe("acme");
-    expect(result.profile.archetype).toBe("creator");
+    expect(llm.extractPersona).toHaveBeenCalledWith(
+      expect.stringContaining("Tools for thoughtful makers"),
+    );
+    expect(result.profile.name).toBe("New brand");
+    expect(result.profile.archetype).toBe("sage");
     expect(result.icps).toHaveLength(1);
     expect(result.icps[0]?.isDefault).toBe(true);
     expect(result.cadence.preset).toBe("growth");
     expect(result.cadence.rows.some((r) => r.format === "reel")).toBe(true);
   });
 
-  it("falls back to description-only when scrape fails", async () => {
-    const researcher = stubResearcher(async () => {
-      throw new Error("network down");
-    });
-    const llm = stubLLM({ archetype: "sage" });
-
+  it("names the brand after the website host without reading the site", async () => {
     const result = await analyzeBrand(
-      { description: "Tools for thoughtful makers" },
-      { researcher, llm },
+      { websiteUrl: "https://www.acme.example", description: "Widgets for makers" },
+      { llm: stubLLM() },
     );
-
-    expect(llm.extractPersona).toHaveBeenCalledTimes(1);
-    expect(result.profile.archetype).toBe("sage");
+    expect(result.profile.name).toBe("acme.example");
+    expect(result.profile.slug).toBe("acme-example");
+    expect(result.sourceUrl).toBe("https://www.acme.example");
   });
 
   it("normalizes unknown archetype to creator", async () => {
     const result = await analyzeBrand(
       { description: "x" },
-      { researcher: stubResearcher(), llm: stubLLM({ archetype: "trickster" }) },
+      { llm: stubLLM({ archetype: "trickster" }) },
     );
     expect(result.profile.archetype).toBe("creator");
   });

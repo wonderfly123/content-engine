@@ -18,7 +18,6 @@ export interface RecordEventInput {
     | "post"
     | "asset"
     | "brand"
-    | "research_bundle"
     | "job"
     | (string & {});
   entityId: string;

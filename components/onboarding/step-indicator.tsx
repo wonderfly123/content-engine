@@ -6,10 +6,9 @@ export const ONBOARDING_STEPS = [
   { n: 2, label: "Analyzing" },
   { n: 3, label: "Profile" },
   { n: 4, label: "ICPs" },
-  { n: 5, label: "Competitors" },
-  { n: 6, label: "Cadence" },
-  { n: 7, label: "Channels" },
-  { n: 8, label: "Done" },
+  { n: 5, label: "Cadence" },
+  { n: 6, label: "Channels" },
+  { n: 7, label: "Done" },
 ] as const;
 
 interface StepIndicatorProps {

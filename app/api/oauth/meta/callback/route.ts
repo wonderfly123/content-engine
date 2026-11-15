@@ -1,5 +1,5 @@
 /**
- * Meta OAuth callback. Used by onboarding Step 7.
+ * Meta OAuth callback. Used by onboarding Step 6.
  *
  * Flow:
  *   1. Exchange `code` for a short-lived user access token
@@ -302,13 +302,13 @@ export const GET = guard(async (req: NextRequest) => {
       brandId,
       actor: "user",
       note:
-        `Onboarding step 7: connected Meta ` +
+        `Onboarding step 6: connected Meta ` +
         `(page=${fbPageId}, ig=${igBusinessId ?? "none"}, ` +
         `ads=${selectedAdAccount?.id ?? (adAccounts.length === 0 ? "none" : "unset")})`,
     });
 
     return NextResponse.redirect(
-      new URL(`/onboarding/${brandId}?step=7&connected=1`, req.nextUrl.origin),
+      new URL(`/onboarding/${brandId}?step=6&connected=1`, req.nextUrl.origin),
     );
   } catch (err) {
     const detail = (err as Error).message;

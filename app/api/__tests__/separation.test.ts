@@ -24,7 +24,7 @@ const state = vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgres://test:test@localhost/test";
   process.env.TOKEN_ENCRYPTION_KEY ??= "0000000000000000000000000000000000000000000000000000000000000000";
   process.env.CRON_SECRET = "test-cron-secret";
-  for (const key of ["ANTHROPIC_API_KEY", "FIRECRAWL_API_KEY", "APIFY_TOKEN", "BLOB_READ_WRITE_TOKEN"]) delete process.env[key];
+  for (const key of ["ANTHROPIC_API_KEY", "BLOB_READ_WRITE_TOKEN"]) delete process.env[key];
   // Never the real jobs folder: if a reel route lost its check, the test must not reach real files.
   process.env.VIDEO_JOBS_DIR = "/nonexistent/separation-test-jobs";
   return { current: null as unknown };

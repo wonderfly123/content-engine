@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   FileText,
   Image as ImageIcon,
-  Lightbulb,
   Send,
   Calendar as CalendarIcon,
   BarChart3,
@@ -25,21 +24,18 @@ export interface ProvenanceEvent {
 /**
  * Vertical timeline component. Renders the chain:
  *   1. Brief approved
- *   2. Inspiration sources used
- *   3. Draft generated → edits → approved
- *   4. Assets uploaded
- *   5. Scheduled
- *   6. Published
+ *   2. Draft generated → edits → approved
+ *   3. Assets uploaded
+ *   4. Scheduled
+ *   5. Published
  */
 export function ProvenanceTrail({
   events,
   briefTitle,
-  inspirationHandles = [],
   assetCount = 0,
 }: {
   events: ProvenanceEvent[];
   briefTitle?: string;
-  inspirationHandles?: string[];
   assetCount?: number;
 }) {
   // Sort oldest → newest.
@@ -70,12 +66,6 @@ export function ProvenanceTrail({
       title: "Brief approved",
       sub: briefTitle ?? briefApproved.note ?? undefined,
       at: briefApproved.at,
-    },
-    inspirationHandles.length > 0 && {
-      icon: Lightbulb,
-      title: "Inspiration referenced",
-      sub: inspirationHandles.join(", "),
-      at: briefApproved?.at,
     },
     draftCreated && {
       icon: FileText,

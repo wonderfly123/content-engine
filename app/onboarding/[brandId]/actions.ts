@@ -22,21 +22,17 @@ import { db } from "@/lib/db";
 import {
   brands,
   cadenceSettings,
-  competitors,
   events,
   icps as icpsTable,
-  inspirationAccounts,
-  jobs,
 } from "@/lib/db/schema";
 import {
   CADENCE_PRESETS,
+  ONBOARDING_STEPS_VERSION,
   cadenceSchema,
-  competitorsInspirationSchema,
   createBrandSchema,
   icpsSchema,
   profileSchema,
   type CadenceInput,
-  type CompetitorsInspirationInput,
   type CreateBrandInput,
   type IcpsInput,
   type ProfileInput,
@@ -349,67 +345,7 @@ export async function saveICPs(
   redirect(`/onboarding/${idParse.data}?step=5`);
 }
 
-// ---- Step 5: competitors + inspiration -----------------------------------
-
-export async function saveCompetitorsInspiration(
-  brandId: string,
-  input: CompetitorsInspirationInput,
-): Promise<ActionResult<undefined>> {
-  const idParse = brandIdSchema.safeParse(brandId);
-  if (!idParse.success) return { ok: false, error: "Invalid brand id" };
-  const parsed = competitorsInspirationSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
-  }
-
-  const access = await tryBrand(idParse.data);
-  if (!access) return { ok: false, error: "Brand not found" };
-
-  // Replace-all strategy keeps the action simple for the wizard. Settings
-  // tab does the same. Audit trail captures aggregate counts.
-  await db.delete(competitors).where(eq(competitors.brandId, idParse.data));
-  if (parsed.data.competitors.length > 0) {
-    await db.insert(competitors).values(
-      parsed.data.competitors.map((c) => ({
-        brandId: idParse.data,
-        handle: c.handle,
-        platform: c.platform,
-        url: c.url ?? null,
-        notes: c.notes ?? null,
-        pullWindowDays: c.pullWindowDays,
-      })),
-    );
-  }
-
-  await db
-    .delete(inspirationAccounts)
-    .where(eq(inspirationAccounts.brandId, idParse.data));
-  if (parsed.data.inspiration.length > 0) {
-    await db.insert(inspirationAccounts).values(
-      parsed.data.inspiration.map((c) => ({
-        brandId: idParse.data,
-        handle: c.handle,
-        platform: c.platform,
-        url: c.url ?? null,
-        notes: c.notes ?? null,
-        pullWindowDays: c.pullWindowDays,
-      })),
-    );
-  }
-
-  await markStep(idParse.data, 6);
-  await db.insert(events).values({
-    entityType: "brand",
-    entityId: idParse.data,
-    brandId: idParse.data,
-    actor: "user",
-    note: `Onboarding step 5: ${parsed.data.competitors.length} competitors, ${parsed.data.inspiration.length} inspiration accounts`,
-  });
-
-  redirect(`/onboarding/${idParse.data}?step=6`);
-}
-
-// ---- Step 6: cadence ------------------------------------------------------
+// ---- Step 5: cadence ------------------------------------------------------
 
 export async function saveCadence(
   brandId: string,
@@ -446,23 +382,22 @@ export async function saveCadence(
     );
   }
 
-  await markStep(idParse.data, 7, { preset: parsed.data.preset });
+  await markStep(idParse.data, 6, { preset: parsed.data.preset });
   await db.insert(events).values({
     entityType: "brand",
     entityId: idParse.data,
     brandId: idParse.data,
     actor: "user",
-    note: `Onboarding step 6: cadence preset=${parsed.data.preset}`,
+    note: `Onboarding step 5: cadence preset=${parsed.data.preset}`,
   });
 
-  redirect(`/onboarding/${idParse.data}?step=7`);
+  redirect(`/onboarding/${idParse.data}?step=6`);
 }
 
-// ---- Step 8: markActive (+ optional research trigger) --------------------
+// ---- Step 7: markActive ---------------------------------------------------
 
 export async function markActive(
   brandId: string,
-  options: { triggerResearch?: boolean } = {},
 ): Promise<ActionResult<{ slug: string }>> {
   const idParse = brandIdSchema.safeParse(brandId);
   if (!idParse.success) return { ok: false, error: "Invalid brand id" };
@@ -500,24 +435,8 @@ export async function markActive(
     fromStatus: brand.status,
     toStatus: "active",
     actor: "user",
-    note: "Onboarding step 8: activated",
+    note: "Onboarding step 7: activated",
   });
-
-  if (options.triggerResearch) {
-    await db.insert(jobs).values({
-      kind: "research_pull",
-      brandId: idParse.data,
-      payloadJson: { source: "onboarding_done" },
-      status: "queued",
-    });
-    await db.insert(events).values({
-      entityType: "brand",
-      entityId: idParse.data,
-      brandId: idParse.data,
-      actor: "user",
-      note: "Onboarding step 8: research_pull job enqueued",
-    });
-  }
 
   return { ok: true, data: { slug: brand.slug } };
 }
@@ -541,6 +460,7 @@ async function markStep(
       : {}),
     ...extras,
     currentStep: step,
+    stepsVersion: ONBOARDING_STEPS_VERSION,
   };
   await db
     .update(brands)

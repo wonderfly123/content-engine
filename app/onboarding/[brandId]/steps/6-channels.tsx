@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { ChannelConnectCard } from "@/components/onboarding/channel-connect-card";
 import type { Brand } from "../page";
 
-interface Step7Props {
+interface Step6Props {
   brand: Brand;
 }
 
-export async function Step7Channels({ brand }: Step7Props) {
+export async function Step6Channels({ brand }: Step6Props) {
   const rows = await db
     .select({
       channel: channelConnections.channel,
@@ -54,10 +54,10 @@ export async function Step7Channels({ brand }: Step7Props) {
 
       <div className="flex justify-end gap-2">
         <Button asChild variant="ghost" size="sm">
-          <Link href={`/onboarding/${brand.id}?step=8`}>Skip</Link>
+          <Link href={`/onboarding/${brand.id}?step=7`}>Skip</Link>
         </Button>
         <Button asChild>
-          <Link href={`/onboarding/${brand.id}?step=8`}>Continue</Link>
+          <Link href={`/onboarding/${brand.id}?step=7`}>Continue</Link>
         </Button>
       </div>
     </div>

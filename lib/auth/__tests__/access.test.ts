@@ -27,13 +27,20 @@ describe("decideAccess", () => {
     expect(decideAccess("/login", null)).toEqual({ kind: "allow" });
     expect(decideAccess("/auth/callback", null)).toEqual({ kind: "allow" });
   });
-  it("holds pending and disabled users on the pending page", () => {
-    for (const status of ["pending", "disabled"] as const) {
-      expect(decideAccess("/calendar", user({ status }))).toEqual({ kind: "redirect", to: "/pending" });
-      expect(decideAccess("/pending", user({ status }))).toEqual({ kind: "allow" });
-      expect(decideAccess("/api/reels", user({ status }))).toMatchObject({ kind: "deny", status: 403 });
-      expect(decideAccess("/api/admin/users", user({ status, role: "admin" }))).toMatchObject({ kind: "deny", status: 403 });
-    }
+  it("holds disabled users on the disabled page", () => {
+    const status = "disabled" as const;
+    expect(decideAccess("/calendar", user({ status }))).toEqual({ kind: "redirect", to: "/pending" });
+    expect(decideAccess("/pending", user({ status }))).toEqual({ kind: "allow" });
+    expect(decideAccess("/api/reels", user({ status }))).toMatchObject({ kind: "deny", status: 403 });
+    expect(decideAccess("/api/admin/users", user({ status, role: "admin" }))).toMatchObject({ kind: "deny", status: 403 });
+  });
+  it("sends someone who is signed in but not set up yet to be set up, and gives them no data meanwhile", () => {
+    const status = "pending" as const;
+    expect(decideAccess("/calendar", user({ status }))).toEqual({ kind: "redirect", to: "/auth/welcome" });
+    expect(decideAccess("/pending", user({ status }))).toEqual({ kind: "redirect", to: "/auth/welcome" });
+    expect(decideAccess("/auth/welcome", user({ status }))).toEqual({ kind: "allow" });
+    expect(decideAccess("/api/brands", user({ status }))).toMatchObject({ kind: "deny", status: 403 });
+    expect(decideAccess("/api/admin/users", user({ status, role: "admin" }))).toMatchObject({ kind: "deny", status: 403 });
   });
   it("lets active users in but keeps admin areas for admins", () => {
     expect(decideAccess("/calendar", user())).toEqual({ kind: "allow" });
@@ -53,8 +60,8 @@ describe("decideAccess", () => {
 });
 
 describe("initialAccess", () => {
-  it("makes the first account the admin and everyone else pending", () => {
+  it("makes the first account the admin and everyone else an active user, with no approval step", () => {
     expect(initialAccess(0)).toEqual({ role: "admin", status: "active" });
-    expect(initialAccess(1)).toEqual({ role: "user", status: "pending" });
+    expect(initialAccess(1)).toEqual({ role: "user", status: "active" });
   });
 });

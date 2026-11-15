@@ -61,13 +61,6 @@ export interface Brand {
   voice_examples: VoiceExample[];
 }
 
-export interface ResearchFindings {
-  llm_pattern_summary?: string;
-  competitor_findings_json?: unknown;
-  keyword_findings_json?: unknown;
-  trending_hashtags_json?: unknown;
-}
-
 export interface RejectionContext {
   briefOrDraft: 'brief' | 'draft';
   reason: string;
@@ -84,7 +77,6 @@ export interface BriefInput {
     where_they_hang_out?: string;
     content_they_engage_with?: string;
   };
-  research: ResearchFindings;
   rejections: RejectionContext[];
   channel: Channel;
   format: Format;

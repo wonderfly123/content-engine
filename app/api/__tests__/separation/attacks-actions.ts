@@ -22,36 +22,9 @@ const profile = {
   voiceExamples: [],
 };
 
-const MIXED = "the caller's own brand with someone else's keyword is never a valid call, for anyone";
-
 export const actions: ActionAttack[] = [
   // ---- app/settings/actions.ts ----
   { file: SETTINGS, action: "setEnabledChannels", args: (victim) => [{ brandId: victim.brandId, channels: ["instagram"] }] },
-  { file: SETTINGS, action: "addKeyword", args: (victim) => [{ brandId: victim.brandId, term: "planted keyword" }] },
-  { file: SETTINGS, action: "setKeywordStatus", args: (victim) => [{ brandId: victim.brandId, keywordId: victim.keywordId, status: "paused" }] },
-  {
-    file: SETTINGS,
-    action: "setKeywordStatus",
-    name: "own brand, their keyword",
-    args: (victim, attacker) => [{ brandId: attacker.brandId, keywordId: victim.keywordId, status: "paused" }],
-    skipOwnerControl: MIXED,
-  },
-  { file: SETTINGS, action: "deleteKeyword", args: (victim) => [{ brandId: victim.brandId, keywordId: victim.keywordId }] },
-  {
-    file: SETTINGS,
-    action: "deleteKeyword",
-    name: "own brand, their keyword",
-    args: (victim, attacker) => [{ brandId: attacker.brandId, keywordId: victim.keywordId }],
-    skipOwnerControl: MIXED,
-  },
-  { file: SETTINGS, action: "pullKeywordNow", args: (victim) => [{ brandId: victim.brandId, keywordId: victim.keywordId }] },
-  {
-    file: SETTINGS,
-    action: "pullKeywordNow",
-    name: "own brand, their keyword",
-    args: (victim, attacker) => [{ brandId: attacker.brandId, keywordId: victim.keywordId }],
-    skipOwnerControl: MIXED,
-  },
 
   // ---- app/onboarding/[brandId]/actions.ts ----
   // Names no brand: it creates one in the caller's own workspace and then redirects (which throws),
@@ -77,9 +50,8 @@ export const actions: ActionAttack[] = [
     args: (victim, attacker) => [attacker.brandId, { icps: [{ id: victim.icpId, name: "Renamed icp", isDefault: true }] }],
     skipOwnerControl: "aims at the attacker's brand; the victim cannot reach it",
   },
-  { file: ONBOARDING, action: "saveCompetitorsInspiration", args: (victim) => [victim.brandId, { competitors: [], inspiration: [] }] },
   { file: ONBOARDING, action: "saveCadence", args: (victim) => [victim.brandId, { preset: "sustainable", rows: [] }] },
-  { file: ONBOARDING, action: "markActive", args: (victim) => [victim.brandId, { triggerResearch: true }] },
+  { file: ONBOARDING, action: "markActive", args: (victim) => [victim.brandId] },
 
   // ---- app/settings/connection-actions.ts ----
   // These name no workspace: they act on the caller's own. The victim's keys must be untouched.

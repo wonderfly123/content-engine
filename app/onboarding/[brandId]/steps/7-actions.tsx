@@ -14,15 +14,12 @@ export function DoneActions({ brandId }: DoneActionsProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const finish = (triggerResearch: boolean) => {
+  const finish = () => {
     startTransition(async () => {
-      const res = await markActive(brandId, { triggerResearch });
+      const res = await markActive(brandId);
       if (!res.ok) {
         toast.error(res.error);
         return;
-      }
-      if (triggerResearch) {
-        toast.success("Research enqueued. You can leave this page.");
       }
       router.push(`/dashboard?brand=${res.data.slug}`);
     });
@@ -30,14 +27,7 @@ export function DoneActions({ brandId }: DoneActionsProps) {
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button
-        variant="outline"
-        onClick={() => finish(true)}
-        disabled={pending}
-      >
-        Run research now
-      </Button>
-      <Button onClick={() => finish(false)} disabled={pending}>
+      <Button onClick={finish} disabled={pending}>
         {pending ? "Activating…" : "Go to dashboard"}
       </Button>
     </div>

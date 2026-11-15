@@ -49,10 +49,7 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
   const slug = label.toLowerCase();
   const [ws] = await db.insert(schema.workspaces).values({ name: `${label} workspace` }).returning();
   await db.insert(schema.workspaceMembers).values({ workspaceId: ws.id, userId, role: "owner" });
-  await db.insert(schema.workspaceCredentials).values([
-    { workspaceId: ws.id, provider: "anthropic", secret: `${label}-anthropic-key` },
-    { workspaceId: ws.id, provider: "firecrawl", secret: `${label}-firecrawl-key` },
-  ]);
+  await db.insert(schema.workspaceCredentials).values({ workspaceId: ws.id, provider: "anthropic", secret: `${label}-anthropic-key` });
   const [brand] = await db
     .insert(schema.brands)
     .values({ workspaceId: ws.id, name: `${label} brand`, slug, status: "active", description: `${label} description`, voiceFreeform: `${label} voice` })

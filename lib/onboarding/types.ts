@@ -1,7 +1,7 @@
 /**
  * Wizard step DTOs and Zod schemas.
  *
- * The onboarding wizard is a series of 8 steps; each has its own server
+ * The onboarding wizard is a series of 7 steps; each has its own server
  * action consuming validated input from these schemas. We export both Zod
  * schemas (runtime validation at the boundary) and the inferred TS types so
  * components and actions share a single source of truth.
@@ -11,7 +11,6 @@ import { z } from "zod";
 import {
   brandStatusValues,
   channelValues,
-  competitorPlatformValues,
   formatValues,
 } from "@/lib/db/enums";
 
@@ -32,9 +31,10 @@ export const createBrandSchema = z
       .optional()
       .or(z.literal("").transform(() => undefined)),
   })
-  .refine((v) => Boolean(v.websiteUrl || v.description), {
-    message: "Provide a website URL, a description, or both.",
-    path: ["websiteUrl"],
+  // The brand is drafted from the description; the website is kept for reference only.
+  .refine((v) => Boolean(v.description), {
+    message: "Describe the brand: what it does and who it is for.",
+    path: ["description"],
   });
 
 export type CreateBrandInput = z.infer<typeof createBrandSchema>;
@@ -139,33 +139,7 @@ export const icpsSchema = z
 export type IcpInput = z.infer<typeof icpSchema>;
 export type IcpsInput = z.infer<typeof icpsSchema>;
 
-// ---- Step 5: competitors + inspiration -----------------------------------
-
-const accountSchema = z.object({
-  id: z.string().uuid().optional(),
-  handle: z.string().trim().min(1).max(120),
-  platform: z.enum(competitorPlatformValues),
-  url: z
-    .string()
-    .trim()
-    .url()
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  notes: z.string().trim().max(2000).optional().default(""),
-  pullWindowDays: z.number().int().min(1).max(365).default(30),
-});
-
-export const competitorsInspirationSchema = z.object({
-  competitors: z.array(accountSchema).max(10).default([]),
-  inspiration: z.array(accountSchema).max(10).default([]),
-});
-
-export type AccountInput = z.infer<typeof accountSchema>;
-export type CompetitorsInspirationInput = z.infer<
-  typeof competitorsInspirationSchema
->;
-
-// ---- Step 6: cadence ------------------------------------------------------
+// ---- Step 5: cadence ------------------------------------------------------
 
 export const cadenceRowSchema = z.object({
   channel: z.enum(channelValues),
@@ -208,6 +182,29 @@ export const brandStatusSchema = z.enum(brandStatusValues);
 /** Stored on `brands.settings_json` to track progress through the wizard. */
 export interface OnboardingState {
   currentStep?: number;
+  /** Set once a step from the 7-step wizard has been saved; absent on drafts from the 8-step one. */
+  stepsVersion?: number;
   draftProfile?: unknown;
   preset?: "sustainable" | "growth" | "aggressive" | "custom";
+}
+
+/** Tell us, Analyzing, Profile, ICPs, Cadence, Channels, Done. */
+export const ONBOARDING_STEP_COUNT = 7;
+
+/** Written with `currentStep` from step 5 on, so a stored step is read in the numbering it was saved in. */
+export const ONBOARDING_STEPS_VERSION = 2;
+
+/**
+ * The wizard step a draft brand resumes on. Drafts saved by the earlier 8-step wizard (which had
+ * an extra step 5) carry no `stepsVersion`: their steps 6-8 are today's 5-7, and their step 5 is
+ * today's step 5, the one that followed it.
+ */
+export function resolveOnboardingStep(
+  state: OnboardingState | null | undefined,
+): number {
+  const raw = Number(state?.currentStep);
+  if (!Number.isInteger(raw)) return 1;
+  const step =
+    state?.stepsVersion === ONBOARDING_STEPS_VERSION || raw <= 5 ? raw : raw - 1;
+  return Math.min(ONBOARDING_STEP_COUNT, Math.max(1, step));
 }

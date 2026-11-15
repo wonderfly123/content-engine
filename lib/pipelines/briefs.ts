@@ -1,15 +1,15 @@
 /**
  * Pipeline 2 — Brief batch (weekly per brand). Section 6 of the spec.
  *
- * Reads the latest fresh/partial research bundle + brand persona/voice/ICPs +
- * cadence settings, generates one brief per cadence slot via the LLM adapter,
+ * Reads the brand persona/voice/ICPs + cadence settings and recent rejections,
+ * generates one brief per cadence slot via the LLM adapter,
  * inserts `briefs` rows status='pending_review', and writes an audit event
  * per brief.
  *
  * Adapters are injected for testability.
  */
 
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
 import { llmForBrand } from "@/lib/credentials/clients";
 import type { LLMProvider, BriefInput } from "@/lib/llm";
@@ -31,7 +31,6 @@ export interface BriefBatchResult {
   brandId: string;
   briefsCreated: number;
   briefIds: string[];
-  researchBundleId: string;
 }
 
 export async function runBriefBatchForBrand(
@@ -42,26 +41,7 @@ export async function runBriefBatchForBrand(
   const llm = deps.llm ?? (await llmForBrand(brandId));
   const now = deps.now ?? (() => new Date());
 
-  // ---- 1. Read latest research bundle -------------------------------------
-  const bundles = await db
-    .select()
-    .from(schema.researchBundles)
-    .where(eq(schema.researchBundles.brandId, brandId))
-    .orderBy(desc(schema.researchBundles.pulledAt))
-    .limit(1);
-  const bundle = bundles[0];
-  if (!bundle) {
-    throw new Error(
-      `No research bundle for brand ${brandId} — run research first.`,
-    );
-  }
-  if (bundle.status !== "fresh" && bundle.status !== "partial") {
-    throw new Error(
-      `Research bundle ${bundle.id} is stale; refresh before generating briefs.`,
-    );
-  }
-
-  // ---- 2. Read brand + ICPs -----------------------------------------------
+  // ---- 1. Read brand + ICPs -----------------------------------------------
   const brandRows = await db
     .select()
     .from(schema.brands)
@@ -78,7 +58,7 @@ export async function runBriefBatchForBrand(
     throw new Error(`Brand ${brandId} has no ICPs configured`);
   }
 
-  // ---- 3. Cadence → slot list ---------------------------------------------
+  // ---- 2. Cadence → slot list ---------------------------------------------
   const cadenceRows = await db
     .select()
     .from(schema.cadenceSettings)
@@ -93,12 +73,7 @@ export async function runBriefBatchForBrand(
   // Spread slots evenly across the coming Mon→Sun.
   const totalCount = cadenceRows.reduce((n, r) => n + r.perWeek, 0);
   if (totalCount === 0) {
-    return {
-      brandId,
-      briefsCreated: 0,
-      briefIds: [],
-      researchBundleId: bundle.id,
-    };
+    return { brandId, briefsCreated: 0, briefIds: [] };
   }
   const startDate = nextMonday(now());
   let cursor = 0;
@@ -116,7 +91,7 @@ export async function runBriefBatchForBrand(
     }
   }
 
-  // ---- 4. Recent rejections (last 30 days) --------------------------------
+  // ---- 3. Recent rejections (last 30 days) --------------------------------
   const thirtyDaysAgo = new Date(now().getTime() - 30 * 24 * 60 * 60 * 1000);
   const rejections = await db
     .select({
@@ -139,7 +114,7 @@ export async function runBriefBatchForBrand(
       at: r.createdAt.toISOString(),
     }));
 
-  // ---- 5. Generate brief per slot -----------------------------------------
+  // ---- 4. Generate brief per slot -----------------------------------------
   const briefIds: string[] = [];
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i]!;
@@ -154,12 +129,6 @@ export async function runBriefBatchForBrand(
         pain_points: icp.painPoints,
         where_they_hang_out: icp.whereTheyHangOut,
         content_they_engage_with: icp.contentTheyEngageWith,
-      },
-      research: {
-        llm_pattern_summary: bundle.llmPatternSummary,
-        competitor_findings_json: bundle.competitorFindingsJson,
-        keyword_findings_json: bundle.keywordFindingsJson,
-        trending_hashtags_json: bundle.trendingHashtagsJson,
       },
       rejections: rejectionContext,
       channel: slot.channel,
@@ -186,18 +155,14 @@ export async function runBriefBatchForBrand(
         channel: slot.channel,
         format: slot.format,
         icpId: icp.id,
-        researchBundleId: bundle.id,
         title: deriveTitle(draft.hook),
         hook: draft.hook,
         angle: draft.angle,
         keyMessage: draft.key_message,
         suggestedHashtags: draft.suggested_hashtags,
         suggestedCta: draft.suggested_cta,
-        inspirationPostRefs: draft.inspiration_post_refs.map((r) => ({
-          externalUrl: r.external_url ?? "",
-          why: r.why,
-          competitorId: r.ref_id,
-        })),
+        // With no source posts given to the model, any reference it returns would be made up.
+        inspirationPostRefs: [],
         targetPublishDate: slot.date,
         status: "pending_review",
       })
@@ -220,7 +185,6 @@ export async function runBriefBatchForBrand(
     brandId,
     briefsCreated: briefIds.length,
     briefIds,
-    researchBundleId: bundle.id,
   };
 }
 

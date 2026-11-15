@@ -42,7 +42,6 @@ describe('AnthropicProvider', () => {
       },
       voice: {},
       icp: { name: 'Lifter' },
-      research: {},
       rejections: [],
       channel: 'instagram',
       format: 'reel',

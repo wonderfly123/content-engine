@@ -54,9 +54,9 @@ Checked on 2026-11-14 by reading the code and querying the database read-only. V
 - The upload handshake trusts the `brandId` the browser sends.
 
 **Outside services**
-- Keys are read from environment variables, one set for the whole app: Anthropic, Firecrawl, Apify, the Meta app, Vercel Blob.
+- Keys are read from environment variables, one set for the whole app: Anthropic, the Meta app, Vercel Blob. (Update: Anthropic is now a per-workspace key.)
 - Instagram and Facebook are the exception: each brand connects its own account and the token is stored encrypted in `channel_connections` (`lib/db/crypto.ts`).
-- Research (`lib/research/firecrawl.ts`, `lib/research/apify.ts`) has cron routes at `app/api/cron/research`, `briefs` and `patterns`, but `vercel.json` does not schedule them. Only `publish`, `jobs-retry`, `connections`, `analytics-hot` and `analytics-cold` run on a schedule. Whether research has been run by hand was not checked.
+- Research (no outside research service is used any more) has cron routes at `app/api/cron/research`, `briefs` and `patterns`, but `vercel.json` does not schedule them. Only `publish`, `jobs-retry`, `connections`, `analytics-hot` and `analytics-cold` run on a schedule. Whether research has been run by hand was not checked.
 - Nothing exists yet for cloud video storage or cloud rendering. Cloudflare R2 and Modal were proposed in the earlier plan and never built; `~/gym-reels` has only empty placeholders for their keys.
 
 **AI**
@@ -89,7 +89,7 @@ Checked on 2026-11-14 by reading the code and querying the database read-only. V
 ### 2b. Onboarding that connects everything
 
 - Extend the existing brand onboarding (`app/onboarding`, `components/onboarding/*`) with a connections step that covers every outside system the app uses.
-- For each system, use sign-in (OAuth) where the provider offers it and a pasted key where it doesn't. Instagram and Facebook already work by sign-in. Anthropic, Firecrawl and Apify are keys. Anthropic does not allow third-party apps to offer "sign in with Claude", so that one is a pasted API key.
+- For each system, use sign-in (OAuth) where the provider offers it and a pasted key where it doesn't. Instagram and Facebook already work by sign-in. Anthropic is a key. Anthropic does not allow third-party apps to offer "sign in with Claude", so that one is a pasted API key.
 - Store every credential per workspace, encrypted the way `channel_connections` tokens are, decrypted only on the server at the moment of use. Never send a stored key back to the browser; show only that it is set, with a way to replace or remove it.
 - Test each credential when it is entered and show a clear pass or fail. Reuse the connection health check (`lib/connections/check.ts`, `app/api/cron/connections`) so a key that stops working raises an alert.
 - Every place that reads a key from an environment variable today must read the workspace's own instead. List those places.

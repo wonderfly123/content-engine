@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Content Engine",
-  description: "Multi-brand content pipeline: research → brief → draft → publish",
+  description: "Multi-brand content pipeline: brief → draft → publish",
 };
 
 export default function RootLayout({

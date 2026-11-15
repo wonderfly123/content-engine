@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 
   console.log(`Seeded brand "${name}" (slug=${slug}) → id=${brand.id}`);
   console.log(
-    `  Visit /onboarding/${brand.id}?step=7 to connect Meta for this brand.`,
+    `  Visit /onboarding/${brand.id}?step=6 to connect Meta for this brand.`,
   );
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveOnboardingStep,
   cadenceSchema,
-  competitorsInspirationSchema,
   createBrandSchema,
   icpsSchema,
   profileSchema,
@@ -12,9 +12,9 @@ describe("createBrandSchema", () => {
     const r = createBrandSchema.safeParse({});
     expect(r.success).toBe(false);
   });
-  it("accepts url-only", () => {
+  it("needs a description; a website alone is not enough to draft a brand", () => {
     const r = createBrandSchema.safeParse({ websiteUrl: "https://example.com" });
-    expect(r.success).toBe(true);
+    expect(r.success).toBe(false);
   });
   it("accepts description-only", () => {
     const r = createBrandSchema.safeParse({ description: "what we do" });
@@ -106,20 +106,23 @@ describe("cadenceSchema", () => {
   });
 });
 
-describe("competitorsInspirationSchema", () => {
-  it("accepts empty payload", () => {
-    const r = competitorsInspirationSchema.safeParse({});
-    expect(r.success).toBe(true);
+describe("resolveOnboardingStep", () => {
+  it("defaults to step 1", () => {
+    expect(resolveOnboardingStep(undefined)).toBe(1);
+    expect(resolveOnboardingStep({})).toBe(1);
   });
-  it("rejects more than 10 entries", () => {
-    const accounts = Array.from({ length: 11 }, (_, i) => ({
-      handle: `acc${i}`,
-      platform: "ig" as const,
-      pullWindowDays: 30,
-    }));
-    const r = competitorsInspirationSchema.safeParse({
-      competitors: accounts,
-    });
-    expect(r.success).toBe(false);
+  it("reads a step saved by the 7-step wizard as it is", () => {
+    expect(resolveOnboardingStep({ currentStep: 6, stepsVersion: 2 })).toBe(6);
+    expect(resolveOnboardingStep({ currentStep: 3 })).toBe(3);
+  });
+  it("maps a step saved by the earlier 8-step wizard onto today's steps", () => {
+    expect(resolveOnboardingStep({ currentStep: 5 })).toBe(5); // removed step -> cadence
+    expect(resolveOnboardingStep({ currentStep: 6 })).toBe(5); // cadence
+    expect(resolveOnboardingStep({ currentStep: 7 })).toBe(6); // channels
+    expect(resolveOnboardingStep({ currentStep: 8 })).toBe(7); // done
+  });
+  it("never leaves the 1-7 range", () => {
+    expect(resolveOnboardingStep({ currentStep: 99, stepsVersion: 2 })).toBe(7);
+    expect(resolveOnboardingStep({ currentStep: 0 })).toBe(1);
   });
 });

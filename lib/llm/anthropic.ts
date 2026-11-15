@@ -2,7 +2,7 @@
  * Anthropic Claude adapter implementing the `LLMProvider` interface.
  *
  * Models (per Section 2 of the foundation spec):
- *   - Default: Sonnet 4.6 (`claude-sonnet-4-6`) — briefs, research summary,
+ *   - Default: Sonnet 4.6 (`claude-sonnet-4-6`) — briefs,
  *     persona extraction, image prompts.
  *   - Nuanced voice work: Opus 4.7 (`claude-opus-4-7`) — draft generation.
  *

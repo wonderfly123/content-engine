@@ -1,16 +1,14 @@
 /**
- * Step 2 orchestrator: turn a website URL + description into a drafted brand
- * profile (persona, voice freeform, default ICP, cadence preset).
+ * Step 2 orchestrator: turn a brand description into a drafted brand profile
+ * (persona, voice freeform, default ICP, cadence preset).
  *
- * Pure, dependency-injectable: takes a `Researcher` and `LLMProvider` so tests
- * can supply stubs. Production callers use the factory `runAnalysis(input)`
- * which builds adapters from `lib/research` and `lib/llm`.
+ * Pure, dependency-injectable: takes an `LLMProvider` so tests can supply a
+ * stub. Production callers use `runAnalysis(brandId, input)`, which uses the
+ * workspace's own LLM key.
  */
 
 import type { LLMProvider, PersonaDraft } from "@/lib/llm/types";
-import { llmForBrand, researcherForBrand } from "@/lib/credentials/clients";
-import { getCredentialForBrand } from "@/lib/credentials/store";
-import type { Researcher, ScrapedSite } from "@/lib/research/types";
+import { llmForBrand } from "@/lib/credentials/clients";
 import type { ProfileInput, IcpInput, CadenceInput } from "./types";
 import { CADENCE_PRESETS } from "./types";
 
@@ -23,13 +21,10 @@ export interface DraftedProfile {
   profile: ProfileInput;
   icps: IcpInput[];
   cadence: CadenceInput;
-  scrapedAt?: string;
   sourceUrl?: string;
 }
 
 export interface AnalyzeDeps {
-  /** Null when the workspace has not connected a website reader; analysis then works from the description. */
-  researcher: Researcher | null;
   llm: LLMProvider;
 }
 
@@ -41,22 +36,6 @@ function suggestSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-+|-+$)/g, "")
     .slice(0, 60) || "brand";
-}
-
-function deriveNameFromUrlOrPersona(
-  scraped: ScrapedSite | undefined,
-  persona: PersonaDraft,
-  fallback: string,
-): string {
-  if (scraped?.title) {
-    // Title often "Brand — Tagline"; take first segment
-    const first = scraped.title.split(/[—|·•:|–-]/)[0]?.trim();
-    if (first && first.length >= 2) return first;
-  }
-  if (persona.archetype && persona.audience_summary) {
-    return fallback;
-  }
-  return fallback;
 }
 
 function defaultProfileFromPersona(
@@ -122,10 +101,10 @@ function defaultIcp(persona: PersonaDraft): IcpInput {
 
 /**
  * Runs the analysis pipeline:
- *  1. If websiteUrl: scrape via Researcher.scrapeSite
- *  2. Build composite "content" string (scraped markdown + description)
- *  3. Call LLMProvider.extractPersona for structured persona
- *  4. Compose ProfileInput + ICP + Growth cadence preset
+ *  1. Call LLMProvider.extractPersona on the description for a structured persona
+ *  2. Compose ProfileInput + ICP + Growth cadence preset
+ *
+ * The website address is not read; it only supplies the provisional brand name.
  */
 export async function analyzeBrand(
   input: AnalyzeInput,
@@ -135,39 +114,17 @@ export async function analyzeBrand(
     throw new Error("analyzeBrand requires websiteUrl or description");
   }
 
-  if (!deps.researcher && !input.description) {
-    throw new Error("Connect Firecrawl in Settings > Connections to read a website, or add a description instead.");
+  if (!input.description) {
+    throw new Error("Add a description of the brand so it can be analysed.");
   }
 
-  let scraped: ScrapedSite | undefined;
-  if (input.websiteUrl && deps.researcher) {
-    try {
-      scraped = await deps.researcher.scrapeSite(input.websiteUrl);
-    } catch (err) {
-      // Soft-fail scrape; downstream still extracts persona from description.
-      scraped = undefined;
-      if (!input.description) {
-        throw err;
-      }
-    }
-  }
-
-  const composite = [
-    scraped?.title ? `Site title: ${scraped.title}` : "",
-    scraped?.description ? `Site description: ${scraped.description}` : "",
-    scraped?.markdown ? scraped.markdown.slice(0, 12_000) : "",
-    input.description ? `User-provided description:\n${input.description}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const persona = await deps.llm.extractPersona(composite);
-
-  const name = deriveNameFromUrlOrPersona(
-    scraped,
-    persona,
-    input.websiteUrl ? new URL(input.websiteUrl).hostname.replace(/^www\./, "") : "New brand",
+  const persona = await deps.llm.extractPersona(
+    `User-provided description:\n${input.description}`,
   );
+
+  const name = input.websiteUrl
+    ? new URL(input.websiteUrl).hostname.replace(/^www\./, "")
+    : "New brand";
 
   const voiceFreeform = [
     persona.pov ? `Point of view: ${persona.pov}` : "",
@@ -183,14 +140,11 @@ export async function analyzeBrand(
     profile,
     icps: [defaultIcp(persona)],
     cadence: { preset: "growth", rows: [...CADENCE_PRESETS.growth] },
-    scrapedAt: scraped?.scraped_at,
-    sourceUrl: scraped?.url ?? input.websiteUrl,
+    sourceUrl: input.websiteUrl,
   };
 }
 
 /** Production entry point: analyses with the keys of the workspace that owns `brandId`. */
 export async function runAnalysis(brandId: string, input: AnalyzeInput): Promise<DraftedProfile> {
-  const llm = await llmForBrand(brandId);
-  const hasReader = Boolean(await getCredentialForBrand(brandId, "firecrawl"));
-  return analyzeBrand(input, { researcher: hasReader ? await researcherForBrand(brandId) : null, llm });
+  return analyzeBrand(input, { llm: await llmForBrand(brandId) });
 }

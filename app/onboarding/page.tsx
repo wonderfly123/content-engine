@@ -9,6 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StartForm } from "./start-form";
 import { ConnectionsCard } from "@/components/settings/connections-card";
 import { connectionsForCaller } from "@/lib/credentials/view";
+import {
+  ONBOARDING_STEP_COUNT,
+  resolveOnboardingStep,
+  type OnboardingState,
+} from "@/lib/onboarding/types";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +56,10 @@ export default async function OnboardingEntryPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {drafts.map((d) => {
-              const step =
-                (
-                  d.settingsJson as { onboarding?: { currentStep?: number } }
-                )?.onboarding?.currentStep ?? 1;
+              const step = resolveOnboardingStep(
+                (d.settingsJson as { onboarding?: OnboardingState } | null)
+                  ?.onboarding,
+              );
               return (
                 <div
                   key={d.id}
@@ -63,7 +68,7 @@ export default async function OnboardingEntryPage() {
                   <div>
                     <div className="text-sm font-medium">{d.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      Step {step} of 8 · last updated{" "}
+                      Step {step} of {ONBOARDING_STEP_COUNT} · last updated{" "}
                       {new Date(d.updatedAt).toLocaleString()}
                     </div>
                   </div>
@@ -85,7 +90,7 @@ export default async function OnboardingEntryPage() {
           <div>
             <h2 className="text-lg font-semibold tracking-tight">First, connect your accounts</h2>
             <p className="text-sm text-muted-foreground">
-              Your workspace runs on its own keys. Connect Anthropic to continue; the others can wait.
+              Your workspace runs on its own AI key. Connect Anthropic to continue.
               You will connect Instagram and Facebook at the end of brand setup.
             </p>
           </div>

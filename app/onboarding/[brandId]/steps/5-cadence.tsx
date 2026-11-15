@@ -8,11 +8,11 @@ import type {
 } from "@/lib/onboarding/types";
 import type { Brand } from "../page";
 
-interface Step6Props {
+interface Step5Props {
   brand: Brand;
 }
 
-export async function Step6Cadence({ brand }: Step6Props) {
+export async function Step5Cadence({ brand }: Step5Props) {
   const rows = await db
     .select()
     .from(cadenceSettings)

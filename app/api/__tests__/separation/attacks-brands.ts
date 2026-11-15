@@ -1,5 +1,5 @@
 /**
- * Cross-workspace attempts for: brands, assets, keywords, research, alerts, the Meta OAuth callback.
+ * Cross-workspace attempts for: brands, assets, alerts, the Meta OAuth callback.
  */
 import type { RouteAttack } from "./attacks";
 import type { Seeded } from "./world";
@@ -87,11 +87,6 @@ export const routes: RouteAttack[] = [
     name: "upload token for their brand",
     build: (victim) => ({ body: uploadToken(victim.brandId) }),
   },
-
-  // ---- keywords, research ------------------------------------------------
-  { route: "app/api/keywords/route.ts", method: "GET", build: brandQuery },
-  { route: "app/api/research/route.ts", method: "GET", build: brandQuery },
-  { route: "app/api/research/route.ts", method: "POST", build: (victim) => ({ body: { brandId: victim.brandId } }) },
 
   // ---- alerts ------------------------------------------------------------
   { route: "app/api/alerts/route.ts", method: "GET", name: "their brand", build: brandQuery },

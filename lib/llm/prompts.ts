@@ -74,7 +74,7 @@ function formatExamples(examples: VoiceExample[]): string {
 
 /**
  * Brief generation prompt. Brand persona + voice goes in the cached system
- * block; per-brief inputs (research, ICP, target date, rejections) go in the
+ * block; per-brief inputs (ICP, target date, rejections) go in the
  * user message so each brief in a batch hits the cache.
  */
 export function buildBriefPrompt(
@@ -127,9 +127,6 @@ export function buildBriefPrompt(
     input.icp.content_they_engage_with
       ? `Engages with: ${input.icp.content_they_engage_with}`
       : '',
-    ``,
-    `# Research findings`,
-    input.research.llm_pattern_summary ?? '(none)',
     ``,
     `# Recent rejections (what NOT to repeat)`,
     rejectionBlock,

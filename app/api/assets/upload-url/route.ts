@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { uploadUrlRequestSchema } from "@/lib/assets/types";
+import { storageFullBody, storageRoom } from "@/lib/limits/storage";
 import { guard, requireBrand, requireUser } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
@@ -31,7 +32,10 @@ export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
   // signed-in caller asking for an upload token, and the brand it names must be theirs.
   if (body.type !== "blob.upload-completed") {
     await requireUser();
-    await requireBrand(brandIdOf((body as { payload?: { clientPayload?: unknown } }).payload?.clientPayload));
+    const { workspaceId } = await requireBrand(brandIdOf((body as { payload?: { clientPayload?: unknown } }).payload?.clientPayload));
+    // Uploads land on the platform's file store, so each workspace has a fixed allowance.
+    const room = await storageRoom(workspaceId);
+    if (room.full) return NextResponse.json(storageFullBody(room), { status: 413 });
   }
 
   try {

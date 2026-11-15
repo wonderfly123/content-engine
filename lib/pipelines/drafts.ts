@@ -99,7 +99,7 @@ export async function generateDraftForBrief(
   // interface signature is `generateDraft(brief, brand)` and we cannot widen
   // it (lib/llm is out-of-scope for this task). Brand-scoped voice examples
   // already carry the strongest signal. Rejection context is intentionally
-  // deferred to `summarizePatterns` (follow-up; see research.ts header note).
+  // deferred to `summarizePatterns` (follow-up).
 
   const llmBrand: LLMBrand = {
     id: brand.id,

@@ -105,6 +105,12 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 // The access layer is covered by the separation test; here every brand/draft is the caller's.
+// The workspace has storage room (the allowance has its own tests in lib/limits).
+vi.mock("@/lib/limits/storage", () => ({
+  storageRoom: async () => ({ usedBytes: 0, limitBytes: 1, full: false }),
+  storageFullBody: () => ({ error: "storage_limit" }),
+}));
+
 vi.mock("@/lib/auth/workspace", () => {
   class AccessError extends Error {
     constructor(

@@ -8,10 +8,14 @@ import { Step1TellMe } from "./steps/1-step1-tell-me";
 import { Step2Analyzing } from "./steps/2-analyzing";
 import { Step3ReviewProfile } from "./steps/3-review-profile";
 import { Step4Icps } from "./steps/4-icps";
-import { Step5CompetitorsInspiration } from "./steps/5-competitors-inspiration";
-import { Step6Cadence } from "./steps/6-cadence";
-import { Step7Channels } from "./steps/7-channels";
-import { Step8Done } from "./steps/8-done";
+import { Step5Cadence } from "./steps/5-cadence";
+import { Step6Channels } from "./steps/6-channels";
+import { Step7Done } from "./steps/7-done";
+import {
+  ONBOARDING_STEP_COUNT,
+  resolveOnboardingStep,
+  type OnboardingState,
+} from "@/lib/onboarding/types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +30,7 @@ interface PageProps {
 function clampStep(raw: string | undefined, fallback: number): number {
   const n = Number.parseInt(raw ?? "", 10);
   if (Number.isNaN(n)) return fallback;
-  return Math.min(8, Math.max(1, n));
+  return Math.min(ONBOARDING_STEP_COUNT, Math.max(1, n));
 }
 
 export default async function WizardPage({ params, searchParams }: PageProps) {
@@ -52,10 +56,9 @@ export default async function WizardPage({ params, searchParams }: PageProps) {
     redirect(`/dashboard?brand=${brand.slug}`);
   }
 
-  const storedStep =
-    (
-      brand.settingsJson as { onboarding?: { currentStep?: number } }
-    )?.onboarding?.currentStep ?? 1;
+  const storedStep = resolveOnboardingStep(
+    (brand.settingsJson as { onboarding?: OnboardingState } | null)?.onboarding,
+  );
   const step = clampStep(stepParam, storedStep);
 
   const alreadyAnalyzed = Boolean(
@@ -72,10 +75,9 @@ export default async function WizardPage({ params, searchParams }: PageProps) {
       )}
       {step === 3 && <Step3ReviewProfile brand={brand} />}
       {step === 4 && <Step4Icps brand={brand} />}
-      {step === 5 && <Step5CompetitorsInspiration brand={brand} />}
-      {step === 6 && <Step6Cadence brand={brand} />}
-      {step === 7 && <Step7Channels brand={brand} />}
-      {step === 8 && <Step8Done brand={brand} />}
+      {step === 5 && <Step5Cadence brand={brand} />}
+      {step === 6 && <Step6Channels brand={brand} />}
+      {step === 7 && <Step7Done brand={brand} />}
     </div>
   );
 }
