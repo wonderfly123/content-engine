@@ -43,7 +43,17 @@ async function fetchThread(id: string): Promise<ThreadData> {
 }
 
 /** One conversation: every message with where it came from, and a composer for app messages. */
-export function ThreadView({ id }: { id: string }) {
+export function ThreadView({
+  id,
+  compact = false,
+  onSwitch,
+}: {
+  id: string;
+  /** Panel mode: no back link or New buttons, and a link to the full page. */
+  compact?: boolean;
+  /** Called when the conversation moves to a new thread (someone typed "new reel"); defaults to opening its page. */
+  onSwitch?: (conversationId: string) => void;
+}) {
   const router = useRouter();
   const qc = useQueryClient();
   const active = useBrandStore((s) => s.active);
@@ -66,7 +76,10 @@ export function ThreadView({ id }: { id: string }) {
       setDraft("");
       qc.invalidateQueries({ queryKey: ["conversations"] });
       // "new reel" typed here opens a new thread: follow it.
-      if (json.conversationId && json.conversationId !== id) router.push(`/conversations/${json.conversationId}`);
+      if (json.conversationId && json.conversationId !== id) {
+        if (onSwitch) onSwitch(json.conversationId);
+        else router.push(`/conversations/${json.conversationId}`);
+      }
       else await qc.invalidateQueries({ queryKey: ["conversation", id] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -79,7 +92,7 @@ export function ThreadView({ id }: { id: string }) {
   if (error || !data) {
     return (
       <div className="space-y-4">
-        <BackLink />
+        {!compact && <BackLink />}
         <p className="text-sm text-muted-foreground">{(error as Error)?.message === "not_found" ? "This conversation doesn't exist or isn't yours." : "Could not load this conversation."}</p>
       </div>
     );
@@ -89,10 +102,10 @@ export function ThreadView({ id }: { id: string }) {
   const closed = c.status === "closed";
   return (
     <div className="space-y-4">
-      <BackLink />
+      {!compact && <BackLink />}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+          <h2 className={cn("flex flex-wrap items-center gap-2 font-semibold tracking-tight", compact ? "text-lg" : "text-2xl")}>
             {kindLabel(c.kind)}
             {c.brand && <span className="text-muted-foreground">for {c.brand.name}</span>}
             {closed ? <Badge variant="outline">Closed</Badge> : <Badge>Open</Badge>}
@@ -102,7 +115,13 @@ export function ThreadView({ id }: { id: string }) {
             {!c.brand && " · Brand not chosen yet"}
           </p>
         </div>
-        <NewThreadButtons brandId={c.brand?.id ?? active?.id} />
+        {compact ? (
+          <Link href={`/conversations/${id}`} className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Open full page
+          </Link>
+        ) : (
+          <NewThreadButtons brandId={c.brand?.id ?? active?.id} />
+        )}
       </div>
 
       <Card>

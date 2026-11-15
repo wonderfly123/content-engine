@@ -175,6 +175,14 @@ describe("GET /api/posts", () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it("accepts a comma-separated status list, as the dashboard sends it", async () => {
+    nextSelectRows = [];
+    const res = await listGet(
+      makeReq(`http://localhost/api/posts?brandId=${BRAND}&status=queued,publishing,published,failed`),
+    );
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("POST /api/posts/[id]/schedule", () => {

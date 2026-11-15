@@ -13,6 +13,7 @@ import {
   WeekQueueCard,
 } from "@/components/dashboard/queue-cards";
 import { AlertsCard } from "@/components/dashboard/alerts-card";
+import { StartVideo } from "@/components/dashboard/start-video";
 
 export default function DashboardPage() {
   const brand = useBrandStore((s) => s.active);
@@ -22,11 +23,14 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          What needs your attention.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            What needs your attention.
+          </p>
+        </div>
+        {brandId && <StartVideo brandId={brandId} />}
       </div>
 
       {!brandId ? (

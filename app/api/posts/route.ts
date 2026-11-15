@@ -30,12 +30,9 @@ export const GET = guard(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const parsed = querySchema.safeParse({
     brandId: sp.get("brandId"),
-    status: sp.getAll("status").length
-      ? sp.getAll("status")
-      : (sp.get("status") ?? "").split(",").filter(Boolean),
-    channels: sp.getAll("channel").length
-      ? sp.getAll("channel")
-      : (sp.get("channel") ?? "").split(",").filter(Boolean),
+    // Accept both ?status=a&status=b and ?status=a,b (the dashboard sends the second form).
+    status: sp.getAll("status").flatMap((v) => v.split(",")).filter(Boolean),
+    channels: sp.getAll("channel").flatMap((v) => v.split(",")).filter(Boolean),
     from: sp.get("from") ?? undefined,
     to: sp.get("to") ?? undefined,
     limit: sp.get("limit") ?? undefined,

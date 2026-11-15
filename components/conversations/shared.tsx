@@ -25,7 +25,16 @@ export function ChannelMarker({ channel, className }: { channel: Channel; classN
 }
 
 /** New reel / New story: closes your open thread and opens a new one for this brand. */
-export function NewThreadButtons({ brandId, size = "sm" }: { brandId: string | undefined; size?: "sm" | "default" }) {
+export function NewThreadButtons({
+  brandId,
+  size = "sm",
+  onStarted,
+}: {
+  brandId: string | undefined;
+  size?: "sm" | "default";
+  /** Called with the new thread instead of opening its page (the dashboard opens it in a panel). */
+  onStarted?: (conversationId: string) => void;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<"reel" | "story" | null>(null);
 
@@ -40,7 +49,10 @@ export function NewThreadButtons({ brandId, size = "sm" }: { brandId: string | u
       });
       const json = (await res.json().catch(() => ({}))) as { conversationId?: string; error?: string };
       if (!res.ok || !json.conversationId) throw new Error(json.error ?? `HTTP ${res.status}`);
-      router.push(`/conversations/${json.conversationId}`);
+      if (onStarted) {
+        onStarted(json.conversationId);
+        setBusy(null);
+      } else router.push(`/conversations/${json.conversationId}`);
     } catch (e) {
       toast.error(`Could not start: ${(e as Error).message}`);
       setBusy(null);
