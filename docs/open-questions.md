@@ -67,6 +67,8 @@ Account status lives in Supabase and the webhook can't see it. Decide whether te
 
 ## Settled
 
+- **Hand edits from a conversation (2026-11-14).** When the editor finishes a cut, it posts it in the thread (and by text if the conversation started there): "Tell me what to change, or open it in the editor." Every preview has **Open in editor** and **Approve**. Saving hand edits re-renders without an AI call and posts the new version to the thread; the AI always works from the latest version. Links in texts open the app (sign-in required), not a public preview page.
+
 - **AI is bring-your-own-key (2026-11-14).** Every workspace pays for its own AI with its own Anthropic API key (Settings > Connections), so Nekter never manages anyone's AI spend. Anthropic offers no "sign in with Claude" for other apps, so it has to be a pasted key. The cloud editor uses the workspace's own key for every job. The plan is to show each job's AI cost in its conversation, so people can see what they spend.
 
 - **Name and domains:** the product is Nekter. nekter.io is the website and app.nekter.io the app (2026-11-14).
