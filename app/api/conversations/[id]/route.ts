@@ -1,5 +1,5 @@
 /**
- * GET /api/conversations/[id] — one thread and its messages, oldest first.
+ * GET /api/conversations/[id] — one thread, its messages (oldest first) and its uploaded clips.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
@@ -7,6 +7,7 @@ import { guard } from "@/lib/auth/workspace";
 import { requireConversation } from "@/lib/conversations/access";
 import { listMessages } from "@/lib/conversations/store";
 import { db, schema } from "@/lib/db";
+import { listClips } from "@/lib/media/store";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ export const GET = guard(async (_req: NextRequest, ctx: { params: Promise<{ id: 
         .where(and(eq(schema.brands.id, c.brandId), eq(schema.brands.workspaceId, c.workspaceId)))
         .limit(1)
     : [];
-  const messages = await listMessages(c.id);
+  const [messages, clips] = await Promise.all([listMessages(c.id), listClips(c.id, c.workspaceId)]);
   return NextResponse.json({
     conversation: {
       id: c.id,
@@ -34,5 +35,6 @@ export const GET = guard(async (_req: NextRequest, ctx: { params: Promise<{ id: 
       brand: brand ?? null,
     },
     messages: messages.map((m) => ({ id: m.id, direction: m.direction, channel: m.channel, body: m.body, createdAt: m.createdAt })),
+    clips,
   });
 });

@@ -186,3 +186,12 @@ export type MessageChannel = (typeof messageChannelValues)[number];
 export const messageDirectionValues = ["in", "out"] as const;
 export const messageDirectionEnum = pgEnum("message_direction", messageDirectionValues);
 export type MessageDirection = (typeof messageDirectionValues)[number];
+
+// Media files on private storage (lib/storage, lib/media).
+export const mediaKindValues = ["raw", "preview", "final", "voice", "thumb"] as const;
+export const mediaKindEnum = pgEnum("media_kind", mediaKindValues);
+export type MediaKind = (typeof mediaKindValues)[number];
+
+export const mediaStatusValues = ["uploading", "ready", "failed"] as const;
+export const mediaStatusEnum = pgEnum("media_status", mediaStatusValues);
+export type MediaStatus = (typeof mediaStatusValues)[number];

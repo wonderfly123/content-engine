@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ArrowLeft, Send, Upload } from "lucide-react";
+import { ArrowLeft, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useBrandStore } from "@/lib/stores/brand-store";
 import { cn } from "@/lib/utils";
+import { ClipList, type Clip } from "./clip-list";
+import { ClipUploader } from "./clip-uploader";
 import { ChannelMarker, kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
 
 interface ThreadData {
@@ -28,6 +30,7 @@ interface ThreadData {
     brand: { id: string; name: string } | null;
   };
   messages: Array<{ id: string; direction: "in" | "out"; channel: Channel; body: string; createdAt: string }>;
+  clips?: Clip[];
 }
 
 const CLOSED_BECAUSE: Record<string, string> = {
@@ -147,10 +150,7 @@ export function ThreadView({
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-        <Upload className="h-4 w-4 shrink-0" aria-hidden="true" />
-        Uploading clips here is coming soon.
-      </div>
+      {!closed && <ClipUploader conversationId={id} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
 
       {closed ? (
         <p className="text-sm text-muted-foreground">
@@ -180,6 +180,8 @@ export function ThreadView({
           </div>
         </div>
       )}
+
+      <ClipList clips={data.clips ?? []} />
     </div>
   );
 }

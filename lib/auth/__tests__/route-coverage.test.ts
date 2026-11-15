@@ -9,8 +9,9 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = path.resolve(__dirname, "../../..");
 // `requireConversation` (lib/conversations/access.ts) is built on requireUser + listMemberships:
-// threads reach their workspace directly rather than through a brand.
-const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|requireOwned|requireLocalReels|listBrandIds|requireAdmin|requireConversation)\s*\(/;
+// threads reach their workspace directly rather than through a brand. `requireMedia`
+// (lib/media/access.ts) is built the same way for media objects on R2.
+const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|requireOwned|requireLocalReels|listBrandIds|requireAdmin|requireConversation|requireMedia)\s*\(/;
 
 /**
  * Routes that can never carry a session, so they prove the caller another way. Each one is held to

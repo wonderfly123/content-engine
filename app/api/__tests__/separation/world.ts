@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@/lib/db/schema";
 import type { Access } from "@/lib/auth/access";
+import { buildMediaKey } from "@/lib/storage/keys";
 
 export type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -35,6 +36,10 @@ export interface Seeded {
   adId: string;
   conversationId: string;
   messageId: string;
+  /** A ready clip uploaded into the conversation. */
+  mediaId: string;
+  /** A clip still uploading into the conversation (one 16 MB part). */
+  uploadingMediaId: string;
   /** The member's confirmed mobile number (texts from it land in this workspace). */
   phone: string;
 }
@@ -105,6 +110,22 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
     .insert(schema.conversationMessages)
     .values({ conversationId: conversation.id, direction: "in", channel: "sms", body: `${label} message`, authorUserId: userId, providerMessageId: `SM${slug}` })
     .returning();
+  const clip = (id: string, status: "ready" | "uploading") => ({
+    id,
+    workspaceId: ws.id,
+    brandId,
+    conversationId: conversation.id,
+    kind: "raw" as const,
+    r2Key: buildMediaKey({ workspaceId: ws.id, conversationId: conversation.id, filename: `${label} clip.mov`, id }),
+    filename: `${label} clip.mov`,
+    contentType: "video/quicktime",
+    sizeBytes: 2000,
+    status,
+    uploadId: status === "uploading" ? `${slug}-upload-id` : null,
+    uploadedBy: userId,
+  });
+  const [media] = await db.insert(schema.mediaObjects).values(clip(crypto.randomUUID(), "ready")).returning();
+  const [uploading] = await db.insert(schema.mediaObjects).values(clip(crypto.randomUUID(), "uploading")).returning();
   // A distinct, deterministic number per user (…000a -> +15550000010).
   const phone = `+1555${String(parseInt(userId.slice(-4), 16)).padStart(7, "0")}`;
   await db.insert(schema.memberPhones).values({ userId, phoneE164: phone, verifiedAt: new Date("2026-01-01T00:00:00Z") });
@@ -129,6 +150,8 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
     adId,
     conversationId: conversation.id,
     messageId: message.id,
+    mediaId: media.id,
+    uploadingMediaId: uploading.id,
     phone,
   };
 }

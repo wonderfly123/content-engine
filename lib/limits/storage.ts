@@ -2,20 +2,27 @@
  * Storage the platform pays for, capped per workspace. Uploaded files land on the platform's
  * file store, so every workspace gets a fixed allowance until paid add-ons exist.
  */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
 /** Included storage per workspace. */
 export const STORAGE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024;
 
-/** Bytes of uploaded files across all of a workspace's brands. */
+/**
+ * Bytes of uploaded files across the workspace: its brands' assets plus its media objects on R2
+ * (clips still uploading count, so a batch cannot overshoot; deleted ones do not).
+ */
 export async function workspaceStorageBytes(workspaceId: string): Promise<number> {
-  const [row] = await db
+  const [assets] = await db
     .select({ bytes: sql<string>`coalesce(sum(${schema.assets.sizeBytes}), 0)` })
     .from(schema.assets)
     .innerJoin(schema.brands, eq(schema.brands.id, schema.assets.brandId))
     .where(eq(schema.brands.workspaceId, workspaceId));
-  return Number(row?.bytes ?? 0);
+  const [media] = await db
+    .select({ bytes: sql<string>`coalesce(sum(${schema.mediaObjects.sizeBytes}), 0)` })
+    .from(schema.mediaObjects)
+    .where(and(eq(schema.mediaObjects.workspaceId, workspaceId), isNull(schema.mediaObjects.deletedAt)));
+  return Number(assets?.bytes ?? 0) + Number(media?.bytes ?? 0);
 }
 
 export interface StorageRoom {

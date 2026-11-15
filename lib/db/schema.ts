@@ -60,6 +60,8 @@ import type {
 export * from "./enums";
 // Conversations with the video editor live in their own file (they reach a workspace directly).
 export * from "./schema-conversations";
+// Media files on private storage (R2) reach their workspace directly too.
+export * from "./schema-media";
 
 const ts = () => timestamp({ withTimezone: true }).defaultNow().notNull();
 const tsNullable = () => timestamp({ withTimezone: true });
