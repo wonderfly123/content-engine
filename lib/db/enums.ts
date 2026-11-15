@@ -169,3 +169,20 @@ export type JobStatus = (typeof jobStatusValues)[number];
 export const eventActorValues = ["system", "user"] as const;
 export const eventActorEnum = pgEnum("event_actor", eventActorValues);
 export type EventActor = (typeof eventActorValues)[number];
+
+// Conversations with the video editor (lib/conversations).
+export const conversationKindValues = ["reel", "story"] as const;
+export const conversationKindEnum = pgEnum("conversation_kind", conversationKindValues);
+export type ConversationKind = (typeof conversationKindValues)[number];
+
+export const conversationStatusValues = ["open", "closed"] as const;
+export const conversationStatusEnum = pgEnum("conversation_status", conversationStatusValues);
+export type ConversationStatus = (typeof conversationStatusValues)[number];
+
+export const messageChannelValues = ["sms", "app"] as const;
+export const messageChannelEnum = pgEnum("message_channel", messageChannelValues);
+export type MessageChannel = (typeof messageChannelValues)[number];
+
+export const messageDirectionValues = ["in", "out"] as const;
+export const messageDirectionEnum = pgEnum("message_direction", messageDirectionValues);
+export type MessageDirection = (typeof messageDirectionValues)[number];

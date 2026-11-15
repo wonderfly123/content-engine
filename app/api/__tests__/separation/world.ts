@@ -33,6 +33,10 @@ export interface Seeded {
   campaignId: string;
   adSetId: string;
   adId: string;
+  conversationId: string;
+  messageId: string;
+  /** The member's confirmed mobile number (texts from it land in this workspace). */
+  phone: string;
 }
 
 export async function makeTestDb(): Promise<TestDb> {
@@ -93,6 +97,17 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
   await db.insert(schema.adSets).values({ id: adSetId, brandId, adAccountId: `act_${slug}`, campaignId, name: `${label} ad set` });
   await db.insert(schema.ads).values({ id: adId, brandId, adAccountId: `act_${slug}`, adsetId: adSetId, campaignId, name: `${label} ad` });
   await db.insert(schema.adInsights).values({ brandId, adAccountId: `act_${slug}`, adId, adsetId: adSetId, campaignId, day: "2026-01-01", spend: "5" });
+  const [conversation] = await db
+    .insert(schema.conversations)
+    .values({ workspaceId: ws.id, brandId, kind: "reel", status: "open", startedVia: "sms", startedBy: userId })
+    .returning();
+  const [message] = await db
+    .insert(schema.conversationMessages)
+    .values({ conversationId: conversation.id, direction: "in", channel: "sms", body: `${label} message`, authorUserId: userId, providerMessageId: `SM${slug}` })
+    .returning();
+  // A distinct, deterministic number per user (…000a -> +15550000010).
+  const phone = `+1555${String(parseInt(userId.slice(-4), 16)).padStart(7, "0")}`;
+  await db.insert(schema.memberPhones).values({ userId, phoneE164: phone, verifiedAt: new Date("2026-01-01T00:00:00Z") });
   return {
     user: { userId, email: `${slug}@example.test`, role: "user", status: "active" },
     workspaceId: ws.id,
@@ -112,6 +127,9 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
     campaignId,
     adSetId,
     adId,
+    conversationId: conversation.id,
+    messageId: message.id,
+    phone,
   };
 }
 

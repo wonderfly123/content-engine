@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessFromClaims, decideAccess, initialAccess, type Access } from "../access";
+import { accessFromClaims, decideAccess, hostRedirect, initialAccess, type Access } from "../access";
 
 const user = (over: Partial<Access> = {}): Access => ({ userId: "u1", email: "a@b.co", role: "user", status: "active", ...over });
 
@@ -26,6 +26,12 @@ describe("decideAccess", () => {
     expect(decideAccess("/api/brands", null)).toMatchObject({ kind: "deny", status: 401 });
     expect(decideAccess("/login", null)).toEqual({ kind: "allow" });
     expect(decideAccess("/auth/callback", null)).toEqual({ kind: "allow" });
+  });
+  it("lets Twilio's webhook through without a session (it checks Twilio's signature itself)", () => {
+    expect(decideAccess("/api/twilio/sms", null)).toEqual({ kind: "allow" });
+    // Only that prefix: the app's conversation routes still need a session.
+    expect(decideAccess("/api/conversations", null)).toMatchObject({ kind: "deny", status: 401 });
+    expect(decideAccess("/api/twilio-other", null)).toMatchObject({ kind: "deny", status: 401 });
   });
   it("holds disabled users on the disabled page", () => {
     const status = "disabled" as const;
@@ -63,5 +69,33 @@ describe("initialAccess", () => {
   it("makes the first account the admin and everyone else an active user, with no approval step", () => {
     expect(initialAccess(0)).toEqual({ role: "admin", status: "active" });
     expect(initialAccess(1)).toEqual({ role: "user", status: "active" });
+  });
+});
+
+describe("public website", () => {
+  it("lets anyone read the landing and policy pages", () => {
+    for (const p of ["/", "/privacy", "/terms", "/texting"]) expect(decideAccess(p, null)).toEqual({ kind: "allow" });
+    expect(decideAccess("/privacyx", null)).toEqual({ kind: "redirect", to: "/login" });
+  });
+});
+
+describe("hostRedirect", () => {
+  const go = (host: string, path: string) => hostRedirect(host, path, "nekter.io", "app.nekter.io");
+  it("keeps the public pages on the bare domain and sends everything else to the app", () => {
+    expect(go("nekter.io", "/")).toBeNull();
+    expect(go("nekter.io", "/privacy")).toBeNull();
+    expect(go("www.nekter.io", "/texting")).toBeNull();
+    expect(go("nekter.io", "/api/twilio/sms")).toBeNull();
+    expect(go("nekter.io", "/login")).toBe("https://app.nekter.io/login");
+    expect(go("nekter.io", "/calendar")).toBe("https://app.nekter.io/calendar");
+  });
+  it("starts the app at the calendar and sends the public pages to the website", () => {
+    expect(go("app.nekter.io", "/")).toBe("/calendar");
+    expect(go("app.nekter.io", "/terms")).toBe("https://nekter.io/terms");
+    expect(go("app.nekter.io", "/login")).toBeNull();
+  });
+  it("leaves other hosts alone", () => {
+    expect(go("content-engine-tau-swart.vercel.app", "/login")).toBeNull();
+    expect(go("localhost:3000", "/")).toBeNull();
   });
 });

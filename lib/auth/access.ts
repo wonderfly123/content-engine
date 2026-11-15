@@ -33,12 +33,33 @@ export function accessFromClaims(claims: Record<string, unknown> | null | undefi
   return { userId: sub, email: typeof claims?.email === "string" ? claims.email : "", role, status };
 }
 
+/**
+ * Which hostname serves what. The public website lives on the bare domain (nekter.io) and the app on
+ * app.nekter.io. Any other host (the vercel.app address, localhost) serves both, as before.
+ * Returns where to send a request that is on the wrong host, or null to carry on.
+ */
+export function hostRedirect(host: string, pathname: string, siteHost: string, appHost: string): string | null {
+  const h = host.toLowerCase().split(":")[0];
+  if (h === siteHost || h === `www.${siteHost}`) {
+    // The website only has the public pages; everything else is the app.
+    if (PUBLIC_PAGES.includes(pathname) || pathname.startsWith("/api/twilio/")) return null;
+    return `https://${appHost}${pathname}`;
+  }
+  if (h === appHost && pathname === "/") return "/calendar";
+  if (h === appHost && PUBLIC_PAGES.includes(pathname)) return `https://${siteHost}${pathname}`;
+  return null;
+}
+
 export type Decision =
   | { kind: "allow" }
   | { kind: "redirect"; to: string }
   | { kind: "deny"; status: 401 | 403; message: string };
 
-const PUBLIC_PREFIXES = ["/login", "/auth/"];
+// "/api/twilio/": Twilio's webhook has no session; it proves itself with Twilio's signature
+// (withTwilioSignature in lib/conversations/twilio.ts) and refuses everything else with 403.
+const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/twilio/"];
+/** The public website: the landing page and the policy pages carriers and visitors read without signing in. */
+export const PUBLIC_PAGES = ["/", "/privacy", "/terms", "/texting"];
 /** Finishes a first sign-in (public: it checks the session itself). */
 export const SETUP_PATH = "/auth/welcome";
 const ADMIN_PREFIXES = ["/admin", "/api/admin"];
@@ -48,6 +69,7 @@ const matches = (pathname: string, prefixes: string[]) =>
 /** The single authorization rule for every request the middleware sees. */
 export function decideAccess(pathname: string, access: Access | null): Decision {
   const isApi = pathname.startsWith("/api/");
+  if (PUBLIC_PAGES.includes(pathname)) return { kind: "allow" };
   if (matches(pathname, PUBLIC_PREFIXES)) {
     // A signed-in, approved user has no business on the login page.
     if (pathname === "/login" && access?.status === "active") return { kind: "redirect", to: "/dashboard" };

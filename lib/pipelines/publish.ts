@@ -36,6 +36,7 @@ import {
   assertPostTransition,
 } from "./state";
 import { recordEvent } from "./events";
+import { closeThreadsForPost } from "@/lib/conversations/store";
 
 export type DbOrTx = typeof defaultDb;
 
@@ -339,6 +340,8 @@ async function markPostPublished(
     },
     db,
   );
+  // The conversation that made this post is finished (closed_reason "published").
+  await closeThreadsForPost(post.id, db);
 }
 
 async function markPostFailed(

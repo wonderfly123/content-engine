@@ -23,6 +23,8 @@ import { AnalyticsVisibilityCard } from "./analytics-visibility-card";
 import { ConnectionsCard } from "@/components/settings/connections-card";
 import { getAccess } from "@/lib/auth/session";
 import { connectionsForCaller } from "@/lib/credentials/view";
+import { PhoneCard } from "@/components/settings/phone-card";
+import { phoneForCaller } from "@/lib/conversations/phones";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +90,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   // The workspace's own keys (statuses only), and whether the caller runs the platform.
   const connections = await connectionsForCaller().catch(() => null);
   const isPlatformAdmin = (await getAccess().catch(() => null))?.role === "admin";
+  // The caller's own mobile number, for texting the editor.
+  const phone = await phoneForCaller().catch(() => null);
 
   // An old link to a tab that no longer exists opens the App tab.
   const defaultTab = sp.tab && SETTINGS_TABS.includes(sp.tab) ? sp.tab : "app";
@@ -126,6 +130,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               </CardDescription>
             </CardHeader>
           </Card>
+
+          {phone && <PhoneCard status={phone.status} textingEnabled={phone.textingEnabled} />}
 
           {isPlatformAdmin && (
           <Card>

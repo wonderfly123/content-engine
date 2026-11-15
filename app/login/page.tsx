@@ -1,7 +1,7 @@
 import { EmailForm } from "./email-form";
 import { GoogleButton } from "./google-button";
 
-export const metadata = { title: "Sign in · Content Engine" };
+export const metadata = { title: "Sign in · Nekter" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
@@ -9,7 +9,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <div className="flex min-h-screen w-full items-center justify-center bg-background p-6">
       <div className="w-full max-w-sm space-y-6 rounded-xl border bg-card p-8 shadow-sm">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Content Engine</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Nekter</h1>
           <p className="mt-2 text-sm text-muted-foreground">Sign in or create an account to review, schedule and track your content.</p>
         </div>
         {error && (

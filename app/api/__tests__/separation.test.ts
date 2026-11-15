@@ -24,7 +24,7 @@ const state = vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgres://test:test@localhost/test";
   process.env.TOKEN_ENCRYPTION_KEY ??= "0000000000000000000000000000000000000000000000000000000000000000";
   process.env.CRON_SECRET = "test-cron-secret";
-  for (const key of ["ANTHROPIC_API_KEY", "BLOB_READ_WRITE_TOKEN"]) delete process.env[key];
+  for (const key of ["ANTHROPIC_API_KEY", "BLOB_READ_WRITE_TOKEN", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "APP_URL"]) delete process.env[key];
   // Never the real jobs folder: if a reel route lost its check, the test must not reach real files.
   process.env.VIDEO_JOBS_DIR = "/nonexistent/separation-test-jobs";
   return { current: null as unknown };
@@ -135,7 +135,13 @@ describe("coverage", () => {
   });
 
   it("gives every table a brand, apart from the few that reach one another way", () => {
-    const viaAnotherTable = ["workspaces", "workspace_members", "workspace_credentials", "brands", "draft_assets"];
+    const viaAnotherTable = [
+      "workspaces", "workspace_members", "workspace_credentials", "brands", "draft_assets",
+      // Conversations reach their workspace directly (a thread can start before its brand is known),
+      // through requireConversation (lib/conversations/access.ts); messages reach it through their
+      // conversation; a member's phone belongs to the user, not to any workspace.
+      "conversations", "conversation_messages", "member_phones",
+    ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))
       .filter((t) => !("brandId" in getTableColumns(t)))

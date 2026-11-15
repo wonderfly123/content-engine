@@ -2,6 +2,7 @@ import type { ActionAttack } from "./attacks";
 
 const SETTINGS = "app/settings/actions.ts";
 const ONBOARDING = "app/onboarding/[brandId]/actions.ts";
+const PHONE = "app/settings/phone-actions.ts";
 
 /** A complete, valid profile (what the review step submits). */
 const profile = {
@@ -68,4 +69,21 @@ export const actions: ActionAttack[] = [
     args: () => [{ provider: "anthropic" }],
     attackerMayPass: "acts on the caller's own workspace",
   },
+
+  // ---- app/settings/phone-actions.ts ----
+  // These act on the caller's own number. Claiming the other workspace's number must fail and
+  // leave their confirmed number untouched.
+  {
+    file: PHONE,
+    action: "startPhoneVerification",
+    args: (victim) => [{ phone: victim.phone, consent: true }],
+    skipOwnerControl: "sending a code needs Twilio, which is switched off in tests (see lib/conversations/__tests__/phones.test.ts)",
+  },
+  {
+    file: PHONE,
+    action: "confirmPhone",
+    args: () => [{ code: "123456" }],
+    skipOwnerControl: "no code is pending for anyone in the test world (codes are tested in phones.test.ts)",
+  },
+  { file: PHONE, action: "removePhone", args: () => [], attackerMayPass: "removes the caller's own number only" },
 ];

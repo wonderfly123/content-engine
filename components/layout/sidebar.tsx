@@ -8,6 +8,7 @@ import {
   Clapperboard,
   FolderOpen,
   LayoutDashboard,
+  MessagesSquare,
   Plus,
   Settings,
   ShieldCheck,
@@ -28,6 +29,7 @@ import { UserMenu, useCurrentUser } from "./user-menu";
 const mainLinks = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/calendar", icon: Calendar, label: "Calendar" },
+  { href: "/conversations", icon: MessagesSquare, label: "Conversations" },
 ];
 
 // Review Pipeline: each group is one pipeline, its links are the stages in order.
@@ -110,9 +112,9 @@ export function Sidebar() {
         <div className={cn("flex flex-col gap-2 p-3", collapsed && "items-center p-2")}>
           <span
             className={cn("px-1 text-sm font-semibold tracking-tight", collapsed && "px-0 text-xs")}
-            aria-label="Content Engine"
+            aria-label="Nekter"
           >
-            {collapsed ? "CE" : "Content Engine"}
+            {collapsed ? "N" : "Nekter"}
           </span>
           <BrandSwitcher collapsed={collapsed} />
         </div>

@@ -58,6 +58,8 @@ import type {
 
 // Re-export enums so consumers can `import { db, schema } from "@/lib/db"`.
 export * from "./enums";
+// Conversations with the video editor live in their own file (they reach a workspace directly).
+export * from "./schema-conversations";
 
 const ts = () => timestamp({ withTimezone: true }).defaultNow().notNull();
 const tsNullable = () => timestamp({ withTimezone: true });

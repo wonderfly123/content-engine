@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Content Engine",
+  title: "Nekter",
   description: "Multi-brand content pipeline: brief → draft → publish",
 };
 

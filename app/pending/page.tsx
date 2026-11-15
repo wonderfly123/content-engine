@@ -4,7 +4,7 @@ import { getAccess } from "@/lib/auth/session";
 import { PendingActions } from "./pending-actions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Account disabled · Content Engine" };
+export const metadata = { title: "Account disabled · Nekter" };
 
 export default async function PendingPage() {
   const access = await getAccess();

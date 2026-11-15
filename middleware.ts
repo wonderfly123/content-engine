@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { accessFromClaims, decideAccess } from "@/lib/auth/access";
+import { accessFromClaims, decideAccess, hostRedirect } from "@/lib/auth/access";
+import { SITE } from "@/lib/site";
 import { supabaseEnv } from "@/lib/supabase/env";
 
 export const config = {
@@ -48,6 +49,14 @@ function basicAuthFailure(req: NextRequest): NextResponse | null {
 }
 
 export async function middleware(req: NextRequest) {
+  // Public website on nekter.io, the app on app.nekter.io.
+  const moveTo = hostRedirect(req.headers.get("host") ?? "", req.nextUrl.pathname, SITE.siteHost, SITE.appHost);
+  if (moveTo) {
+    const target = moveTo.startsWith("http") ? new URL(moveTo) : new URL(moveTo, req.nextUrl);
+    if (moveTo.startsWith("http")) target.search = req.nextUrl.search;
+    return NextResponse.redirect(target, 308);
+  }
+
   const blocked = basicAuthFailure(req);
   if (blocked) return blocked;
 
