@@ -9,9 +9,6 @@ import {
   FolderOpen,
   LayoutDashboard,
   MessagesSquare,
-  Plus,
-  Settings,
-  ShieldCheck,
   TrendingUp,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -23,7 +20,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BrandSwitcher } from "./brand-switcher";
 import { NavLink } from "./nav-link";
-import { AlertBadge } from "./alert-badge";
 import { UserMenu, useCurrentUser } from "./user-menu";
 
 const mainLinks = [
@@ -138,12 +134,6 @@ export function Sidebar() {
             <Separator className="my-2" />
 
             <NavLink href="/assets" icon={FolderOpen} label="Assets" collapsed={collapsed} />
-            <AlertBadge collapsed={collapsed} />
-            {(!user || user.role === "admin") && (
-              <NavLink href="/admin" icon={ShieldCheck} label="Admin" collapsed={collapsed} />
-            )}
-            <NavLink href="/settings" icon={Settings} label="Settings" collapsed={collapsed} />
-            <NavLink href="/onboarding" icon={Plus} label="Add Brand" collapsed={collapsed} />
           </nav>
         </ScrollArea>
 

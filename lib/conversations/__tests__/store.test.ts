@@ -120,7 +120,7 @@ describe("routing", () => {
       handleInbound({ workspaceId: a.workspaceId, userId: a.user.userId, channel: "app", body, threadId: a.conversationId });
     await expect(app("shorter")).rejects.toBeInstanceOf(ThreadClosedError);
     const fresh = await app("new story");
-    expect(fresh.reply).toBe("New story for Alpha brand started. Add your clips with the Add clips button below.");
+    expect(fresh.reply).toBe("New story for Alpha brand started. Add your clips with the paperclip below, or drop them in.");
   });
 });
 

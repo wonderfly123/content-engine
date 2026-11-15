@@ -2,7 +2,7 @@
  * POST /api/conversations/[id]/uploads/done { mediaIds } — the browser calls this once after a batch
  * of clips has finished. Posts one message into the thread ("Added 3 clips (1.2 GB)") and hands it
  * to the editor seam (lib/conversations/editor.ts). Every id must be a clip of this thread (else 404);
- * only the ready ones are counted.
+ * only the finished ones (ready, or uploaded and being optimized) are counted, at their uploaded size.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -27,10 +27,10 @@ export const POST = guard(async (req: NextRequest, ctx: { params: Promise<{ id: 
   const ids = [...new Set(parsed.data.mediaIds.map((m) => m.toLowerCase()))];
   const rows = await threadMedia(access.conversation.id, access.workspaceId, ids);
   if (rows.length !== ids.length) throw new AccessError(404, "Not found.");
-  const clips = rows.filter((m) => m.status === "ready" && !m.deletedAt);
+  const clips = rows.filter((m) => (m.status === "ready" || m.status === "processing") && !m.deletedAt);
   if (clips.length === 0) return fail(400, "no_clips", "None of those clips finished uploading.");
 
-  const total = clips.reduce((sum, c) => sum + c.sizeBytes, 0);
+  const total = clips.reduce((sum, c) => sum + (c.originalSizeBytes ?? c.sizeBytes), 0);
   const message = await addMessage({
     conversationId: access.conversation.id,
     direction: "out",

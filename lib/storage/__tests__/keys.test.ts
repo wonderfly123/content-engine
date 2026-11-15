@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMediaKey, InvalidMediaKeyError, isWorkspaceKey, sanitiseFilename } from "../keys";
+import { buildMediaKey, buildOptimizedKey, InvalidMediaKeyError, isIncomingKey, isWorkspaceKey, sanitiseFilename } from "../keys";
 
 const WS = "00000000-0000-4000-8000-0000000000aa";
 const OTHER_WS = "00000000-0000-4000-8000-0000000000bb";
@@ -56,5 +56,17 @@ describe("filename sanitising", () => {
   it("never lets dots through as a path segment", () => {
     expect(sanitiseFilename("....mp4")).toBe("clip.mp4");
     expect(sanitiseFilename("a..b.mp4")).toBe("a.b.mp4");
+  });
+
+  it("has a holding area for uploads and a fixed name for the optimizer's output", () => {
+    const incoming = buildMediaKey({ workspaceId: WS, conversationId: CONV, filename: "IMG_0001.MOV", id: ID, kind: "incoming" });
+    expect(incoming).toBe(`ws/${WS}/conv/${CONV}/incoming/${ID}-IMG_0001.MOV`);
+    expect(isWorkspaceKey(incoming, WS) && isIncomingKey(incoming)).toBe(true);
+    const out = buildOptimizedKey({ workspaceId: WS, conversationId: CONV, id: ID });
+    expect(out).toBe(`ws/${WS}/conv/${CONV}/raw/${ID}.mp4`);
+    expect(isWorkspaceKey(out, WS)).toBe(true);
+    expect(isWorkspaceKey(out, OTHER_WS) || isIncomingKey(out)).toBe(false);
+    expect(isWorkspaceKey(`ws/${WS}/conv/${CONV}/raw/${ID}.mov`, WS)).toBe(false);
+    expect(() => buildOptimizedKey({ workspaceId: WS, conversationId: "../x", id: ID })).toThrow(InvalidMediaKeyError);
   });
 });

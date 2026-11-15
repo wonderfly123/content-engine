@@ -208,7 +208,7 @@ export function nextQuestion(ctx: ReplyContext): string | null {
 
 /** Clips cannot come by text (carrier limits): texts get a link to the thread in the app. */
 export function footageLine(channel: MessageChannel, link: string): string {
-  return channel === "sms" ? `Send your clips in the app: ${link}` : "Add your clips with the Add clips button below.";
+  return channel === "sms" ? `Send your clips in the app: ${link}` : "Add your clips with the paperclip below, or drop them in.";
 }
 
 function subject(ctx: ReplyContext): string {

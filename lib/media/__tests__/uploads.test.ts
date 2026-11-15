@@ -67,6 +67,8 @@ beforeEach(async () => {
   b = await seedWorkspace(db, "Beta", "00000000-0000-4000-8000-00000000000b");
   state.current = a.user;
   vi.clearAllMocks();
+  delete process.env.MODAL_OPTIMIZE_URL;
+  delete process.env.MODAL_OPTIMIZE_SECRET;
 });
 
 describe("starting an upload", () => {
@@ -77,7 +79,8 @@ describe("starting an upload", () => {
     expect(json).toMatchObject({ partSize: 16 * 1024 ** 2, partCount: 3 });
     const clip = await row(json.mediaId);
     expect(clip).toMatchObject({ status: "uploading", uploadId: "upload-1", workspaceId: a.workspaceId, conversationId: a.conversationId, contentType: "video/quicktime", filename: "Beach day.MOV" });
-    expect(clip.r2Key).toBe(`ws/${a.workspaceId}/conv/${a.conversationId}/raw/${json.mediaId}-Beach-day.MOV`);
+    // Uploads land in the holding area; the optimizer moves them to raw/ (lib/media/optimize.ts).
+    expect(clip.r2Key).toBe(`ws/${a.workspaceId}/conv/${a.conversationId}/incoming/${json.mediaId}-Beach-day.MOV`);
     expect(r2.createMultipartUpload).toHaveBeenCalledWith(clip.r2Key, "video/quicktime");
   });
 
@@ -153,11 +156,11 @@ describe("parts, complete, abort", () => {
     expect(r2.presignUploadPart).not.toHaveBeenCalled();
   });
 
-  it("completes, checks the size, and marks the clip ready", async () => {
+  it("completes, checks the size, and marks the clip ready (no optimizer configured)", async () => {
     r2.headObject.mockResolvedValueOnce({ size: 2000, contentType: "video/quicktime", etag: '"x"' });
     const res = await complete(req({ parts: [{ partNumber: 1, etag: '"e1"' }] }), ctx({ id: a.conversationId, mediaId: a.uploadingMediaId }));
     expect(res.status).toBe(200);
-    expect(await row(a.uploadingMediaId)).toMatchObject({ status: "ready", uploadId: null, deletedAt: null });
+    expect(await row(a.uploadingMediaId)).toMatchObject({ status: "ready", uploadId: null, deletedAt: null, originalSizeBytes: 2000, optimizeError: null });
     expect(r2.completeMultipartUpload).toHaveBeenCalledWith(expect.stringContaining(`ws/${a.workspaceId}/`), `alpha-upload-id`, [{ partNumber: 1, etag: '"e1"' }]);
   });
 

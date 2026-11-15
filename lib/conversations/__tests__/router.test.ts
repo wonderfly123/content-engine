@@ -144,7 +144,7 @@ describe("replies", () => {
       "New reel for Windansea Coconuts started. Send your clips in the app: https://app.test/conversations/t1",
     );
     expect(replyFor({ type: "answer", brandId: wind.id }, ctx({ channel: "app" }))).toBe(
-      "Got it: a reel for Windansea Coconuts. Add your clips with the Add clips button below.",
+      "Got it: a reel for Windansea Coconuts. Add your clips with the paperclip below, or drop them in.",
     );
     expect(footageLine("sms", "L")).toContain("L");
   });

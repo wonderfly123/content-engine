@@ -44,9 +44,6 @@ export function ThreadList() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Conversations</h2>
-          <p className="text-sm text-muted-foreground">
-            One thread per video with the editor, by text or here. Pick up a thread in either place.
-          </p>
         </div>
         <NewThreadButtons brandId={brandId} />
       </div>

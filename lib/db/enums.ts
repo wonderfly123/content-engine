@@ -192,6 +192,7 @@ export const mediaKindValues = ["raw", "preview", "final", "voice", "thumb"] as 
 export const mediaKindEnum = pgEnum("media_kind", mediaKindValues);
 export type MediaKind = (typeof mediaKindValues)[number];
 
-export const mediaStatusValues = ["uploading", "ready", "failed"] as const;
+// "processing": uploaded, being shrunk by the optimizer (lib/media/optimize.ts); it counts and plays as the original meanwhile.
+export const mediaStatusValues = ["uploading", "ready", "failed", "processing"] as const;
 export const mediaStatusEnum = pgEnum("media_status", mediaStatusValues);
 export type MediaStatus = (typeof mediaStatusValues)[number];

@@ -205,6 +205,12 @@ export function presignGet(key: string, expiresIn = 600): string {
   return presignUrl({ method: "GET", host, path, date: new Date(), creds, expiresIn });
 }
 
+/** A short-lived link to write one object with a single PUT (the optimizer's output). */
+export function presignPut(key: string, expiresIn = 7200): string {
+  const { creds, host, path } = target(key);
+  return presignUrl({ method: "PUT", host, path, date: new Date(), creds, expiresIn });
+}
+
 export interface ObjectHead {
   size: number;
   contentType: string | null;

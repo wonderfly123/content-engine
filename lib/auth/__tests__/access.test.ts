@@ -33,6 +33,12 @@ describe("decideAccess", () => {
     expect(decideAccess("/api/conversations", null)).toMatchObject({ kind: "deny", status: 401 });
     expect(decideAccess("/api/twilio-other", null)).toMatchObject({ kind: "deny", status: 401 });
   });
+  it("lets the optimizer's callback through without a session (it checks the worker's signature itself)", () => {
+    expect(decideAccess("/api/media/optimized", null)).toEqual({ kind: "allow" });
+    // Only that path: reading a file still needs a session.
+    expect(decideAccess("/api/media/00000000-0000-4000-8000-000000000001", null)).toMatchObject({ kind: "deny", status: 401 });
+    expect(decideAccess("/api/media/optimized-other", null)).toMatchObject({ kind: "deny", status: 401 });
+  });
   it("holds disabled users on the disabled page", () => {
     const status = "disabled" as const;
     expect(decideAccess("/calendar", user({ status }))).toEqual({ kind: "redirect", to: "/pending" });
@@ -89,8 +95,8 @@ describe("hostRedirect", () => {
     expect(go("nekter.io", "/login")).toBe("https://app.nekter.io/login");
     expect(go("nekter.io", "/calendar")).toBe("https://app.nekter.io/calendar");
   });
-  it("starts the app at the calendar and sends the public pages to the website", () => {
-    expect(go("app.nekter.io", "/")).toBe("/calendar");
+  it("starts the app at the dashboard and sends the public pages to the website", () => {
+    expect(go("app.nekter.io", "/")).toBe("/dashboard");
     expect(go("app.nekter.io", "/terms")).toBe("https://nekter.io/terms");
     expect(go("app.nekter.io", "/login")).toBeNull();
   });

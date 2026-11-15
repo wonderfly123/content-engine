@@ -22,7 +22,6 @@ export function ClipUploader({ conversationId, onChange }: { conversationId: str
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const up = useClipUploads(conversationId, onChange);
-  const anyFinished = up.items.some((i) => i.status === "done" || i.status === "failed" || i.status === "cancelled");
 
   return (
     <div
@@ -63,6 +62,17 @@ export function ClipUploader({ conversationId, onChange }: { conversationId: str
         />
       </div>
 
+      <UploadProgress up={up} />
+    </div>
+  );
+}
+
+/** Progress for the files being uploaded (and a note about unfinished ones), shown above the composer. */
+export function UploadProgress({ up }: { up: ReturnType<typeof useClipUploads> }) {
+  const anyFinished = up.items.some((i) => i.status === "done" || i.status === "failed" || i.status === "cancelled");
+  if (up.items.length === 0 && up.leftover === 0) return null;
+  return (
+    <div className="space-y-3 text-sm">
       {up.leftover > 0 && up.items.length === 0 && (
         <p className="text-xs text-muted-foreground">
           {up.leftover === 1 ? "One upload" : `${up.leftover} uploads`} didn&apos;t finish. Add the same {up.leftover === 1 ? "file" : "files"} again to pick up where {up.leftover === 1 ? "it" : "they"} stopped.

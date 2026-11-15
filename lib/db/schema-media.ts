@@ -29,6 +29,12 @@ export const mediaObjects = pgTable(
     status: mediaStatusEnum().notNull().default("uploading"),
     /** R2's multipart upload id while uploading; cleared once ready. */
     uploadId: text("upload_id"),
+    /** Size as uploaded, before the optimizer shrank it (null until the upload completes). */
+    originalSizeBytes: bigint("original_size_bytes", { mode: "number" }),
+    /** Why optimizing did not happen (the original was kept); null when it worked or never ran. */
+    optimizeError: text("optimize_error"),
+    /** The optimizer job in flight for this object; the worker's callback must name it. */
+    optimizeJobId: text("optimize_job_id"),
     /** Supabase auth user id of the uploader. */
     uploadedBy: uuid("uploaded_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -38,6 +44,7 @@ export const mediaObjects = pgTable(
   },
   (t) => [
     uniqueIndex("media_objects_r2_key_unique").on(t.r2Key),
+    uniqueIndex("media_objects_optimize_job_id_unique").on(t.optimizeJobId),
     index("media_objects_conversation_idx").on(t.conversationId, t.createdAt),
     index("media_objects_workspace_idx").on(t.workspaceId),
   ],

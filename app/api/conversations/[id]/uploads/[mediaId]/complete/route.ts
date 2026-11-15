@@ -1,8 +1,10 @@
 /**
  * POST /api/conversations/[id]/uploads/[mediaId]/complete { parts: [{ partNumber, etag }] } —
  * finishes one clip's multipart upload, then checks the stored object's size against the size
- * declared at the start. A match marks the clip `ready`; a mismatch removes the object and marks the
- * clip failed. The thread message for a batch comes from ../../done, not from here.
+ * declared at the start. A match marks the clip `processing` and sends it to the optimizer
+ * (lib/media/optimize.ts), which shrinks it and makes it `ready`; with no optimizer configured it is
+ * `ready` straight away, as uploaded. A mismatch removes the object and marks the clip failed.
+ * The thread message for a batch comes from ../../done, not from here.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -11,7 +13,8 @@ import { requireConversation } from "@/lib/conversations/access";
 import { requireConversationMedia } from "@/lib/media/access";
 import { fail, jsonBody, threadClosed, withStorage } from "@/lib/media/http";
 import { MAX_PARTS, planParts } from "@/lib/media/rules";
-import { markGone, markReady, toClipSummary } from "@/lib/media/store";
+import { requestOptimize } from "@/lib/media/optimize";
+import { markGone, markProcessing, toClipSummary } from "@/lib/media/store";
 import { completeMultipartUpload, deleteObject, headObject } from "@/lib/storage/r2";
 
 export const runtime = "nodejs";
@@ -27,7 +30,7 @@ export const POST = guard(async (req: NextRequest, ctx: { params: Promise<{ id: 
   const { id, mediaId } = await ctx.params;
   const access = await requireConversation(id);
   const media = await requireConversationMedia(access, mediaId);
-  if (media.status === "ready") return NextResponse.json({ clip: toClipSummary(media) }); // completed already (a retried call)
+  if (media.status === "ready" || media.status === "processing") return NextResponse.json({ clip: toClipSummary(media) }); // completed already (a retried call)
   if (access.conversation.status !== "open") return threadClosed();
   if (media.status !== "uploading" || !media.uploadId) return fail(409, "not_uploading", "This clip is not uploading any more.");
   const parsed = bodySchema.safeParse(await jsonBody(req));
@@ -48,7 +51,8 @@ export const POST = guard(async (req: NextRequest, ctx: { params: Promise<{ id: 
       await markGone(media);
       return fail(422, "size_mismatch", `${media.filename} did not arrive complete. Please add it again.`, { clip: { ...toClipSummary(media), status: "failed" } });
     }
-    const ready = await markReady(media);
-    return NextResponse.json({ clip: toClipSummary(ready) });
+    const processing = await markProcessing(media);
+    const now = (await requestOptimize(processing.id, req.nextUrl.origin)) ?? processing;
+    return NextResponse.json({ clip: toClipSummary(now) });
   });
 });

@@ -34,19 +34,43 @@ async function fetchAlerts(brandId: string | undefined): Promise<SystemAlertDTO[
   return json.alerts;
 }
 
-export function AlertBadge({ collapsed = false }: AlertBadgeProps) {
+/** The active brand's system alerts (failed jobs, expired connections, failed posts). */
+export function useAlerts() {
   const active = useBrandStore((s) => s.active);
   const brandId = active?.id;
   const looksLikeUuid =
     typeof brandId === "string" && /^[0-9a-f-]{36}$/i.test(brandId);
-
-  const { data, isLoading } = useQuery({
+  return useQuery({
     queryKey: ["alerts", brandId ?? "all"],
     queryFn: () => fetchAlerts(looksLikeUuid ? brandId : undefined),
     refetchInterval: 60_000,
     staleTime: 30_000,
     retry: 1,
   });
+}
+
+/** The alerts panel on its own, opened from the account menu. */
+export function AlertsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { data, isLoading } = useAlerts();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>System alerts</SheetTitle>
+          <SheetDescription>
+            Failed jobs, expired channel connections, and posts that exhausted retries.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="mt-4 px-4">
+          <AlertList alerts={data ?? []} loading={isLoading} />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function AlertBadge({ collapsed = false }: AlertBadgeProps) {
+  const { data, isLoading } = useAlerts();
 
   const count = data?.length ?? 0;
   const label = count > 0 ? `${count} alert${count === 1 ? "" : "s"}` : "No alerts";

@@ -19,9 +19,14 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  *  - Twilio's webhook: Twilio signs every request. The handler is wrapped in `withTwilioSignature`
  *    (lib/conversations/twilio.ts), which refuses with 403, before any database work, unless the
  *    X-Twilio-Signature matches TWILIO_AUTH_TOKEN (and refuses everything when it is not set).
+ *  - The optimizer worker's callback (workers/optimize on Modal): the worker signs the raw body
+ *    with an HMAC-SHA256 of MODAL_OPTIMIZE_SECRET. The handler is wrapped in `withWorkerSignature`
+ *    (lib/media/worker-signature.ts), which refuses with 403, before any database work, unless the
+ *    X-Nekter-Signature matches (and refuses everything when the secret is not set).
  */
-const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string }> = {
-  "app/api/twilio/sms/route.ts": { wrapper: "withTwilioSignature", module: "lib/conversations/twilio.ts" },
+const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; verifier: string }> = {
+  "app/api/twilio/sms/route.ts": { wrapper: "withTwilioSignature", module: "lib/conversations/twilio.ts", verifier: "isValidTwilioSignature" },
+  "app/api/media/optimized/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
 };
 
 function routes(dir: string): string[] {
@@ -54,7 +59,7 @@ describe("every API route goes through the access layer", () => {
     expect(CHECKS.test(source), "the file must call an access check").toBe(true);
   });
 
-  it.each(Object.entries(SIGNED_BY_PROVIDER))("%s checks the provider's signature instead of a session", (file, { wrapper, module }) => {
+  it.each(Object.entries(SIGNED_BY_PROVIDER))("%s checks the provider's signature instead of a session", (file, { wrapper, module, verifier }) => {
     const source = read(file);
     expect(source).not.toMatch(/export\s+(?:async\s+)?function\s+(GET|POST|PATCH|PUT|DELETE)\b/);
     const handlers = [...source.matchAll(/export\s+const\s+(GET|POST|PATCH|PUT|DELETE)\s*=\s*(\w+)/g)];
@@ -65,7 +70,7 @@ describe("every API route goes through the access layer", () => {
     const lib = read(module);
     const body = lib.slice(lib.indexOf(`export function ${wrapper}(`));
     expect(body.length).toBeLessThan(lib.length);
-    expect(body).toMatch(/isValidTwilioSignature\s*\(/);
+    expect(body).toMatch(new RegExp(`${verifier}\\s*\\(`));
     expect(body).toMatch(/status:\s*403/);
   });
 

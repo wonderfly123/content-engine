@@ -14,6 +14,8 @@ export interface ClipSummary {
   id: string;
   filename: string;
   sizeBytes: number;
+  /** Size as uploaded, when the optimizer has since shrunk it (else null). */
+  originalSizeBytes: number | null;
   contentType: string;
   status: MediaStatus;
   createdAt: Date;
@@ -26,6 +28,7 @@ export async function listClips(conversationId: string, workspaceId: string): Pr
       id: mediaObjects.id,
       filename: mediaObjects.filename,
       sizeBytes: mediaObjects.sizeBytes,
+      originalSizeBytes: mediaObjects.originalSizeBytes,
       contentType: mediaObjects.contentType,
       status: mediaObjects.status,
       createdAt: mediaObjects.createdAt,
@@ -51,10 +54,11 @@ export async function threadMedia(conversationId: string, workspaceId: string, i
     .where(and(inArray(mediaObjects.id, ids), eq(mediaObjects.conversationId, conversationId), eq(mediaObjects.workspaceId, workspaceId)));
 }
 
-export async function markReady(media: MediaRow): Promise<MediaRow> {
+/** Uploaded and checked: waiting for the optimizer (lib/media/optimize.ts), counted at its uploaded size. */
+export async function markProcessing(media: MediaRow): Promise<MediaRow> {
   const [row] = await db
     .update(mediaObjects)
-    .set({ status: "ready", uploadId: null, updatedAt: new Date() })
+    .set({ status: "processing", uploadId: null, originalSizeBytes: media.sizeBytes, optimizeError: null, updatedAt: new Date() })
     .where(and(eq(mediaObjects.id, media.id), eq(mediaObjects.workspaceId, media.workspaceId)))
     .returning();
   return row;
@@ -73,6 +77,7 @@ export const toClipSummary = (m: MediaRow): ClipSummary => ({
   id: m.id,
   filename: m.filename,
   sizeBytes: m.sizeBytes,
+  originalSizeBytes: m.originalSizeBytes,
   contentType: m.contentType,
   status: m.status,
   createdAt: m.createdAt,

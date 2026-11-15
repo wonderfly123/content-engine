@@ -1,0 +1,77 @@
+[
+  {
+    "name": "4K landscape H.264 at 45 Mbps: height down to 1920",
+    "source": { "width": 3840, "height": 2160, "rotation": 0, "fps": 29.97, "videoCodec": "h264", "bitRate": 45000000, "audioCodec": "aac", "colorTransfer": "bt709", "colorPrimaries": "bt709" },
+    "plan": { "action": "encode", "width": 3414, "height": 1920, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "iPhone 4K portrait (rotated -90), HEVC HLG 60 fps: width 1080, tonemapped, 60 fps kept",
+    "source": { "width": 3840, "height": 2160, "rotation": -90, "fps": 59.94, "videoCodec": "hevc", "bitRate": 50000000, "audioCodec": "aac", "colorTransfer": "arib-std-b67", "colorPrimaries": "bt2020" },
+    "plan": { "action": "encode", "width": 1080, "height": 1920, "maxFps": null, "tonemap": true, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "rotation 90 counts as portrait too",
+    "source": { "width": 1920, "height": 1080, "rotation": 90, "fps": 30, "videoCodec": "h264", "bitRate": 20000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1080, "height": 1920, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "1080x1920 portrait H.264 at 8 Mbps: copy",
+    "source": { "width": 1080, "height": 1920, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 8000000, "audioCodec": "aac", "colorTransfer": "bt709", "colorPrimaries": "bt709" },
+    "plan": { "action": "copy", "width": 1080, "height": 1920, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": null }
+  },
+  {
+    "name": "1080p landscape HEVC at 10 Mbps: copy, tagged hvc1",
+    "source": { "width": 1920, "height": 1080, "rotation": 0, "fps": 25, "videoCodec": "hevc", "bitRate": 10000000, "audioCodec": "aac", "colorTransfer": "bt709", "colorPrimaries": "bt709" },
+    "plan": { "action": "copy", "width": 1920, "height": 1080, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "copy keeps the stored orientation of a rotated source",
+    "source": { "width": 1920, "height": 1080, "rotation": -90, "fps": 30, "videoCodec": "hevc", "bitRate": 6000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "copy", "width": 1080, "height": 1920, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "copy re-encodes non-AAC audio",
+    "source": { "width": 1080, "height": 1920, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 5000000, "audioCodec": "pcm_s16le", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "copy", "width": 1080, "height": 1920, "maxFps": null, "tonemap": false, "audio": "aac", "videoTag": null }
+  },
+  {
+    "name": "1080p H.264 at exactly 12 Mbps: encode (copy only under 12 Mbps)",
+    "source": { "width": 1920, "height": 1080, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 12000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1920, "height": 1080, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "240 fps slow motion: brought down to 60",
+    "source": { "width": 1920, "height": 1080, "rotation": 0, "fps": 240, "videoCodec": "hevc", "bitRate": 8000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1920, "height": 1080, "maxFps": 60, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "ProRes at a low bitrate still re-encodes",
+    "source": { "width": 1920, "height": 1080, "rotation": 0, "fps": 24, "videoCodec": "prores", "bitRate": 5000000, "audioCodec": "pcm_s24le", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1920, "height": 1080, "maxFps": null, "tonemap": false, "audio": "aac", "videoTag": "hvc1" }
+  },
+  {
+    "name": "square 2160x2160: height down to 1920",
+    "source": { "width": 2160, "height": 2160, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 30000000, "audioCodec": null, "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1920, "height": 1920, "maxFps": null, "tonemap": false, "audio": "none", "videoTag": "hvc1" }
+  },
+  {
+    "name": "small odd-sized portrait: never upscaled, made even",
+    "source": { "width": 721, "height": 1281, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 30000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 720, "height": 1280, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "HDR (PQ) 1080p at a low bitrate: encode so it is tonemapped",
+    "source": { "width": 1920, "height": 1080, "rotation": 0, "fps": 30, "videoCodec": "hevc", "bitRate": 8000000, "audioCodec": "aac", "colorTransfer": "smpte2084", "colorPrimaries": "bt2020" },
+    "plan": { "action": "encode", "width": 1920, "height": 1080, "maxFps": null, "tonemap": true, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "unknown bitrate and frame rate: encode, frame rate left alone",
+    "source": { "width": 1080, "height": 1920, "rotation": 0, "fps": null, "videoCodec": "h264", "bitRate": null, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1080, "height": 1920, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  },
+  {
+    "name": "portrait wider than 1080 that is not 9:16",
+    "source": { "width": 1440, "height": 1920, "rotation": 0, "fps": 30, "videoCodec": "h264", "bitRate": 9000000, "audioCodec": "aac", "colorTransfer": null, "colorPrimaries": null },
+    "plan": { "action": "encode", "width": 1080, "height": 1440, "maxFps": null, "tonemap": false, "audio": "copy", "videoTag": "hvc1" }
+  }
+]

@@ -23,15 +23,14 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            What needs your attention.
-          </p>
-        </div>
-        {brandId && <StartVideo brandId={brandId} />}
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Start a video, or see what needs your attention.
+        </p>
       </div>
+
+      {brandId && <StartVideo brandId={brandId} />}
 
       {!brandId ? (
         <Card>

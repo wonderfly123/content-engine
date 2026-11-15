@@ -12,8 +12,15 @@ const TITLE_OVERRIDES: Record<string, string> = {
 function titleFromPath(pathname: string): string {
   const segs = pathname.split("/").filter(Boolean);
   if (segs.length === 0) return "Calendar";
-  const last = segs[segs.length - 1];
+  let last = segs[segs.length - 1];
   if (!last) return "Calendar";
+  // A record page (/conversations/<id>, /drafts/<id>, ...): name it after its section, never show the id.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) && segs.length > 1) {
+    const section = segs[segs.length - 2]!;
+    const singular: Record<string, string> = { conversations: "Conversation", drafts: "Draft", briefs: "Brief", posts: "Post", assets: "Asset" };
+    if (singular[section]) return singular[section];
+    last = section;
+  }
   const override = TITLE_OVERRIDES[last];
   if (override) return override;
   return last

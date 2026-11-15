@@ -1,7 +1,8 @@
 /**
  * POST /api/conversations/[id]/uploads { filename, size, contentType } — start uploading one clip
  * into an open thread. Checks it is a video, at most 10 GB, and fits the workspace's storage; then
- * opens a multipart upload on R2 and records the clip as `uploading`.
+ * opens a multipart upload on R2, in the holding area (`incoming/`, see lib/media/optimize.ts), and
+ * records the clip as `uploading`.
  * Answers { mediaId, partSize, partCount }; the browser then asks for part URLs (./[mediaId]/parts).
  */
 import { randomUUID } from "node:crypto";
@@ -46,7 +47,7 @@ export const POST = guard(async (req: NextRequest, ctx: { params: Promise<{ id: 
   const mediaId = randomUUID();
   let key: string;
   try {
-    key = buildMediaKey({ workspaceId: access.workspaceId, conversationId: access.conversation.id, filename, id: mediaId });
+    key = buildMediaKey({ workspaceId: access.workspaceId, conversationId: access.conversation.id, filename, id: mediaId, kind: "incoming" });
   } catch (err) {
     if (err instanceof InvalidMediaKeyError) return fail(400, "invalid_filename", err.message);
     throw err;

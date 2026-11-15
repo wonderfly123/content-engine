@@ -2,6 +2,11 @@
  * The only place that builds storage keys. Every key starts with its workspace:
  *
  *   ws/<workspaceId>/conv/<conversationId>/<kind>/<uuid>-<sanitised filename>
+ *   ws/<workspaceId>/conv/<conversationId>/incoming/<uuid>-<sanitised filename>   (holding area: as uploaded)
+ *   ws/<workspaceId>/conv/<conversationId>/raw/<uuid>.mp4                         (the optimizer's output)
+ *
+ * `incoming` is a key area only, not a media kind: an uploaded clip is a `raw` clip wherever its
+ * bytes sit, and the optimizer moves it from incoming/ to raw/ (lib/media/optimize.ts).
  *
  * Filenames with path tricks (slashes, backslashes, control characters, "." or "..") are refused;
  * everything else is reduced to letters, digits, ".", "_" and "-".
@@ -18,7 +23,11 @@ export class InvalidMediaKeyError extends Error {
 
 const UUID_SRC = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const UUID = new RegExp(`^${UUID_SRC}$`, "i");
-const KEY = new RegExp(`^ws/(${UUID_SRC})/conv/(${UUID_SRC})/(${mediaKindValues.join("|")})/${UUID_SRC}-[A-Za-z0-9_][A-Za-z0-9._-]*$`, "i");
+/** Where a key's bytes sit: one of the media kinds, or the upload holding area. */
+export const INCOMING = "incoming";
+export type KeyArea = MediaKind | typeof INCOMING;
+const AREAS: readonly string[] = [...mediaKindValues, INCOMING];
+const KEY = new RegExp(`^ws/(${UUID_SRC})/conv/(${UUID_SRC})/(${AREAS.join("|")})/${UUID_SRC}(?:-[A-Za-z0-9_][A-Za-z0-9._-]*|\\.mp4)$`, "i");
 const MAX_BASE = 100;
 const MAX_EXT = 10;
 
@@ -49,7 +58,7 @@ export interface MediaKeyInput {
   workspaceId: string;
   conversationId: string;
   filename: string;
-  kind?: MediaKind;
+  kind?: KeyArea;
   /** The object's own id (defaults to a new one); the media row uses the same id. */
   id?: string;
 }
@@ -58,11 +67,22 @@ export function buildMediaKey({ workspaceId, conversationId, filename, kind = "r
   for (const [label, value] of [["workspace", workspaceId], ["conversation", conversationId], ["object", id]] as const) {
     if (typeof value !== "string" || !UUID.test(value)) throw new InvalidMediaKeyError(`Invalid ${label} id.`);
   }
-  if (!mediaKindValues.includes(kind)) throw new InvalidMediaKeyError("Invalid media kind.");
+  if (!AREAS.includes(kind)) throw new InvalidMediaKeyError("Invalid media kind.");
   const key = `ws/${workspaceId.toLowerCase()}/conv/${conversationId.toLowerCase()}/${kind}/${id.toLowerCase()}-${sanitiseFilename(filename)}`;
   if (!KEY.test(key)) throw new InvalidMediaKeyError("Could not build a storage key.");
   return key;
 }
+
+/** The optimizer's output for one clip: `.../raw/<id>.mp4` (derived, never taken from the worker). */
+export function buildOptimizedKey({ workspaceId, conversationId, id }: { workspaceId: string; conversationId: string; id: string }): string {
+  for (const [label, value] of [["workspace", workspaceId], ["conversation", conversationId], ["object", id]] as const) {
+    if (typeof value !== "string" || !UUID.test(value)) throw new InvalidMediaKeyError(`Invalid ${label} id.`);
+  }
+  return `ws/${workspaceId.toLowerCase()}/conv/${conversationId.toLowerCase()}/raw/${id.toLowerCase()}.mp4`;
+}
+
+/** True for a key in the upload holding area. */
+export const isIncomingKey = (key: string): boolean => KEY.exec(key)?.[3]?.toLowerCase() === INCOMING;
 
 /** True only for a well-formed key inside this workspace (checked again before any signing). */
 export function isWorkspaceKey(key: unknown, workspaceId: string): key is string {

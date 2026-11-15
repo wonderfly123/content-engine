@@ -57,8 +57,12 @@ export function BrandSwitcher({ collapsed = false }: BrandSwitcherProps) {
       .map((b) => ({ id: b.id, name: b.name, slug: b.slug }));
     const next = activeOnly;
     setBrands(next);
-    if (!active || !next.some((b) => b.id === active.id)) {
+    const current = active ? next.find((b) => b.id === active.id) : undefined;
+    if (!current) {
       setActive(next.find((b) => b.slug === DEFAULT_BRAND_SLUG) ?? next[0] ?? null);
+    } else if (current.name !== active!.name || current.slug !== active!.slug) {
+      // The brand was renamed: show the new name, not the one saved in this browser.
+      setActive(current);
     }
   }, [data, active, setActive, setBrands]);
 

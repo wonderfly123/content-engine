@@ -98,7 +98,7 @@ function ProductPreview() {
 export default async function LandingPage() {
   // Signed-in people go straight to the app.
   const access = await getAccess().catch(() => null);
-  if (access?.status === "active") redirect("/calendar");
+  if (access?.status === "active") redirect("/dashboard");
 
   return (
     <>

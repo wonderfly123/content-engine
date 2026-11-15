@@ -93,4 +93,12 @@ export const routes: RouteAttack[] = [
     build: (v) => ({ form: { From: v.phone, To: "+15550009999", Body: "new reel", MessageSid: "SMplanted" } }),
     skipOwnerControl: "Twilio signs every request; a signed-in user is not a way in (signed requests are tested in lib/conversations/__tests__/webhook.test.ts)",
   },
+  {
+    route: "app/api/media/optimized/route.ts",
+    method: "POST",
+    name: "unsigned optimizer callback swapping their clip",
+    // No session can open this route: without the worker's HMAC signature it is refused for everyone.
+    build: (v) => ({ body: { jobId: "00000000-0000-4000-8000-0000000000aa", mediaId: v.mediaId, ok: true, sizeBytes: 1, codec: "hevc" } }),
+    skipOwnerControl: "the optimizer worker signs every callback; a signed-in user is not a way in (signed callbacks are tested in lib/media/__tests__/optimize.test.ts)",
+  },
 ];

@@ -19,6 +19,8 @@ To decide:
 
 Today: every workspace has a 5 GB allowance and nothing is deleted automatically.
 
+Related: raw clips could be shrunk to 1080p after the video is posted instead of being deleted. That keeps a usable copy at about a third of the size.
+
 ### Getting footage in from a drive or folder
 Raised 2026-11-14. Options, from smallest to largest:
 - **Pick a whole folder in the browser:** upload every video in a chosen folder or external drive. Works in modern browsers with no install, but only when the user picks it each time.
