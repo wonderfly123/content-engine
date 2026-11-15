@@ -96,6 +96,9 @@ export function UserMenu({ collapsed, user }: { collapsed: boolean; user: Curren
           {user.name && <span className="block truncate text-xs text-muted-foreground">{user.email}</span>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/onboarding"><Plus aria-hidden="true" />Add brand</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setAlertsOpen(true)}>
           <Bell aria-hidden="true" />
           Alerts
@@ -103,9 +106,6 @@ export function UserMenu({ collapsed, user }: { collapsed: boolean; user: Curren
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/settings"><Settings aria-hidden="true" />Settings</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/onboarding"><Plus aria-hidden="true" />Add brand</Link>
         </DropdownMenuItem>
         {user.role === "admin" && (
           <DropdownMenuItem asChild>
