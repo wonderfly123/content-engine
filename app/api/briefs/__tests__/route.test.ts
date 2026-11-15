@@ -108,6 +108,12 @@ vi.mock("@/lib/auth/workspace", () => ({
 
 // Track pipeline call
 const approveAndGen = vi.fn();
+// The workspace has its AI key connected (the key store has its own tests).
+vi.mock("@/lib/credentials/store", () => ({
+  getCredential: async () => "test-key",
+  notConnectedBody: (provider: string) => ({ error: "not_connected", provider }),
+}));
+
 vi.mock("@/lib/pipelines/drafts", () => ({
   approveBriefAndGenerateDraft: (id: string, opts?: unknown) =>
     approveAndGen(id, opts),

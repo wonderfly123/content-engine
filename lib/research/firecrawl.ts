@@ -68,10 +68,11 @@ export class FirecrawlResearcher implements Researcher {
   private readonly http: FetchLike;
 
   constructor(opts: FirecrawlOptions = {}) {
-    const apiKey = opts.apiKey ?? process.env.FIRECRAWL_API_KEY;
+    // The key always comes from the workspace (lib/credentials/clients.ts), never from a shared environment variable.
+    const apiKey = opts.apiKey;
     if (!apiKey) {
       throw new ResearchError(
-        'FIRECRAWL_API_KEY is not set. Add it to your environment to use the Firecrawl researcher.',
+        'No Firecrawl API key was given.',
         'missing_api_key',
       );
     }

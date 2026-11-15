@@ -135,7 +135,7 @@ describe("coverage", () => {
   });
 
   it("gives every table a brand, apart from the few that reach one another way", () => {
-    const viaAnotherTable = ["workspaces", "workspace_members", "brands", "draft_assets"];
+    const viaAnotherTable = ["workspaces", "workspace_members", "workspace_credentials", "brands", "draft_assets"];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))
       .filter((t) => !("brandId" in getTableColumns(t)))
@@ -185,7 +185,7 @@ describe("one workspace against another: server actions", () => {
     } catch (err) {
       result = { ok: false, error: (err as Error).message };
     }
-    expect(result, "attacker's call must fail").toMatchObject({ ok: false });
+    if (!attack.attackerMayPass) expect(result, "attacker's call must fail").toMatchObject({ ok: false });
     expect(leaks(JSON.stringify(result))).toEqual([]);
     expect(await victimRows()).toEqual(before);
 

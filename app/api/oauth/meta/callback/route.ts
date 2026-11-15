@@ -116,6 +116,17 @@ export const GET = guard(async (req: NextRequest) => {
   // The brand named in `state` must be the signed-in caller's, before any token exchange or write.
   const { brandId } = await requireBrand(stateParsed.data.brandId);
 
+  // The return must carry the one-time value this browser set when it started the sign-in
+  // (components/onboarding/channel-connect-card.tsx). Without that, a link built by someone else
+  // could attach their Meta account to this brand.
+  const started = req.cookies.get("ce_meta_oauth")?.value;
+  if (!started || !stateParsed.data.nonce || started !== stateParsed.data.nonce) {
+    return NextResponse.json(
+      { error: "This connection was not started from this browser, or it expired. Go back to Channels and press Connect again." },
+      { status: 400 },
+    );
+  }
+
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
   const redirectUri =

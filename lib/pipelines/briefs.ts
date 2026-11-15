@@ -11,7 +11,8 @@
 
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
-import { getLLMProvider, type LLMProvider, type BriefInput } from "@/lib/llm";
+import { llmForBrand } from "@/lib/credentials/clients";
+import type { LLMProvider, BriefInput } from "@/lib/llm";
 import type {
   Channel as DbChannel,
   ContentFormat as DbFormat,
@@ -38,7 +39,7 @@ export async function runBriefBatchForBrand(
   deps: RunBriefsDeps = {},
 ): Promise<BriefBatchResult> {
   const db = deps.db ?? defaultDb;
-  const llm = deps.llm ?? getLLMProvider();
+  const llm = deps.llm ?? (await llmForBrand(brandId));
   const now = deps.now ?? (() => new Date());
 
   // ---- 1. Read latest research bundle -------------------------------------

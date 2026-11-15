@@ -49,7 +49,7 @@ export const POST = guard(async (
   }
 
   try {
-    const drafted = await runAnalysis({
+    const drafted = await runAnalysis(brand.id, {
       websiteUrl: brand.websiteUrl ?? undefined,
       description: brand.description || undefined,
     });

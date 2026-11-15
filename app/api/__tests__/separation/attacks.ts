@@ -49,5 +49,10 @@ export interface ActionAttack {
   /** Arguments aimed at the victim's data. */
   args: (victim: Seeded, attacker: Seeded) => unknown[];
   name?: string;
+  /**
+   * For actions that name no brand and act on the caller's own workspace: the attacker's call may
+   * succeed, with the reason. It must still leak and change nothing of the victim's.
+   */
+  attackerMayPass?: string;
   skipOwnerControl?: string;
 }

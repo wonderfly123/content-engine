@@ -8,9 +8,9 @@
  */
 
 import type { LLMProvider, PersonaDraft } from "@/lib/llm/types";
-import { getLLMProvider } from "@/lib/llm";
+import { llmForBrand, researcherForBrand } from "@/lib/credentials/clients";
+import { getCredentialForBrand } from "@/lib/credentials/store";
 import type { Researcher, ScrapedSite } from "@/lib/research/types";
-import { getResearcher } from "@/lib/research";
 import type { ProfileInput, IcpInput, CadenceInput } from "./types";
 import { CADENCE_PRESETS } from "./types";
 
@@ -28,7 +28,8 @@ export interface DraftedProfile {
 }
 
 export interface AnalyzeDeps {
-  researcher: Researcher;
+  /** Null when the workspace has not connected a website reader; analysis then works from the description. */
+  researcher: Researcher | null;
   llm: LLMProvider;
 }
 
@@ -134,8 +135,12 @@ export async function analyzeBrand(
     throw new Error("analyzeBrand requires websiteUrl or description");
   }
 
+  if (!deps.researcher && !input.description) {
+    throw new Error("Connect Firecrawl in Settings > Connections to read a website, or add a description instead.");
+  }
+
   let scraped: ScrapedSite | undefined;
-  if (input.websiteUrl) {
+  if (input.websiteUrl && deps.researcher) {
     try {
       scraped = await deps.researcher.scrapeSite(input.websiteUrl);
     } catch (err) {
@@ -183,10 +188,9 @@ export async function analyzeBrand(
   };
 }
 
-/** Convenience wrapper for production callers. */
-export async function runAnalysis(input: AnalyzeInput): Promise<DraftedProfile> {
-  return analyzeBrand(input, {
-    researcher: getResearcher(),
-    llm: getLLMProvider(),
-  });
+/** Production entry point: analyses with the keys of the workspace that owns `brandId`. */
+export async function runAnalysis(brandId: string, input: AnalyzeInput): Promise<DraftedProfile> {
+  const llm = await llmForBrand(brandId);
+  const hasReader = Boolean(await getCredentialForBrand(brandId, "firecrawl"));
+  return analyzeBrand(input, { researcher: hasReader ? await researcherForBrand(brandId) : null, llm });
 }

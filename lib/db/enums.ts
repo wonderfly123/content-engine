@@ -18,6 +18,10 @@ export const workspaceStatusValues = ["active", "disabled"] as const;
 export const workspaceStatusEnum = pgEnum("workspace_status", workspaceStatusValues);
 export type WorkspaceStatus = (typeof workspaceStatusValues)[number];
 
+export const credentialProviderValues = ["anthropic", "firecrawl", "apify"] as const;
+export const credentialProviderEnum = pgEnum("credential_provider", credentialProviderValues);
+export type CredentialProvider = (typeof credentialProviderValues)[number];
+
 export const channelValues = [
   "instagram",
   "facebook",

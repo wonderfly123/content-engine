@@ -9,6 +9,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { researchBundles } from "@/lib/db/schema";
 import { enqueueJob } from "@/lib/pipelines/jobs";
+import { getCredential, notConnectedBody } from "@/lib/credentials/store";
 import { guard, requireBrand } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
@@ -44,7 +45,10 @@ export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
       { status: 400 },
     );
   }
-  const { brandId } = await requireBrand(parsed.data.brandId);
+  const { brandId, workspaceId } = await requireBrand(parsed.data.brandId);
+  if (!(await getCredential(workspaceId, "firecrawl"))) {
+    return NextResponse.json(notConnectedBody("firecrawl"), { status: 409 });
+  }
   const jobId = await enqueueJob({
     kind: "research_pull",
     brandId,

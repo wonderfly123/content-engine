@@ -21,6 +21,7 @@ import {
   channelConnectionStatusEnum,
   channelEnum,
   competitorPlatformEnum,
+  credentialProviderEnum,
   draftAssetRoleEnum,
   draftStatusEnum,
   eventActorEnum,
@@ -92,6 +93,29 @@ export const workspaceMembers = pgTable(
     primaryKey({ columns: [t.workspaceId, t.userId] }),
     index("workspace_members_user_idx").on(t.userId),
   ],
+);
+
+/**
+ * Keys a workspace brings for outside services (AI, research). One row per service.
+ * The secret is encrypted at rest and only ever read on the server at the moment of use
+ * (lib/credentials/store.ts); it is never sent to the browser.
+ */
+export const workspaceCredentials = pgTable(
+  "workspace_credentials",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    provider: credentialProviderEnum().notNull(),
+    secret: encryptedText("secret").notNull(),
+    /** "ok" or "failing" (set by the hourly check and when the key is saved). */
+    status: text().notNull().default("ok"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastCheckError: text("last_check_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.provider] })],
 );
 
 // =========================================================================

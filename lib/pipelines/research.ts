@@ -21,9 +21,8 @@
 
 import { and, desc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
+import { competitorScraperForBrand, researcherForBrand } from "@/lib/credentials/clients";
 import {
-  getCompetitorScraper,
-  getResearcher,
   type CompetitorPost,
   type CompetitorScraper,
   type Researcher,
@@ -60,8 +59,8 @@ export async function runResearchForBrand(
   deps: RunResearchDeps = {},
 ): Promise<ResearchResult> {
   const db = deps.db ?? defaultDb;
-  const scraper = deps.competitorScraper ?? getCompetitorScraper();
-  const researcher = deps.researcher ?? getResearcher();
+  const scraper = deps.competitorScraper ?? (await competitorScraperForBrand(brandId));
+  const researcher = deps.researcher ?? (await researcherForBrand(brandId));
   const now = deps.now ?? (() => new Date());
 
   const errorNotes: string[] = [];

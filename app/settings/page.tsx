@@ -22,6 +22,9 @@ import { resolveEnabledChannels } from "@/lib/analytics/filters";
 import type { BrandSettings } from "@/lib/db/types";
 import { KeywordsTab } from "./keywords-tab";
 import { AnalyticsVisibilityCard } from "./analytics-visibility-card";
+import { ConnectionsCard } from "@/components/settings/connections-card";
+import { getAccess } from "@/lib/auth/session";
+import { connectionsForCaller } from "@/lib/credentials/view";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +88,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     // DB not reachable (e.g. build-time without env) or not signed in. Render env tab only.
   }
 
+  // The workspace's own keys (statuses only), and whether the caller runs the platform.
+  const connections = await connectionsForCaller().catch(() => null);
+  const isPlatformAdmin = (await getAccess().catch(() => null))?.role === "admin";
+
   const defaultTab = sp.tab ?? "app";
 
   return (
@@ -117,6 +124,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           </TabsTrigger>
           <TabsTrigger value="cadence" disabled={!activeBrand}>Cadence</TabsTrigger>
           <TabsTrigger value="channels" disabled={!activeBrand}>Channels</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
@@ -130,6 +138,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             </CardHeader>
           </Card>
 
+          {isPlatformAdmin && (
           <Card>
             <CardHeader>
               <CardTitle>Environment configuration</CardTitle>
@@ -163,6 +172,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               </ul>
             </CardContent>
           </Card>
+          )}
 
           <Separator />
 
@@ -219,6 +229,18 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             </TabsContent>
           </>
         )}
+
+        <TabsContent value="connections" className="space-y-4 pt-4">
+          <p className="text-sm text-muted-foreground">
+            Your workspace runs on its own keys. A key is tested when you save it, stored encrypted, and never shown again.
+            Instagram and Facebook are connected per brand under Channels.
+          </p>
+          {connections ? (
+            <ConnectionsCard items={connections.items} canEdit={connections.canEdit} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Sign in to manage connections.</p>
+          )}
+        </TabsContent>
 
         <TabsContent value="integrations" className="pt-4">
           <Card>

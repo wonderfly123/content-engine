@@ -1,3 +1,4 @@
+import { ConnectionsBanner } from "@/components/layout/connections-banner";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
@@ -11,6 +12,7 @@ export default function BrandLayout({
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar />
+        <ConnectionsBanner />
         <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
     </div>

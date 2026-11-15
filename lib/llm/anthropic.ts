@@ -132,10 +132,11 @@ export class AnthropicProvider implements LLMProvider {
   private readonly maxTokens: number;
 
   constructor(opts: AnthropicProviderOptions = {}) {
-    const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
+    // The key always comes from the workspace (lib/credentials/clients.ts), never from a shared environment variable.
+    const apiKey = opts.apiKey;
     if (!opts.sdkClient && !apiKey) {
       throw new LLMError(
-        'ANTHROPIC_API_KEY is not set. Add it to your environment to use the Anthropic LLM provider.',
+        'No Anthropic API key was given.',
         'missing_api_key',
       );
     }

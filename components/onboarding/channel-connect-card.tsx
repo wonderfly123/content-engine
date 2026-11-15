@@ -14,6 +14,9 @@ interface ChannelConnectCardProps {
   redirectUri?: string;
 }
 
+/** Must match the name the callback reads (app/api/oauth/meta/callback/route.ts). */
+const OAUTH_NONCE_COOKIE = "ce_meta_oauth";
+
 const SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
@@ -36,9 +39,9 @@ export function ChannelConnectCard({
   const Icon = channel === "instagram" ? Instagram : Facebook;
   const label = channel === "instagram" ? "Instagram" : "Facebook";
 
-  const buildAuthUrl = (): string | null => {
+  const buildAuthUrl = (nonce: string): string | null => {
     if (!appId || !redirectUri) return null;
-    const state = `${brandId}|${crypto.randomUUID()}`;
+    const state = `${brandId}|${nonce}`;
     const url = new URL("https://www.facebook.com/v21.0/dialog/oauth");
     url.searchParams.set("client_id", appId);
     url.searchParams.set("redirect_uri", redirectUri);
@@ -48,7 +51,21 @@ export function ChannelConnectCard({
     return url.toString();
   };
 
-  const authUrl = buildAuthUrl();
+  const canConnect = Boolean(appId && redirectUri);
+
+  /**
+   * Start the Meta sign-in. A one-time value goes into both the link and a short-lived cookie;
+   * the callback only accepts a return that carries the same value, so a link crafted by someone
+   * else cannot attach their account to this brand.
+   */
+  const connect = () => {
+    const nonce = crypto.randomUUID();
+    const url = buildAuthUrl(nonce);
+    if (!url) return;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${OAUTH_NONCE_COOKIE}=${nonce}; Path=/api/oauth/meta; Max-Age=900; SameSite=Lax${secure}`;
+    window.location.assign(url);
+  };
 
   return (
     <Card>
@@ -70,12 +87,10 @@ export function ChannelConnectCard({
             ? "Connect an Instagram Business or Creator account linked to a Facebook Page."
             : "Connect a Facebook Page you manage."}
         </p>
-        {authUrl ? (
-          <Button asChild variant={connected ? "outline" : "default"} size="sm">
-            <a href={authUrl}>
-              {connected ? "Reconnect" : "Connect"}
-              <ExternalLink className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
-            </a>
+        {canConnect ? (
+          <Button variant={connected ? "outline" : "default"} size="sm" onClick={connect}>
+            {connected ? "Reconnect" : "Connect"}
+            <ExternalLink className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         ) : (
           <p className="text-xs text-muted-foreground">

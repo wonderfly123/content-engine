@@ -12,8 +12,8 @@
 
 import { and, desc, eq, gte } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
+import { llmForBrand } from "@/lib/credentials/clients";
 import {
-  getLLMProvider,
   type Brand as LLMBrand,
   type Brief as LLMBrief,
   type LLMProvider,
@@ -55,7 +55,6 @@ export async function generateDraftForBrief(
   deps: GenerateDraftDeps = {},
 ): Promise<GenerateDraftResult> {
   const db = deps.db ?? defaultDb;
-  const llm = deps.llm ?? getLLMProvider();
 
   // ---- 1. Load brief + brand + ICP ----------------------------------------
   const briefRows = await db
@@ -65,6 +64,8 @@ export async function generateDraftForBrief(
     .limit(1);
   const brief = briefRows[0];
   if (!brief) throw new Error(`Brief ${briefId} not found`);
+  // The workspace's own AI key (throws MissingCredentialError when not connected).
+  const llm = deps.llm ?? (await llmForBrand(brief.brandId));
   if (brief.status !== "approved" && brief.status !== "edited") {
     throw new Error(
       `Brief ${briefId} status is ${brief.status}; must be approved/edited`,

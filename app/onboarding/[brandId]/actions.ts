@@ -127,7 +127,7 @@ export async function startAnalysis(
   if (!brand) return { ok: false, error: "Brand not found" };
 
   try {
-    const drafted = await runAnalysis({
+    const drafted = await runAnalysis(brand.id, {
       websiteUrl: brand.websiteUrl ?? undefined,
       description: brand.description || undefined,
     });

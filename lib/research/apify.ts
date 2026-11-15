@@ -86,7 +86,8 @@ export class ApifyCompetitorScraper implements CompetitorScraper {
   private readonly pollIntervalMs: number;
 
   constructor(opts: ApifyOptions = {}) {
-    this.token = opts.token ?? process.env.APIFY_TOKEN;
+    // The token always comes from the workspace (lib/credentials/clients.ts), never from a shared environment variable.
+    this.token = opts.token;
     // Slashes in actor ids must be URL-encoded as `~` per Apify convention.
     this.actorId = (opts.actorId ?? 'apify/instagram-scraper').replace('/', '~');
     this.baseUrl = opts.baseUrl ?? 'https://api.apify.com/v2';

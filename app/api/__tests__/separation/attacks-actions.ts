@@ -80,4 +80,20 @@ export const actions: ActionAttack[] = [
   { file: ONBOARDING, action: "saveCompetitorsInspiration", args: (victim) => [victim.brandId, { competitors: [], inspiration: [] }] },
   { file: ONBOARDING, action: "saveCadence", args: (victim) => [victim.brandId, { preset: "sustainable", rows: [] }] },
   { file: ONBOARDING, action: "markActive", args: (victim) => [victim.brandId, { triggerResearch: true }] },
+
+  // ---- app/settings/connection-actions.ts ----
+  // These name no workspace: they act on the caller's own. The victim's keys must be untouched.
+  {
+    file: "app/settings/connection-actions.ts",
+    action: "saveConnection",
+    args: () => [{ provider: "anthropic", secret: "replacement-key-123456" }],
+    attackerMayPass: "acts on the caller's own workspace",
+    skipOwnerControl: "a key is tested against its service before saving, and the network is off in tests",
+  },
+  {
+    file: "app/settings/connection-actions.ts",
+    action: "removeConnection",
+    args: () => [{ provider: "anthropic" }],
+    attackerMayPass: "acts on the caller's own workspace",
+  },
 ];

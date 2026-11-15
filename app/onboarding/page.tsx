@@ -7,6 +7,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StartForm } from "./start-form";
+import { ConnectionsCard } from "@/components/settings/connections-card";
+import { connectionsForCaller } from "@/lib/credentials/view";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,10 @@ export default async function OnboardingEntryPage() {
     .from(brands)
     .where(and(eq(brands.status, "draft"), inArray(brands.id, brandIds)))
     .orderBy(desc(brands.updatedAt));
+
+  // A brand is drafted by the workspace's own AI key, so that comes first.
+  const connections = await connectionsForCaller().catch(() => null);
+  const needsKey = Boolean(connections?.needsAttention.some((n) => n.reason === "missing"));
 
   return (
     <div className="space-y-6">
@@ -74,7 +80,20 @@ export default async function OnboardingEntryPage() {
         </Card>
       )}
 
-      <StartForm />
+      {connections && needsKey ? (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">First, connect your accounts</h2>
+            <p className="text-sm text-muted-foreground">
+              Your workspace runs on its own keys. Connect Anthropic to continue; the others can wait.
+              You will connect Instagram and Facebook at the end of brand setup.
+            </p>
+          </div>
+          <ConnectionsCard items={connections.items} canEdit={connections.canEdit} />
+        </div>
+      ) : (
+        <StartForm />
+      )}
     </div>
   );
 }
