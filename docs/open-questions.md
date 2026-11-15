@@ -38,15 +38,8 @@ Raised 2026-11-14. Options:
 
 Not doing: downloading audio from YouTube links. It breaks YouTube's terms, and most of that music is copyrighted.
 
-### Who pays for AI?
-The cloud editor runs on the top Claude models. Options:
-- Each workspace brings its own Anthropic key (built: Settings > Connections).
-- The platform pays and caps videos per workspace.
-
-To be decided once real per-video costs are measured on Jordan's test jobs.
-
 ### Video cap per workspace
-The placeholder is 30 videos a month, and AI change requests per video are capped. Set real numbers once costs are measured.
+AI is paid by each workspace's own key, so a cap would only protect the platform's own costs: rendering on Modal and storage. Decide whether any cap is needed once render costs are measured.
 
 ## Texting
 
@@ -73,6 +66,8 @@ Account status lives in Supabase and the webhook can't see it. Decide whether te
 - The Slack app's redirect still points at nekter.io.
 
 ## Settled
+
+- **AI is bring-your-own-key (2026-11-14).** Every workspace pays for its own AI with its own Anthropic API key (Settings > Connections), so Nekter never manages anyone's AI spend. Anthropic offers no "sign in with Claude" for other apps, so it has to be a pasted key. The cloud editor uses the workspace's own key for every job. The plan is to show each job's AI cost in its conversation, so people can see what they spend.
 
 - **Name and domains:** the product is Nekter. nekter.io is the website and app.nekter.io the app (2026-11-14).
 - **Cloud editor:** headless Claude Code driven by skills and subagents, on the top models, with real costs recorded per job (2026-11-14).
