@@ -1,7 +1,8 @@
 import type { Brand } from "../page";
 import { ProfileForm } from "@/components/onboarding/profile-form";
 import type { ProfileInput } from "@/lib/onboarding/types";
-import type { DraftedProfile } from "@/lib/onboarding/analyze";
+/** A draft left by the earlier onboarding analysis, still read to prefill this form. */
+type DraftedProfile = { profile?: ProfileInput };
 
 interface Step3Props {
   brand: Brand;

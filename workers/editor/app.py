@@ -5,7 +5,8 @@ owner's editing skill (skill/ next to this file) cuts vertical videos from a job
 POST <submit>  Authorization: Bearer <MODAL_EDITOR_SECRET>   (job contract: contract.valid_job)
 answers 202 straight away and spawns `run_job`, which:
   fresh temp workspace -> streams the clips to footage/ (presigned GETs) -> runs the agent (cwd = workspace,
-  skill in .claude/skills/, allow-listed tools, dontAsk, 80 turns, 25 min) -> validates out/manifest.json ->
+  skill in .claude/skills/: the baked copy with the job's `skillFiles`, if any, written over it,
+  allow-listed tools, dontAsk, 80 turns, 25 min) -> validates out/manifest.json ->
   uploads previews (uploads endpoint + presigned PUTs) -> POSTs the callback signed with
   X-Nekter-Signature = hex HMAC-SHA256(raw body, MODAL_EDITOR_SECRET).
 
@@ -66,7 +67,7 @@ with image.imports():
 
     from contract import (
         ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial,
-        preview_path, previous_for_agent, previous_keys, sign, valid_job, validate_manifest,
+        preview_path, previous_for_agent, previous_keys, sign, valid_job, validate_manifest, write_skill_files,
     )
 
 
@@ -283,7 +284,11 @@ def _workspace(tmp: str, job: Dict[str, Any], files: List[Tuple[str, str]]) -> s
     ws = os.path.join(tmp, "job")
     for d in ("footage", "work", "out/previews", ".claude/skills"):
         os.makedirs(os.path.join(ws, d), exist_ok=True)
-    shutil.copytree(SKILL_DIR, os.path.join(ws, ".claude", "skills", SKILL_NAME))
+    skill = os.path.join(ws, ".claude", "skills", SKILL_NAME)
+    shutil.copytree(SKILL_DIR, skill)
+    # The skill as edited in Admin, if the job carries it (validated with the job); else the baked copy stands.
+    edited = write_skill_files(skill, job.get("skillFiles"))
+    print(f"job {job['jobId']}: skill {'edited copy (' + str(edited) + ' files)' if edited else 'baked copy'}")
     with open(os.path.join(ws, "job.json"), "w") as f:
         json.dump(job_brief(job, files), f, indent=2)
     if job.get("previous"):

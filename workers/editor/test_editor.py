@@ -21,6 +21,7 @@ sys.path.insert(0, HERE)
 from contract import (  # noqa: E402
     ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial, preview_path,
     previous_for_agent, previous_keys, safe_filename, sign, valid_job, validate_manifest,
+    SKILL_FILES, MAX_SKILL_BYTES, valid_skill_files, write_skill_files,
 )
 
 SCRIPTS = os.path.join(HERE, "skill", "scripts")
@@ -76,6 +77,56 @@ class JobTests(unittest.TestCase):
         text = json.dumps(job_brief(JOB, files)) + build_prompt(JOB, files, "cutting-montage-videos")
         for secret in ("sk-ant-test", "https://", "m1"):
             self.assertNotIn(secret, text)
+
+
+class SkillFilesTests(unittest.TestCase):
+    def test_job_without_or_with_skill_files(self):
+        self.assertIsNotNone(valid_job(copy.deepcopy(JOB)))  # none: the baked copy stands
+        self.assertIsNotNone(valid_job(dict(copy.deepcopy(JOB), skillFiles=None)))
+        self.assertIsNotNone(valid_job(dict(copy.deepcopy(JOB), skillFiles={"hooks.md": "# hooks", "profiles/build.md": "x"})))
+
+    def test_job_with_bad_skill_files_is_refused(self):
+        for files in (
+            {"../app.py": "x"}, {"/etc/passwd": "x"}, {"scripts/render.sh": "x"}, {"profiles/../SKILL.md": "x"},
+            {"hooks.md": 3}, {"hooks.md": "a\x00b"}, ["hooks.md"], "hooks.md",
+            {"hooks-formulas.md": "x" * (MAX_SKILL_BYTES - 1), "hooks.md": "xx"},  # over the total
+        ):
+            self.assertFalse(valid_skill_files(files), files)
+            self.assertIsNone(valid_job(dict(copy.deepcopy(JOB), skillFiles=files)), files)
+        self.assertTrue(valid_skill_files({"hooks-formulas.md": "x" * MAX_SKILL_BYTES}))
+        self.assertTrue(valid_skill_files({p: "ok" for p in SKILL_FILES}))
+
+    def test_skill_files_match_the_skill_folder(self):
+        skill = os.path.join(HERE, "skill")
+        found = sorted(os.path.relpath(os.path.join(d, f), skill).replace(os.sep, "/")
+                       for d, _, fs in os.walk(skill) for f in fs if f.endswith(".md") and "scripts" not in os.path.relpath(d, skill).split(os.sep))
+        self.assertEqual(sorted(SKILL_FILES), found)
+
+    def test_writes_over_the_baked_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = os.path.join(tmp, "job", ".claude", "skills", "cutting-montage-videos")
+            shutil.copytree(os.path.join(HERE, "skill"), skill)
+            baked = open(os.path.join(skill, "intake.md")).read()
+            self.assertEqual(write_skill_files(skill, None), 0)
+            self.assertEqual(write_skill_files(skill, {}), 0)
+            self.assertEqual(write_skill_files(skill, {"hooks.md": "# edited hooks", "profiles/build.md": "# edited build"}), 2)
+            self.assertEqual(open(os.path.join(skill, "hooks.md")).read(), "# edited hooks")
+            self.assertEqual(open(os.path.join(skill, "profiles", "build.md")).read(), "# edited build")
+            self.assertEqual(open(os.path.join(skill, "intake.md")).read(), baked)  # untouched
+            self.assertTrue(os.path.isfile(os.path.join(skill, "scripts", "render.sh")))
+            with self.assertRaises(ValueError):
+                write_skill_files(skill, {"../../escape.md": "x"})
+            self.assertFalse(os.path.exists(os.path.join(tmp, "job", ".claude", "escape.md")))
+
+    def test_symlink_is_replaced_not_followed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill, outside = os.path.join(tmp, "skill"), os.path.join(tmp, "outside.md")
+            os.makedirs(skill)
+            open(outside, "w").write("keep")
+            os.symlink(outside, os.path.join(skill, "hooks.md"))
+            with self.assertRaises(ValueError):  # realpath leaves the folder
+                write_skill_files(skill, {"hooks.md": "x"})
+            self.assertEqual(open(outside).read(), "keep")
 
 
 class FilenameTests(unittest.TestCase):

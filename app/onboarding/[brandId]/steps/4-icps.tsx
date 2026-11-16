@@ -4,7 +4,8 @@ import { icps } from "@/lib/db/schema";
 import { IcpEditor } from "@/components/onboarding/icp-editor";
 import type { IcpInput } from "@/lib/onboarding/types";
 import type { Brand } from "../page";
-import type { DraftedProfile } from "@/lib/onboarding/analyze";
+/** A draft left by the earlier onboarding analysis, still read to prefill this list. */
+type DraftedProfile = { icps?: IcpInput[] };
 
 interface Step4Props {
   brand: Brand;

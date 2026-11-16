@@ -1,54 +1,61 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { ArrowRight } from "lucide-react";
-import { AccessError, listBrandIds } from "@/lib/auth/workspace";
+import { listBrandIds, tryWorkspace } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
-import { and, desc, eq, inArray } from "drizzle-orm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StartForm } from "./start-form";
-import { ConnectionsCard } from "@/components/settings/connections-card";
-import { connectionsForCaller } from "@/lib/credentials/view";
-import {
-  ONBOARDING_STEP_COUNT,
-  resolveOnboardingStep,
-  type OnboardingState,
-} from "@/lib/onboarding/types";
+import { FLOW_STEP_COUNT, FLOW_VERSION, flowStateOf, resumeStep } from "@/lib/onboarding/flow";
+import { supabaseEnv } from "@/lib/supabase/env";
+import { WelcomeForm } from "./welcome-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function OnboardingEntryPage() {
-  // Only the caller's own unfinished brands. Not signed in / no workspace: none.
-  const brandIds = await listBrandIds().catch((err: unknown) => {
-    if (err instanceof AccessError) return [] as string[];
-    throw err;
-  });
-  const drafts = brandIds.length === 0 ? [] : await db
-    .select({
-      id: brands.id,
-      name: brands.name,
-      slug: brands.slug,
-      websiteUrl: brands.websiteUrl,
-      settingsJson: brands.settingsJson,
-      updatedAt: brands.updatedAt,
-    })
-    .from(brands)
-    .where(and(eq(brands.status, "draft"), inArray(brands.id, brandIds)))
-    .orderBy(desc(brands.updatedAt));
+/** The signed-in person's name, if their account has one (the account menu shows the same). */
+async function knownName(): Promise<string | null> {
+  if (!supabaseEnv()) return null;
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const { data } = await (await createClient()).auth.getUser();
+    const meta = data.user?.user_metadata ?? {};
+    for (const key of ["full_name", "name"]) {
+      const v = meta[key];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  } catch {
+    // no name; ask for it
+  }
+  return null;
+}
 
-  // A brand is drafted by the workspace's own AI key, so that comes first.
-  const connections = await connectionsForCaller().catch(() => null);
-  const needsKey = Boolean(connections?.needsAttention.some((n) => n.reason === "missing"));
+/** Step 1 (Welcome), or a list of brands whose setup can be resumed. */
+export default async function OnboardingEntryPage() {
+  const workspace = await tryWorkspace();
+  if (!workspace) {
+    return <p className="text-sm text-muted-foreground">Sign in to set up a brand.</p>;
+  }
+
+  const brandIds = await listBrandIds();
+  const rows = brandIds.length
+    ? await db
+        .select({ id: brands.id, name: brands.name, status: brands.status, settingsJson: brands.settingsJson, updatedAt: brands.updatedAt })
+        .from(brands)
+        .where(and(inArray(brands.id, brandIds)))
+        .orderBy(desc(brands.updatedAt))
+    : [];
+  const hasActive = rows.some((r) => r.status === "active");
+  const drafts = rows.filter((r) => r.status === "draft");
+
+  // Someone who left mid-way with nothing live yet goes straight back to where they were.
+  const inFlow = drafts.find((d) => flowStateOf(d.settingsJson).flow === FLOW_VERSION);
+  if (!hasActive && inFlow) redirect(`/onboarding/${inFlow.id}?step=${resumeStep(flowStateOf(inFlow.settingsJson))}`);
+
+  const name = await knownName();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Add a brand</h1>
-        <p className="text-sm text-muted-foreground">
-          We&apos;ll draft a persona, voice, and ICP from a quick description.
-        </p>
-      </div>
-
+    <div className="mx-auto max-w-xl space-y-6">
       {drafts.length > 0 && (
         <Card>
           <CardHeader>
@@ -56,20 +63,13 @@ export default async function OnboardingEntryPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {drafts.map((d) => {
-              const step = resolveOnboardingStep(
-                (d.settingsJson as { onboarding?: OnboardingState } | null)
-                  ?.onboarding,
-              );
+              const step = resumeStep(flowStateOf(d.settingsJson));
               return (
-                <div
-                  key={d.id}
-                  className="flex items-center justify-between rounded-md border p-3"
-                >
+                <div key={d.id} className="flex items-center justify-between rounded-md border p-3">
                   <div>
                     <div className="text-sm font-medium">{d.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      Step {step} of {ONBOARDING_STEP_COUNT} · last updated{" "}
-                      {new Date(d.updatedAt).toLocaleString()}
+                      Step {step} of {FLOW_STEP_COUNT} · last updated {new Date(d.updatedAt).toLocaleString()}
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm">
@@ -84,21 +84,7 @@ export default async function OnboardingEntryPage() {
           </CardContent>
         </Card>
       )}
-
-      {connections && needsKey ? (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">First, connect your accounts</h2>
-            <p className="text-sm text-muted-foreground">
-              Your workspace runs on its own AI key. Connect Anthropic to continue.
-              You will connect Instagram and Facebook at the end of brand setup.
-            </p>
-          </div>
-          <ConnectionsCard items={connections.items} canEdit={connections.canEdit} />
-        </div>
-      ) : (
-        <StartForm />
-      )}
+      <WelcomeForm knownName={name} firstBrand={!hasActive} />
     </div>
   );
 }

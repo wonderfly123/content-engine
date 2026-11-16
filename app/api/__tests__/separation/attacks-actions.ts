@@ -3,6 +3,7 @@ import type { ActionAttack } from "./attacks";
 const SETTINGS = "app/settings/actions.ts";
 const ONBOARDING = "app/onboarding/[brandId]/actions.ts";
 const PHONE = "app/settings/phone-actions.ts";
+const FLOW = "app/onboarding/flow-actions.ts";
 
 /** A complete, valid profile (what the review step submits). */
 const profile = {
@@ -27,16 +28,7 @@ export const actions: ActionAttack[] = [
   // ---- app/settings/actions.ts ----
   { file: SETTINGS, action: "setEnabledChannels", args: (victim) => [{ brandId: victim.brandId, channels: ["instagram"] }] },
 
-  // ---- app/onboarding/[brandId]/actions.ts ----
-  // Names no brand: it creates one in the caller's own workspace and then redirects (which throws),
-  // so there is nothing of the victim's to aim at. The test still proves it leaks and changes nothing.
-  { file: ONBOARDING, action: "createBrand", args: () => [{ description: "A brand new brand" }] },
-  {
-    file: ONBOARDING,
-    action: "startAnalysis",
-    args: (victim) => [victim.brandId],
-    skipOwnerControl: "the action catches the analysis failure itself (no network or API key in tests) and answers { ok: false } for the owner too",
-  },
+  // ---- app/onboarding/[brandId]/actions.ts (the Settings persona, ICP and cadence tabs) ----
   { file: ONBOARDING, action: "saveProfile", args: (victim) => [victim.brandId, profile] },
   {
     file: ONBOARDING,
@@ -52,7 +44,21 @@ export const actions: ActionAttack[] = [
     skipOwnerControl: "aims at the attacker's brand; the victim cannot reach it",
   },
   { file: ONBOARDING, action: "saveCadence", args: (victim) => [victim.brandId, { preset: "sustainable", rows: [] }] },
-  { file: ONBOARDING, action: "markActive", args: (victim) => [victim.brandId] },
+
+  // ---- app/onboarding/flow-actions.ts (the onboarding flow) ----
+  // Names no brand: it creates one in the caller's own workspace and then redirects (which throws),
+  // so there is nothing of the victim's to aim at. The test still proves it leaks and changes nothing.
+  { file: FLOW, action: "startOnboarding", args: () => [{ brandName: "A brand new brand" }] },
+  { file: FLOW, action: "saveAbout", args: (victim) => [victim.brandId, { websiteUrl: "example.com", summary: "We sell coconuts at events." }] },
+  {
+    file: FLOW,
+    action: "saveReview",
+    args: (victim) => [
+      victim.brandId,
+      { name: "Taken over", whatTheyDo: "Taken over", facts: [{ fact: "A fact", source: "" }], exampleCaptions: ["A caption"] },
+    ],
+  },
+  { file: FLOW, action: "finishSetup", args: (victim) => [victim.brandId] },
 
   // ---- app/settings/connection-actions.ts ----
   // These name no workspace: they act on the caller's own. The victim's keys must be untouched.

@@ -1,7 +1,8 @@
 "use server";
 
 /**
- * Onboarding server actions. One per step transition.
+ * Brand profile, ICP and cadence actions, used by Settings (persona, ICPs and cadence tabs).
+ * The onboarding flow itself has its own actions in app/onboarding/flow-actions.ts.
  *
  * Every action:
  *  - Validates input with Zod (rejects with typed error)
@@ -13,11 +14,10 @@
  *    on error vs ok without throwing across the server/client boundary.
  */
 
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
-import { tryBrand, tryWorkspace } from "@/lib/auth/workspace";
+import { tryBrand } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import {
   brands,
@@ -29,15 +29,12 @@ import {
   CADENCE_PRESETS,
   ONBOARDING_STEPS_VERSION,
   cadenceSchema,
-  createBrandSchema,
   icpsSchema,
   profileSchema,
   type CadenceInput,
-  type CreateBrandInput,
   type IcpsInput,
   type ProfileInput,
 } from "@/lib/onboarding/types";
-import { runAnalysis } from "@/lib/onboarding/analyze";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
@@ -51,110 +48,6 @@ const brandIdSchema = z.string().uuid("Invalid brand id");
 
 function flatten(err: z.ZodError): z.typeToFlattenedError<unknown> {
   return err.flatten() as z.typeToFlattenedError<unknown>;
-}
-
-// ---- Step 1: createBrand --------------------------------------------------
-
-export async function createBrand(
-  input: CreateBrandInput,
-): Promise<ActionResult<{ brandId: string }>> {
-  const parsed = createBrandSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
-  }
-
-  // New brands belong to the caller's workspace.
-  const workspace = await tryWorkspace();
-  if (!workspace) {
-    return { ok: false, error: "You are not a member of a workspace" };
-  }
-
-  const provisionalName = parsed.data.websiteUrl
-    ? new URL(parsed.data.websiteUrl).hostname.replace(/^www\./, "")
-    : "Untitled brand";
-  const slug = `draft-${Date.now().toString(36)}`;
-
-  const [row] = await db
-    .insert(brands)
-    .values({
-      workspaceId: workspace.workspaceId,
-      name: provisionalName,
-      slug,
-      status: "draft",
-      websiteUrl: parsed.data.websiteUrl ?? null,
-      description: parsed.data.description ?? "",
-      settingsJson: { onboarding: { currentStep: 2 } },
-    })
-    .returning({ id: brands.id });
-
-  if (!row) {
-    return { ok: false, error: "Insert failed" };
-  }
-
-  await db.insert(events).values({
-    entityType: "brand",
-    entityId: row.id,
-    brandId: row.id,
-    toStatus: "draft",
-    actor: "user",
-    note: "Onboarding step 1: created draft brand",
-  });
-
-  revalidatePath("/onboarding");
-  redirect(`/onboarding/${row.id}?step=2`);
-}
-
-// ---- Step 2: startAnalysis (server-action variant) -----------------------
-
-export async function startAnalysis(
-  brandId: string,
-): Promise<ActionResult<undefined>> {
-  const idParse = brandIdSchema.safeParse(brandId);
-  if (!idParse.success) {
-    return { ok: false, error: "Invalid brand id" };
-  }
-  const access = await tryBrand(idParse.data);
-  if (!access) return { ok: false, error: "Brand not found" };
-
-  const [brand] = await db
-    .select()
-    .from(brands)
-    .where(eq(brands.id, access.brandId));
-  if (!brand) return { ok: false, error: "Brand not found" };
-
-  try {
-    const drafted = await runAnalysis(brand.id, {
-      websiteUrl: brand.websiteUrl ?? undefined,
-      description: brand.description || undefined,
-    });
-
-    const settings = { ...(brand.settingsJson ?? {}) } as Record<string, unknown>;
-    settings.onboarding = {
-      ...(typeof settings.onboarding === "object" && settings.onboarding
-        ? (settings.onboarding as Record<string, unknown>)
-        : {}),
-      currentStep: 3,
-      draftProfile: drafted,
-      analyzedAt: new Date().toISOString(),
-    };
-
-    await db
-      .update(brands)
-      .set({ settingsJson: settings, updatedAt: new Date() })
-      .where(eq(brands.id, idParse.data));
-
-    await db.insert(events).values({
-      entityType: "brand",
-      entityId: idParse.data,
-      brandId: idParse.data,
-      actor: "system",
-      note: "Onboarding step 2: analysis complete",
-    });
-
-    return { ok: true, data: undefined };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
 }
 
 // ---- Step 3: saveProfile --------------------------------------------------
@@ -195,7 +88,7 @@ export async function saveProfile(
   }
 
   const [brand] = await db
-    .select({ settingsJson: brands.settingsJson })
+    .select({ settingsJson: brands.settingsJson, voiceJson: brands.voiceJson })
     .from(brands)
     .where(eq(brands.id, idParse.data));
   if (!brand) return { ok: false, error: "Brand not found" };
@@ -222,6 +115,8 @@ export async function saveProfile(
         traits: parsed.data.traits ?? [],
       },
       voiceJson: {
+        // Brand facts are edited in onboarding's review step; this form leaves them as they are.
+        ...(brand.voiceJson?.facts ? { facts: brand.voiceJson.facts } : {}),
         toneSliders: parsed.data.toneSliders,
         emojiPolicy:
           parsed.data.emojiPolicy === "liberal"
@@ -392,53 +287,6 @@ export async function saveCadence(
   });
 
   redirect(`/onboarding/${idParse.data}?step=6`);
-}
-
-// ---- Step 7: markActive ---------------------------------------------------
-
-export async function markActive(
-  brandId: string,
-): Promise<ActionResult<{ slug: string }>> {
-  const idParse = brandIdSchema.safeParse(brandId);
-  if (!idParse.success) return { ok: false, error: "Invalid brand id" };
-  const access = await tryBrand(idParse.data);
-  if (!access) return { ok: false, error: "Brand not found" };
-
-  const [brand] = await db
-    .select({ slug: brands.slug, status: brands.status })
-    .from(brands)
-    .where(eq(brands.id, idParse.data));
-  if (!brand) return { ok: false, error: "Brand not found" };
-
-  // Require at least one ICP for activation (Section 7: "name + 1 ICP").
-  const [anyIcp] = await db
-    .select({ id: icpsTable.id })
-    .from(icpsTable)
-    .where(eq(icpsTable.brandId, idParse.data))
-    .limit(1);
-  if (!anyIcp) {
-    return {
-      ok: false,
-      error: "Cannot activate brand without at least one ICP",
-    };
-  }
-
-  await db
-    .update(brands)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(brands.id, idParse.data));
-
-  await db.insert(events).values({
-    entityType: "brand",
-    entityId: idParse.data,
-    brandId: idParse.data,
-    fromStatus: brand.status,
-    toStatus: "active",
-    actor: "user",
-    note: "Onboarding step 7: activated",
-  });
-
-  return { ok: true, data: { slug: brand.slug } };
 }
 
 // ---- helpers --------------------------------------------------------------

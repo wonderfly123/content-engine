@@ -30,7 +30,11 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {brandId && <StartVideo brandId={brandId} />}
+      {brandId && (
+        <div id="start-video" className="scroll-mt-6">
+          <StartVideo brandId={brandId} />
+        </div>
+      )}
 
       {!brandId ? (
         <Card>

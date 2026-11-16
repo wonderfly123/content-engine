@@ -35,6 +35,8 @@ import { handOffToEditor } from "@/lib/conversations/editor";
 import { handleInbound } from "@/lib/conversations/handle";
 import { EDITOR_NOT_CONNECTED } from "@/lib/conversations/router";
 import { REPLIES } from "@/lib/editor/submit";
+import { EDITABLE_SKILL_PATHS } from "@/lib/editor/skill-files";
+import { SKILL_DEFAULTS } from "@/lib/editor/skill-defaults.generated";
 
 const SECRET = "test-editor-secret";
 const WORKER = "https://nekter--editor-submit.modal.run";
@@ -95,7 +97,7 @@ describe("handOffToEditor", () => {
     expect((init.headers as Record<string, string>).authorization).toBe(`Bearer ${SECRET}`);
     const sent = sentJob();
     expect(Object.keys(sent).sort()).toEqual(
-      ["anthropicApiKey", "brand", "callbackUrl", "clips", "instructions", "jobId", "kind", "model", "previous", "request", "uploads", "videoKind"].sort(),
+      ["anthropicApiKey", "brand", "callbackUrl", "clips", "instructions", "jobId", "kind", "model", "previous", "request", "skillFiles", "uploads", "videoKind"].sort(),
     );
     expect(sent).toMatchObject({
       jobId: job.id,
@@ -111,6 +113,19 @@ describe("handOffToEditor", () => {
     });
     expect(sent.brand.voice).toContain("Alpha voice");
     expect(sent.clips).toEqual([{ mediaId: a.mediaId, filename: "Alpha clip.mov", url: expect.stringContaining("exp=7200") }]);
+  });
+
+  it("sends the current version of every editable skill file: the newest save, else the repo copy", async () => {
+    await db.insert(schema.editorSkillVersions).values([
+      { path: "hooks.md", content: "# older hooks", createdBy: a.user.userId, createdAt: new Date("2026-01-01T00:00:00Z") },
+      { path: "hooks.md", content: "# newest hooks", createdBy: a.user.userId, createdAt: new Date("2026-02-01T00:00:00Z") },
+    ]);
+    await say("make a reel");
+    const sent = sentJob();
+    expect(Object.keys(sent.skillFiles).sort()).toEqual([...EDITABLE_SKILL_PATHS].sort());
+    expect(sent.skillFiles["hooks.md"]).toBe("# newest hooks");
+    expect(sent.skillFiles["SKILL.md"]).toBe(SKILL_DEFAULTS["SKILL.md"]);
+    expect(sent.skillFiles["profiles/build.md"]).toBe(SKILL_DEFAULTS["profiles/build.md"]);
   });
 
   it("sends a revision with the latest finished job's manifest", async () => {

@@ -147,6 +147,9 @@ describe("coverage", () => {
       // has a brand): by id through requireMedia (lib/media/access.ts), inside a thread through
       // requireConversation plus requireConversationMedia; their keys start with the workspace.
       "media_objects",
+      // The editor skill's versions belong to the platform, not to any workspace: platform admin only
+      // (app/api/admin/skill), and every workspace's jobs run on the current set.
+      "editor_skill_versions",
     ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))

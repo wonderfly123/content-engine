@@ -3,81 +3,93 @@ import { eq } from "drizzle-orm";
 import { tryBrand } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import { brands } from "@/lib/db/schema";
+import { connectionsForCaller } from "@/lib/credentials/view";
+import { FLOW_STEP_COUNT, flowStateOf, resumeStep } from "@/lib/onboarding/flow";
+import { hasInstagramConnection } from "@/lib/onboarding/instagram-captions";
+import { reviewInitial } from "@/lib/onboarding/review-initial";
 import { StepIndicator } from "@/components/onboarding/step-indicator";
-import { Step1TellMe } from "./steps/1-step1-tell-me";
-import { Step2Analyzing } from "./steps/2-analyzing";
-import { Step3ReviewProfile } from "./steps/3-review-profile";
-import { Step4Icps } from "./steps/4-icps";
-import { Step5Cadence } from "./steps/5-cadence";
-import { Step6Channels } from "./steps/6-channels";
-import { Step7Done } from "./steps/7-done";
-import {
-  ONBOARDING_STEP_COUNT,
-  resolveOnboardingStep,
-  type OnboardingState,
-} from "@/lib/onboarding/types";
+import { ConnectClaude } from "./steps/connect-claude";
+import { AboutForm } from "./steps/about-form";
+import { ResearchProgress } from "./steps/research-progress";
+import { ReviewForm } from "./steps/review-form";
+import { Extras } from "./steps/extras";
+import { Done } from "./steps/done";
 
 export const dynamic = "force-dynamic";
 
-/** Row shape exported for step components. */
+/** Row shape used by the Settings tabs that reuse the older step components. */
 export type Brand = typeof brands.$inferSelect;
 
 interface PageProps {
   params: Promise<{ brandId: string }>;
-  searchParams: Promise<{ step?: string }>;
+  searchParams: Promise<{ step?: string; connected?: string }>;
 }
 
-function clampStep(raw: string | undefined, fallback: number): number {
-  const n = Number.parseInt(raw ?? "", 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.min(ONBOARDING_STEP_COUNT, Math.max(1, n));
-}
-
-export default async function WizardPage({ params, searchParams }: PageProps) {
+/** Steps 2 to 7 of the onboarding flow for one draft brand (step 1 is /onboarding). */
+export default async function OnboardingStepPage({ params, searchParams }: PageProps) {
   const { brandId } = await params;
-  const { step: stepParam } = await searchParams;
-
-  // UUID-ish guard — Drizzle will fail loudly if this is malformed.
-  if (!/^[0-9a-f-]{8,}$/i.test(brandId)) notFound();
+  const { step: stepParam, connected } = await searchParams;
 
   // Someone else's brand answers 404, the same as one that does not exist.
-  // The step components below only ever receive this checked brand.
   const access = await tryBrand(brandId);
   if (!access) notFound();
-
-  const [brand] = await db
-    .select()
-    .from(brands)
-    .where(eq(brands.id, access.brandId));
+  const [brand] = await db.select().from(brands).where(eq(brands.id, access.brandId));
   if (!brand) notFound();
 
+  const state = flowStateOf(brand.settingsJson);
+  const connections = await connectionsForCaller();
+  const anthropic = connections?.items.find((i) => i.provider === "anthropic");
+  const keyWorks = Boolean(anthropic?.connected && anthropic.status === "ok");
+
+  // How far they have got; a step further on than that cannot be opened by changing the address.
+  let reached = resumeStep(state);
+  if (reached === 2 && keyWorks) reached = 3;
+  const requested = Number.parseInt(stepParam ?? "", 10);
+  let step = Number.isInteger(requested) ? Math.min(Math.max(requested, 2), reached) : reached;
+
   if (brand.status === "active") {
-    // Already onboarded; bounce to dashboard rather than re-running the wizard.
-    redirect(`/dashboard?brand=${brand.slug}`);
+    if (requested !== 7) redirect(`/dashboard?brand=${brand.slug}`);
+    step = 7;
+  } else if (step === 7) {
+    step = 6;
   }
+  if (step === 2 && keyWorks) step = 3;
+  if (step === 4 && !state.about?.summary) step = 3;
+  if (step === 5 && !state.draft) step = 4;
+  if (Number.isInteger(requested) && requested !== step) redirect(`/onboarding/${brand.id}?step=${step}`);
 
-  const storedStep = resolveOnboardingStep(
-    (brand.settingsJson as { onboarding?: OnboardingState } | null)?.onboarding,
-  );
-  const step = clampStep(stepParam, storedStep);
-
-  const alreadyAnalyzed = Boolean(
-    (brand.settingsJson as { onboarding?: { draftProfile?: unknown } })
-      ?.onboarding?.draftProfile,
-  );
+  const instagramConnected = step === 3 || step === 6 ? await hasInstagramConnection(brand.id) : false;
 
   return (
     <div className="space-y-6">
-      <StepIndicator current={step} />
-      {step === 1 && <Step1TellMe brand={brand} />}
-      {step === 2 && (
-        <Step2Analyzing brandId={brand.id} alreadyAnalyzed={alreadyAnalyzed} />
+      <StepIndicator current={Math.min(step, FLOW_STEP_COUNT)} hidden={keyWorks && step !== 2 ? [2] : []} />
+      {step === 2 && connections && <ConnectClaude connections={connections} />}
+      {step === 3 && (
+        <AboutForm
+          brandId={brand.id}
+          instagramConnected={instagramConnected}
+          initial={{
+            websiteUrl: brand.websiteUrl ?? "",
+            instagramHandle: state.about?.instagramHandle ?? "",
+            summary: state.about?.summary ?? brand.description,
+            captions: state.about?.captions ?? [],
+          }}
+        />
       )}
-      {step === 3 && <Step3ReviewProfile brand={brand} />}
-      {step === 4 && <Step4Icps brand={brand} />}
-      {step === 5 && <Step5Cadence brand={brand} />}
-      {step === 6 && <Step6Channels brand={brand} />}
-      {step === 7 && <Step7Done brand={brand} />}
+      {step === 4 && <ResearchProgress brandId={brand.id} hasWebsite={Boolean(brand.websiteUrl)} />}
+      {step === 5 && (
+        <ReviewForm brandId={brand.id} initial={reviewInitial(brand)} note={state.draft?.note} sourceCount={state.draft?.sources.length ?? 0} />
+      )}
+      {step === 6 && (
+        <Extras
+          brandId={brand.id}
+          instagramConnected={instagramConnected}
+          justConnected={connected === "1"}
+          appId={process.env.NEXT_PUBLIC_META_APP_ID}
+          redirectUri={process.env.NEXT_PUBLIC_META_OAUTH_REDIRECT_URI}
+        />
+      )}
+      {step === 7 && <Done brand={{ id: brand.id, name: brand.name, slug: brand.slug }} />}
     </div>
   );
 }

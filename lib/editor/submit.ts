@@ -22,6 +22,7 @@ import { isWorkspaceKey } from "@/lib/storage/keys";
 import { brandVoice } from "./brand-voice";
 import { failJob, hasAnyJob, latestFinishedJob, activeJob, recoverStuckEditorJobs } from "./jobs";
 import type { EditorManifest } from "./manifest";
+import { currentSkillFiles } from "./skill-store";
 import { editorSecret } from "./worker-auth";
 
 const { conversations, conversationMessages, mediaObjects, brands, editorJobs } = schema;
@@ -66,6 +67,20 @@ export interface EditorJobRequest {
   anthropicApiKey: string;
   model: string;
   callbackUrl: string;
+  /**
+   * The current version of every editable skill file (Admin > Editor skill), written over the
+   * worker's baked copy for this job. Left out if they can't be read; the worker then uses its own.
+   */
+  skillFiles?: Record<string, string>;
+}
+
+async function skillFilesForJob(jobId: string): Promise<Record<string, string> | undefined> {
+  try {
+    return await currentSkillFiles();
+  } catch {
+    console.warn(`[editor] the skill files could not be read for job ${jobId}; the worker uses its baked copy.`);
+    return undefined;
+  }
 }
 
 export function editorConfig(): { url: string; secret: string } | null {
@@ -191,6 +206,8 @@ export async function startEditorJob(threadId: string, messageId: string, origin
     model: EDITOR_MODEL,
     callbackUrl: `${base}${CALLBACK_PATH}`,
   };
+  const skillFiles = await skillFilesForJob(jobId);
+  if (skillFiles) job.skillFiles = skillFiles;
 
   try {
     const res = await fetch(config.url, {

@@ -47,6 +47,15 @@ export const routes: RouteAttack[] = [
     skipOwnerControl: ADMIN_ONLY,
   },
 
+  { route: "app/api/admin/skill/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
+  {
+    route: "app/api/admin/skill/route.ts",
+    method: "POST",
+    build: () => ({ body: { action: "save", path: "hooks.md", content: "taken over" } }),
+    skipOwnerControl: ADMIN_ONLY,
+  },
+  { route: "app/api/admin/skill/history/route.ts", method: "GET", build: () => ({ query: { path: "hooks.md" } }), skipOwnerControl: ADMIN_ONLY },
+
   // Reels (jobs on the machine's disk)
   { route: "app/api/reels/route.ts", method: "GET", build: (victim) => ({ query: { brand: victim.slug } }), skipOwnerControl: LOCAL_REELS },
   { route: "app/api/reels/route.ts", method: "GET", name: "every job", build: () => ({}), skipOwnerControl: LOCAL_REELS },

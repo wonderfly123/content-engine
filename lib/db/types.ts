@@ -29,6 +29,13 @@ export interface VoiceToneSliders {
 export type EmojiPolicy = "none" | "sparse" | "frequent";
 export type HashtagStyle = "none" | "minimal" | "moderate" | "heavy";
 
+/** A real place, product, offer or name the editor may mention, with where it was found. */
+export interface BrandFact {
+  fact: string;
+  /** The page it came from, "captions", "your description", or "added by you". */
+  source?: string;
+}
+
 export interface Voice {
   toneSliders?: VoiceToneSliders;
   emojiPolicy?: EmojiPolicy;
@@ -36,6 +43,8 @@ export interface Voice {
   readingLevel?: string;
   bannedWords?: string[];
   signaturePhrases?: string[];
+  /** Brand facts set up in onboarding; the editor may use these and must not invent others. */
+  facts?: BrandFact[];
 }
 
 // ---- brands.voice_examples ------------------------------------------------

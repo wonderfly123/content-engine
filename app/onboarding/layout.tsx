@@ -18,7 +18,7 @@ export default function OnboardingLayout({
             Nekter
           </Link>
           <Link
-            href="/onboarding"
+            href="/dashboard"
             className="text-xs text-muted-foreground hover:text-foreground"
           >
             Save and exit

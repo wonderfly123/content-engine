@@ -49,7 +49,9 @@ export const routes: RouteAttack[] = [
     name: "rename and archive",
     build: (victim) => ({ ...brandParam(victim), body: { name: "Taken over", description: "taken over", status: "archived" } }),
   },
-  { route: "app/api/brands/[id]/analyze/route.ts", method: "POST", build: brandParam },
+  { route: "app/api/brands/[id]/research/route.ts", method: "GET", build: brandParam },
+  // For the victim this answers 409 (no "About" answers yet), so it never starts a run in tests.
+  { route: "app/api/brands/[id]/research/route.ts", method: "POST", build: (victim) => ({ ...brandParam(victim), body: { restart: true } }) },
 
   // ---- assets ------------------------------------------------------------
   { route: "app/api/assets/route.ts", method: "GET", build: brandQuery },

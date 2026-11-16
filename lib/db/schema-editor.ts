@@ -54,3 +54,23 @@ export const editorJobs = pgTable(
       .where(sql`status in ('queued', 'running')`),
   ],
 );
+
+/**
+ * The editor skill's markdown files as edited in Admin (platform-wide, platform admin only).
+ * Every save adds a row; a file's current version is its newest row, and a file with no rows is the
+ * repo copy (workers/editor/skill, bundled in lib/editor/skill-defaults.generated.ts).
+ */
+export const editorSkillVersions = pgTable(
+  "editor_skill_versions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** Path inside the skill folder, one of EDITABLE_SKILL_PATHS (lib/editor/skill-files.ts). */
+    path: text("path").notNull(),
+    content: text("content").notNull(),
+    /** The admin who saved it (Supabase auth user id). */
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    note: text("note"),
+  },
+  (t) => [index("editor_skill_versions_path_idx").on(t.path, t.createdAt)],
+);

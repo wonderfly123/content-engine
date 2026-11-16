@@ -8,6 +8,8 @@ The editor worker's job contract, without Modal or the Agent SDK, so it runs (an
 - `sign`: hex HMAC-SHA256 of the raw callback body (same scheme as workers/optimize).
 - `bash_denial` / `path_denial`: the guards the PreToolUse hook applies inside the workspace.
 - `build_prompt` / `job_brief`: what the agent is told (no URLs, no key).
+- `valid_skill_files` / `write_skill_files`: the job's optional edited skill markdown (Admin > Editor skill),
+  written over the baked copy in that job's .claude/skills/<name>/.
 """
 from __future__ import annotations
 
@@ -26,6 +28,9 @@ MAX_CLIPS = 200
 MAX_TEXT = 20_000
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
 MODEL_RE = re.compile(r"^claude-[a-z0-9.\-]{1,60}$")
+# The skill's editable markdown files (same list as EDITABLE_SKILL_PATHS in lib/editor/skill-files.ts).
+SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md")
+MAX_SKILL_BYTES = 200 * 1024
 
 
 class ManifestError(Exception):
@@ -63,12 +68,53 @@ def valid_job(job: Any) -> Optional[Dict[str, Any]]:
         and _str(job.get("anthropicApiKey"), 500)
         and _str(job.get("model"), 80) and bool(MODEL_RE.match(job["model"]))
         and _https(job.get("callbackUrl"))
+        and ("skillFiles" not in job or job["skillFiles"] is None or valid_skill_files(job["skillFiles"]))
     )
     if not ok:
         return None
     if job["kind"] == "revision" and previous is None:
         return None
     return job
+
+
+def _safe_rel(path: str) -> bool:
+    parts = path.replace("\\", "/").split("/")
+    return bool(path) and not path.startswith(("/", "\\")) and ":" not in path and all(p not in ("", ".", "..") for p in parts)
+
+
+def valid_skill_files(files: Any) -> bool:
+    """{path: text} with only the known markdown paths, no `..` or absolute paths, at most MAX_SKILL_BYTES in all."""
+    if not isinstance(files, dict):
+        return False
+    total = 0
+    for path, text in files.items():
+        if not isinstance(path, str) or path not in SKILL_FILES or not _safe_rel(path):
+            return False
+        if not isinstance(text, str) or "\x00" in text:
+            return False
+        total += len(text.encode("utf-8"))
+        if total > MAX_SKILL_BYTES:
+            return False
+    return True
+
+
+def write_skill_files(skill_dir: str, files: Optional[Dict[str, str]]) -> int:
+    """Writes the job's skill files over the copy in `skill_dir`; returns how many. None/empty leaves it as is."""
+    if not files:
+        return 0
+    if not valid_skill_files(files):
+        raise ValueError("invalid skill files")
+    root = os.path.realpath(skill_dir)
+    for path, text in files.items():
+        dest = os.path.realpath(os.path.join(root, path))
+        if not dest.startswith(root + os.sep):
+            raise ValueError("invalid skill files")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.path.islink(dest):
+            os.unlink(dest)
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(text)
+    return len(files)
 
 
 # ---- footage filenames -------------------------------------------------------------------------

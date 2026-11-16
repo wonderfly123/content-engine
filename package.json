@@ -15,6 +15,7 @@
     "test": "vitest run",
     "db:seed": "tsx lib/db/seed.ts",
     "cron:local": "node scripts/local-cron.mjs",
+    "skill:gen": "node scripts/gen-editor-skill.mjs",
     "schedule:cut": "tsx scripts/schedule-cut.ts",
     "db:seed:personal": "tsx scripts/seed-brand.ts personal \"Personal\" \"Jordan's personal brand — IG/FB analytics\"",
     "db:seed:windansea": "tsx scripts/seed-brand.ts windansea-coconuts \"Windansea Coconuts\" \"Windansea Coconuts — IG/FB paid + organic analytics\""
