@@ -59,7 +59,10 @@ export type Decision =
 // (withTwilioSignature in lib/conversations/twilio.ts) and refuses everything else with 403.
 // "/api/media/optimized": the optimizer worker's callback has no session either; it proves itself
 // with an HMAC of the body (withWorkerSignature in lib/media/worker-signature.ts), else 403.
-const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/twilio/", "/api/media/optimized"];
+// "/api/editor/uploads" and "/api/editor/callback": the editor worker has no session; it proves
+// itself with MODAL_EDITOR_SECRET, as a bearer token for upload links and as an HMAC of the body for
+// its result (withEditorBearer / withEditorSignature in lib/editor/worker-auth.ts), else 403.
+const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/twilio/", "/api/media/optimized", "/api/editor/uploads", "/api/editor/callback"];
 /** The public website: the landing page and the policy pages carriers and visitors read without signing in. */
 export const PUBLIC_PAGES = ["/", "/privacy", "/terms", "/texting"];
 /** Finishes a first sign-in (public: it checks the session itself). */

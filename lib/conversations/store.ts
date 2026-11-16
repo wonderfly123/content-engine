@@ -105,6 +105,8 @@ export interface NewMessage {
   body: string;
   authorUserId?: string | null;
   providerMessageId?: string | null;
+  /** The editor job whose cuts this reply carries (lib/editor). */
+  editorJobId?: string | null;
 }
 
 export async function addMessage(input: NewMessage, exec: Exec = db): Promise<MessageRow> {
@@ -117,6 +119,7 @@ export async function addMessage(input: NewMessage, exec: Exec = db): Promise<Me
       body: input.body,
       authorUserId: input.authorUserId ?? null,
       providerMessageId: input.providerMessageId ?? null,
+      editorJobId: input.editorJobId ?? null,
     })
     .returning();
   await exec.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));

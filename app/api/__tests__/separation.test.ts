@@ -18,7 +18,7 @@ import type { Access } from "@/lib/auth/access";
 import * as schema from "@/lib/db/schema";
 import type { RouteRequest } from "./separation/attacks";
 import { ACTION_ATTACKS, ROUTE_ATTACKS } from "./separation/index";
-import { seedWorkspace, snapshot, tableNames, victimStrings, type Seeded, type TestDb } from "./separation/world";
+import { seedEditorJob, seedWorkspace, snapshot, tableNames, victimStrings, type Seeded, type TestDb } from "./separation/world";
 
 const state = vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgres://test:test@localhost/test";
@@ -119,6 +119,8 @@ beforeEach(async () => {
   await db.execute(sql.raw(`truncate table ${names} cascade`));
   attacker = await seedWorkspace(db, "Attacker", "00000000-0000-4000-8000-00000000000a");
   victim = await seedWorkspace(db, "VICTIMDATA", "00000000-0000-4000-8000-00000000000b");
+  await seedEditorJob(db, attacker, "Attacker");
+  await seedEditorJob(db, victim, "VICTIMDATA");
 });
 
 describe("coverage", () => {

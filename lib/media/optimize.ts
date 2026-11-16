@@ -12,11 +12,14 @@
  * The user's footage is never lost: whenever optimizing cannot happen (not configured, the worker
  * unreachable or failing, the output missing or wrong, nothing heard back for 2 hours) the clip
  * becomes `ready` as uploaded, with the reason in `optimize_error`.
+ *
+ * Whenever a thread's last clip becomes ready, the editor's first cut starts (lib/editor/clips-ready.ts).
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { appUrl } from "@/lib/conversations/twilio";
+import { startFirstCutIfClipsReady } from "@/lib/editor/clips-ready";
 import { db, schema } from "@/lib/db";
 import { buildOptimizedKey, isWorkspaceKey } from "@/lib/storage/keys";
 import { deleteObject, headObject, presignGet, presignPut } from "@/lib/storage/r2";
@@ -63,6 +66,7 @@ async function keepOriginal(m: MediaRow, error: string | null, jobId?: string): 
       ),
     )
     .returning();
+  if (row) await startFirstCutIfClipsReady(row.conversationId);
   return row ?? null;
 }
 
@@ -185,6 +189,8 @@ export async function applyOptimizeResult(payload: unknown): Promise<ApplyOutcom
     .returning();
   if (!row) return { status: 200, body: { applied: false, reason: "already handled" } };
   if (media.r2Key !== outputKey) await bestEffortDelete(media.r2Key, "original upload");
+  // The thread's last clip ready: the editor can start the first cut.
+  await startFirstCutIfClipsReady(row.conversationId);
   return { status: 200, body: { applied: true, sizeBytes: row.sizeBytes, codec: r.codec ?? null } };
 }
 
@@ -194,6 +200,7 @@ export async function recoverStuckOptimizing(now: Date = new Date()): Promise<nu
     .update(mediaObjects)
     .set({ status: "ready", optimizeError: "Optimizing did not finish within 2 hours; the clip was kept as uploaded.", updatedAt: now })
     .where(and(eq(mediaObjects.status, "processing"), lt(mediaObjects.updatedAt, new Date(now.getTime() - STUCK_AFTER_MS))))
-    .returning({ id: mediaObjects.id });
+    .returning({ id: mediaObjects.id, conversationId: mediaObjects.conversationId });
+  for (const conversationId of new Set(rows.map((r) => r.conversationId))) await startFirstCutIfClipsReady(conversationId);
   return rows.length;
 }

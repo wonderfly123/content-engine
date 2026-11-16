@@ -129,7 +129,7 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
 
   let editor: EditorHandoff | undefined;
   let reply: string | null;
-  if (decision.type === "message") editor = await handOffToEditor(thread.id, inboundId);
+  if (decision.type === "message") editor = await handOffToEditor(thread.id, inboundId, input.origin);
   if (decision.type === "approve") {
     const approval = await approvePendingPreview(thread.id);
     reply = approval.approved ? "Approved." : NOTHING_TO_APPROVE;

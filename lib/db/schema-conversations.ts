@@ -8,7 +8,7 @@
  * `member_phones` belongs to a user, not a workspace: a phone number identifies one person.
  */
 import { sql } from "drizzle-orm";
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   conversationKindEnum,
   conversationStatusEnum,
@@ -16,6 +16,7 @@ import {
   messageDirectionEnum,
 } from "./enums";
 import { brands, posts, workspaces } from "./schema";
+import { editorJobs } from "./schema-editor";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).defaultNow().notNull();
@@ -68,11 +69,14 @@ export const conversationMessages = pgTable(
     authorUserId: uuid("author_user_id"),
     /** Twilio's MessageSid for texts, so a retried webhook stores the message once. */
     providerMessageId: text("provider_message_id"),
+    /** The editor job whose cuts this reply carries (lib/editor); null for every other message. */
+    editorJobId: uuid("editor_job_id").references((): AnyPgColumn => editorJobs.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("conversation_messages_provider_unique").on(t.providerMessageId),
     index("conversation_messages_conversation_idx").on(t.conversationId, t.createdAt),
+    index("conversation_messages_editor_job_idx").on(t.editorJobId),
   ],
 );
 

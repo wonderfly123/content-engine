@@ -23,10 +23,17 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  *    with an HMAC-SHA256 of MODAL_OPTIMIZE_SECRET. The handler is wrapped in `withWorkerSignature`
  *    (lib/media/worker-signature.ts), which refuses with 403, before any database work, unless the
  *    X-Nekter-Signature matches (and refuses everything when the secret is not set).
+ *  - The editor worker (workers/editor on Modal), both with MODAL_EDITOR_SECRET
+ *    (lib/editor/worker-auth.ts), each refusing with 403 before any database work and refusing
+ *    everything while the secret is not set:
+ *      - its upload-link requests carry it as a bearer token (`withEditorBearer`);
+ *      - its result callback signs the raw body with it, HMAC-SHA256 (`withEditorSignature`).
  */
 const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; verifier: string }> = {
   "app/api/twilio/sms/route.ts": { wrapper: "withTwilioSignature", module: "lib/conversations/twilio.ts", verifier: "isValidTwilioSignature" },
   "app/api/media/optimized/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
+  "app/api/editor/uploads/route.ts": { wrapper: "withEditorBearer", module: "lib/editor/worker-auth.ts", verifier: "isValidEditorBearer" },
+  "app/api/editor/callback/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },
 };
 
 function routes(dir: string): string[] {

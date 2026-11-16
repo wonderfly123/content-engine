@@ -220,8 +220,11 @@ function subject(ctx: ReplyContext): string {
 export const EDITOR_NOT_CONNECTED = "Got it. The editor isn't connected yet, so I can't make changes for now.";
 export const NOTHING_TO_APPROVE = "There's nothing waiting for your approval yet.";
 
-/** What to say back after a decision has been applied. Null means say nothing. */
-export function replyFor(decision: Decision, ctx: ReplyContext, editor?: { queued: boolean }): string | null {
+/**
+ * What to say back after a decision has been applied. Null means say nothing. `editor` is the
+ * editor seam's answer for an ordinary message (its own reply, when it has one, is used as is).
+ */
+export function replyFor(decision: Decision, ctx: ReplyContext, editor?: { queued: boolean; reply?: string | null }): string | null {
   const question = nextQuestion(ctx);
   switch (decision.type) {
     case "keyword":
@@ -233,8 +236,10 @@ export function replyFor(decision: Decision, ctx: ReplyContext, editor?: { queue
     case "answer":
       return question ? `Got it. ${question}` : `Got it: a ${subject(ctx)}. ${footageLine(ctx.channel, ctx.link)}`;
     case "message": {
-      const base = editor?.queued ? "Got it. The editor is on it." : EDITOR_NOT_CONNECTED;
-      return question ? `${base} ${question}` : base;
+      // A question still open means the editor did not run: ask it.
+      if (question) return editor ? `Got it. ${question}` : `${EDITOR_NOT_CONNECTED} ${question}`;
+      if (editor?.reply) return editor.reply;
+      return editor?.queued ? "Got it. The editor is on it." : EDITOR_NOT_CONNECTED;
     }
   }
 }

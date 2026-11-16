@@ -1,0 +1,24 @@
+#!/bin/bash
+# usage: render.sh <footage_dir> <edl.tsv> <out.mp4>
+# EDL: file|in|srcdur|speed|cropx(optional 0-1, for sources that are not 9:16)
+# 1080x1920, 30 fps, clean cuts, no audio (the sound is added in Instagram). Software decode (Linux).
+# Also writes <out>.check.jpg: the middle frame of every shot in a row, to check each is upright, fills the frame, not black.
+B="$1"; E="$2"; OUT="$3"; W="${OUT%.mp4}.segs"; rm -rf "$W"; mkdir -p "$W"; i=0; fail=0; : > "$W/list.txt"
+while IFS='|' read -r f in d sp cx; do [ -z "$f" ] && continue; i=$((i+1)); o="$W/seg$(printf %02d $i).mp4"
+  if [ -n "$cx" ]; then geo="crop=ih*9/16:ih:(iw-ih*9/16)*$cx:0,scale=1080:1920"; else geo="scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"; fi
+  skip=""; [ "${sp%.*}" -ge 30 ] 2>/dev/null && skip="-skip_frame nokey"
+  # exact frame count per shot, so cut times never drift
+  nfr=$(awk -v d="$d" -v sp="$sp" 'BEGIN{printf "%d", d/sp*30+0.5}'); dx=$(awk -v d="$d" -v sp="$sp" 'BEGIN{printf "%.3f", d+0.2*sp+0.2}')
+  ffmpeg -v error -y $skip -ss "$in" -t "$dx" -i "$B/$f" -an -vf "setpts=PTS/$sp,fps=30,$geo,setsar=1" -frames:v "$nfr" \
+    -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -threads 0 "$o" </dev/null || { echo "FAIL shot $i $f"; fail=1; continue; }
+  echo "file '$(basename "$o")'" >> "$W/list.txt"
+  sd=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$o")
+  ffmpeg -v error -y -ss "$(awk -v d="$sd" 'BEGIN{printf "%.2f", d/2}')" -i "$o" -frames:v 1 -vf scale=100:178 "$W/chk$(printf %02d $i).jpg" </dev/null
+done < "$E"
+[ "$i" -eq 0 ] && { echo "FAIL empty EDL"; exit 1; }
+cols=$(( i > 26 ? i : 26 ))
+for k in $(seq $((i+1)) $cols); do ffmpeg -v error -y -f lavfi -i color=black:s=100x178 -frames:v 1 "$W/chk$(printf %02d $k).jpg" </dev/null; done
+(cd "$W" && ffmpeg -v error -y -f concat -safe 0 -i list.txt -c copy -movflags +faststart "out.mp4" </dev/null) && mv "$W/out.mp4" "$OUT"
+ffmpeg -v error -y -framerate 1 -pattern_type glob -i "$W/chk*.jpg" -vf "tile=${cols}x1" -frames:v 1 "${OUT%.mp4}.check.jpg" </dev/null
+echo "$(basename "$OUT") $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT")s $i shots"
+exit $fail

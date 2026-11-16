@@ -15,6 +15,7 @@ import { useBrandStore } from "@/lib/stores/brand-store";
 import { cn } from "@/lib/utils";
 import type { Clip } from "./clip-list";
 import { UploadProgress } from "./clip-uploader";
+import { EditingBubble, EditorCuts, type EditorJobView } from "./editor-cuts";
 import { kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
 import { useClipUploads } from "./use-clip-uploads";
 
@@ -24,6 +25,8 @@ interface Message {
   channel: Channel;
   body: string;
   createdAt: string;
+  /** An editor reply's cuts. */
+  editor?: EditorJobView | null;
 }
 
 interface ThreadData {
@@ -39,6 +42,8 @@ interface ThreadData {
   };
   messages: Message[];
   clips?: Clip[];
+  /** Whether the editor is working on a job for this thread. */
+  editor?: { running: boolean };
 }
 
 const CLOSED_BECAUSE: Record<string, string> = {
@@ -85,14 +90,21 @@ export function ThreadView({
   const scroller = useRef<HTMLDivElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
-  const { data, isLoading, error } = useQuery({ queryKey: ["conversation", id], queryFn: () => fetchThread(id), refetchInterval: 15_000 });
+  const [approving, setApproving] = useState(false);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["conversation", id],
+    queryFn: () => fetchThread(id),
+    // Poll quickly only while the editor is working.
+    refetchInterval: (q) => (q.state.data?.editor?.running ? 5_000 : 15_000),
+  });
   const up = useClipUploads(id, () => void qc.invalidateQueries({ queryKey: ["conversation", id] }));
 
   // Keep the newest message in view.
   const count = data?.messages.length ?? 0;
+  const running = Boolean(data?.editor?.running);
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [count, up.items.length]);
+  }, [count, up.items.length, running]);
 
   // Grow the composer with its text, up to a few lines.
   useEffect(() => {
@@ -124,6 +136,21 @@ export function ThreadView({
       toast.error((e as Error).message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const approve = async () => {
+    if (approving) return;
+    setApproving(true);
+    try {
+      const res = await fetch(`/api/conversations/${id}/approve`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      await qc.invalidateQueries({ queryKey: ["conversation", id] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -187,8 +214,9 @@ export function ThreadView({
       <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border bg-muted/20 p-4" aria-live="polite">
         <p className="text-center text-xs text-muted-foreground">Started {format(new Date(c.createdAt), "MMM d, h:mm a")}{c.startedVia === "sms" ? " by text" : ""}</p>
         {data.messages.map((m) => (
-          <Bubble key={m.id} message={m} mine={c.mine} />
+          <Bubble key={m.id} message={m} mine={c.mine} compact={compact} onApprove={approve} approving={approving} />
         ))}
+        {running && <EditingBubble />}
         {data.messages.length === 0 && <p className="text-center text-sm text-muted-foreground">No messages yet.</p>}
       </div>
 
@@ -286,8 +314,21 @@ export function ThreadView({
   );
 }
 
-function Bubble({ message: m, mine }: { message: Message; mine: boolean }) {
+function Bubble({
+  message: m,
+  mine,
+  compact,
+  onApprove,
+  approving,
+}: {
+  message: Message;
+  mine: boolean;
+  compact: boolean;
+  onApprove: () => void;
+  approving: boolean;
+}) {
   const fromPerson = m.direction === "in";
+  const hasCuts = Boolean(m.editor && m.editor.cuts.length > 0);
   return (
     <div className={cn("flex items-end gap-2", fromPerson ? "justify-end" : "justify-start")}>
       {!fromPerson && (
@@ -295,7 +336,7 @@ function Bubble({ message: m, mine }: { message: Message; mine: boolean }) {
           N
         </span>
       )}
-      <div className={cn("flex max-w-[78%] flex-col gap-1", fromPerson ? "items-end" : "items-start")}>
+      <div className={cn("flex flex-col gap-1", hasCuts ? "w-full max-w-[min(100%,36rem)]" : "max-w-[78%]", fromPerson ? "items-end" : "items-start")}>
         <div
           className={cn(
             "whitespace-pre-wrap break-words px-3.5 py-2 text-sm leading-relaxed",
@@ -304,6 +345,7 @@ function Bubble({ message: m, mine }: { message: Message; mine: boolean }) {
         >
           {m.body}
         </div>
+        {m.editor && <EditorCuts job={m.editor} compact={compact} onApprove={onApprove} approving={approving} />}
         <span className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
           {fromPerson && !mine && "Teammate · "}
           {m.channel === "sms" && (

@@ -196,3 +196,12 @@ export type MediaKind = (typeof mediaKindValues)[number];
 export const mediaStatusValues = ["uploading", "ready", "failed", "processing"] as const;
 export const mediaStatusEnum = pgEnum("media_status", mediaStatusValues);
 export type MediaStatus = (typeof mediaStatusValues)[number];
+
+// The cloud video editor's jobs (lib/editor). "approved": the person said yes to this job's cuts.
+export const editorJobKindValues = ["first_cut", "revision"] as const;
+export const editorJobKindEnum = pgEnum("editor_job_kind", editorJobKindValues);
+export type EditorJobKind = (typeof editorJobKindValues)[number];
+
+export const editorJobStatusValues = ["queued", "running", "done", "failed", "approved"] as const;
+export const editorJobStatusEnum = pgEnum("editor_job_status", editorJobStatusValues);
+export type EditorJobStatus = (typeof editorJobStatusValues)[number];

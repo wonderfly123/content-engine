@@ -202,7 +202,7 @@ describe("done", () => {
       .where(and(eq(schema.conversationMessages.conversationId, a.conversationId), eq(schema.conversationMessages.direction, "out")));
     expect(added.map((m) => m.body)).toEqual(["Added 2 clips (1.2 GB)"]);
     expect(editor.handOffToEditor).toHaveBeenCalledTimes(1);
-    expect(editor.handOffToEditor).toHaveBeenCalledWith(a.conversationId, added[0].id);
+    expect(editor.handOffToEditor).toHaveBeenCalledWith(a.conversationId, added[0].id, "http://localhost");
   });
 
   it("counts only ready clips, and refuses a batch with none", async () => {

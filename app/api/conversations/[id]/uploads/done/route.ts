@@ -1,8 +1,8 @@
 /**
  * POST /api/conversations/[id]/uploads/done { mediaIds } — the browser calls this once after a batch
  * of clips has finished. Posts one message into the thread ("Added 3 clips (1.2 GB)") and hands it
- * to the editor seam (lib/conversations/editor.ts). Every id must be a clip of this thread (else 404);
- * only the finished ones (ready, or uploaded and being optimized) are counted, at their uploaded size.
+ * to the editor seam (lib/conversations/editor.ts); the editor's answer, if any, is posted after it.
+ * Every id must be a clip of this thread (else 404); only the finished ones (ready, or uploaded and being optimized) are counted, at their uploaded size.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { AccessError, guard } from "@/lib/auth/workspace";
 import { requireConversation } from "@/lib/conversations/access";
 import { handOffToEditor } from "@/lib/conversations/editor";
 import { addMessage } from "@/lib/conversations/store";
+import { postEditorMessage } from "@/lib/editor/notify";
 import { fail, jsonBody, threadClosed } from "@/lib/media/http";
 import { clipsAddedMessage, MAX_DONE_IDS } from "@/lib/media/rules";
 import { threadMedia } from "@/lib/media/store";
@@ -37,6 +38,8 @@ export const POST = guard(async (req: NextRequest, ctx: { params: Promise<{ id: 
     channel: "app",
     body: clipsAddedMessage(clips.length, total),
   });
-  const editor = await handOffToEditor(access.conversation.id, message.id);
-  return NextResponse.json({ messageId: message.id, count: clips.length, totalBytes: total, editor });
+  const { queued, reply } = await handOffToEditor(access.conversation.id, message.id, req.nextUrl.origin);
+  // The editor's answer ("On it…") goes into the thread like any other reply of its own.
+  if (reply) await postEditorMessage(access.conversation, reply);
+  return NextResponse.json({ messageId: message.id, count: clips.length, totalBytes: total, editor: { queued } });
 });

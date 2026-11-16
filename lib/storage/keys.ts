@@ -4,6 +4,7 @@
  *   ws/<workspaceId>/conv/<conversationId>/<kind>/<uuid>-<sanitised filename>
  *   ws/<workspaceId>/conv/<conversationId>/incoming/<uuid>-<sanitised filename>   (holding area: as uploaded)
  *   ws/<workspaceId>/conv/<conversationId>/raw/<uuid>.mp4                         (the optimizer's output)
+ *   ws/<workspaceId>/conv/<conversationId>/preview/<jobId>/<sanitised filename>   (the editor's output for one job)
  *
  * `incoming` is a key area only, not a media kind: an uploaded clip is a `raw` clip wherever its
  * bytes sit, and the optimizer moves it from incoming/ to raw/ (lib/media/optimize.ts).
@@ -27,7 +28,11 @@ const UUID = new RegExp(`^${UUID_SRC}$`, "i");
 export const INCOMING = "incoming";
 export type KeyArea = MediaKind | typeof INCOMING;
 const AREAS: readonly string[] = [...mediaKindValues, INCOMING];
-const KEY = new RegExp(`^ws/(${UUID_SRC})/conv/(${UUID_SRC})/(${AREAS.join("|")})/${UUID_SRC}(?:-[A-Za-z0-9_][A-Za-z0-9._-]*|\\.mp4)$`, "i");
+const SAFE_NAME = "[A-Za-z0-9_][A-Za-z0-9._-]*";
+const KEY = new RegExp(
+  `^ws/(${UUID_SRC})/conv/(${UUID_SRC})/(?:(${AREAS.join("|")})/${UUID_SRC}(?:-${SAFE_NAME}|\\.mp4)|preview/(${UUID_SRC})/${SAFE_NAME})$`,
+  "i",
+);
 const MAX_BASE = 100;
 const MAX_EXT = 10;
 
@@ -89,4 +94,26 @@ export function isWorkspaceKey(key: unknown, workspaceId: string): key is string
   if (typeof key !== "string") return false;
   const m = KEY.exec(key);
   return Boolean(m && m[1].toLowerCase() === workspaceId.toLowerCase());
+}
+
+/** Where the editor worker may write for one job: `.../preview/<jobId>/` (derived, never taken from the worker). */
+export function buildPreviewPrefix({ workspaceId, conversationId, jobId }: { workspaceId: string; conversationId: string; jobId: string }): string {
+  for (const [label, value] of [["workspace", workspaceId], ["conversation", conversationId], ["job", jobId]] as const) {
+    if (typeof value !== "string" || !UUID.test(value)) throw new InvalidMediaKeyError(`Invalid ${label} id.`);
+  }
+  return `ws/${workspaceId.toLowerCase()}/conv/${conversationId.toLowerCase()}/preview/${jobId.toLowerCase()}/`;
+}
+
+/** One file of an editor job: `.../preview/<jobId>/<sanitised filename>`. */
+export function buildPreviewKey(input: { workspaceId: string; conversationId: string; jobId: string; filename: string }): string {
+  const key = `${buildPreviewPrefix(input)}${sanitiseFilename(input.filename)}`;
+  if (!KEY.test(key)) throw new InvalidMediaKeyError("Could not build a storage key.");
+  return key;
+}
+
+/** True only for a well-formed key directly under this job's preview prefix. */
+export function isJobPreviewKey(key: unknown, input: { workspaceId: string; conversationId: string; jobId: string }): key is string {
+  if (typeof key !== "string") return false;
+  const m = KEY.exec(key);
+  return Boolean(m && m[4] && key.startsWith(buildPreviewPrefix(input)));
 }

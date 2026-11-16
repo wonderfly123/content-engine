@@ -63,6 +63,8 @@ export * from "./enums";
 export * from "./schema-conversations";
 // Media files on private storage (R2) reach their workspace directly too.
 export * from "./schema-media";
+// The cloud video editor's jobs reach their workspace directly, through their conversation.
+export * from "./schema-editor";
 
 const ts = () => timestamp({ withTimezone: true }).defaultNow().notNull();
 const tsNullable = () => timestamp({ withTimezone: true });

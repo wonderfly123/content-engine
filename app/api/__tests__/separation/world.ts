@@ -8,7 +8,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@/lib/db/schema";
 import type { Access } from "@/lib/auth/access";
-import { buildMediaKey } from "@/lib/storage/keys";
+import { buildMediaKey, buildPreviewKey } from "@/lib/storage/keys";
 
 export type TestDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -40,6 +40,12 @@ export interface Seeded {
   mediaId: string;
   /** A clip still uploading into the conversation (one 16 MB part). */
   uploadingMediaId: string;
+  /** Set by `seedEditorJob`: a finished editor job (done, not yet approved) with one cut. */
+  editorJobId?: string;
+  /** Set by `seedEditorJob`: that cut's preview video (media kind "preview"). */
+  previewMediaId?: string;
+  /** Set by `seedEditorJob`: the editor's reply that carries the cut. */
+  editorMessageId?: string;
   /** The member's confirmed mobile number (texts from it land in this workspace). */
   phone: string;
 }
@@ -179,4 +185,55 @@ export function victimStrings(victim: Seeded): string[] {
     .filter(([key, value]) => typeof value === "string" && key !== "slug")
     .map(([, value]) => value as string);
   return [MARKER, MARKER.toLowerCase(), ...ids];
+}
+
+/**
+ * A finished editor job in the seeded conversation: one cut whose preview is a media row of kind
+ * "preview", and the editor's reply carrying it. Sets (and returns) the editor fields on `s`.
+ */
+export async function seedEditorJob(db: TestDb, s: Seeded, label: string): Promise<Required<Pick<Seeded, "editorJobId" | "previewMediaId" | "editorMessageId">>> {
+  const editorJobId = crypto.randomUUID();
+  const previewKey = buildPreviewKey({ workspaceId: s.workspaceId, conversationId: s.conversationId, jobId: editorJobId, filename: `${label} cut.mp4` });
+  const [preview] = await db
+    .insert(schema.mediaObjects)
+    .values({ workspaceId: s.workspaceId, brandId: s.brandId, conversationId: s.conversationId, kind: "preview", r2Key: previewKey, filename: `${label} cut.mp4`, contentType: "video/mp4", sizeBytes: 1000, status: "ready", uploadedBy: s.user.userId })
+    .returning();
+  await db.insert(schema.editorJobs).values({
+    id: editorJobId,
+    workspaceId: s.workspaceId,
+    conversationId: s.conversationId,
+    brandId: s.brandId,
+    kind: "first_cut",
+    status: "done",
+    triggerMessageId: s.messageId,
+    request: `${label} request`,
+    model: "claude-opus-5-5",
+    manifest: {
+      cuts: [
+        {
+          id: "cut-1",
+          title: `${label} cut`,
+          seconds: 15,
+          mode: "music",
+          preview: { key: previewKey, mediaId: preview.id },
+          edl: [{ mediaId: s.mediaId, in: 0, dur: 5, speed: 1, cropX: null }],
+          hookOptions: [`${label} hook option`],
+          caption: `${label} cut caption`,
+          script: null,
+          coverAt: 1,
+        },
+      ],
+    },
+    usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, costUsd: 1.42, turns: 3, seconds: 60 },
+    costUsd: "1.420000",
+    startedAt: new Date("2026-01-01T00:00:00Z"),
+    finishedAt: new Date("2026-01-01T00:05:00Z"),
+  });
+  const [editorMessage] = await db
+    .insert(schema.conversationMessages)
+    .values({ conversationId: s.conversationId, direction: "out", channel: "sms", body: `${label} here is your cut`, editorJobId })
+    .returning();
+  const ids = { editorJobId, previewMediaId: preview.id, editorMessageId: editorMessage.id };
+  Object.assign(s, ids);
+  return ids;
 }

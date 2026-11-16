@@ -85,6 +85,24 @@ export const routes: RouteAttack[] = [
     build: (v) => ({ params: { mediaId: v.uploadingMediaId } }),
   },
 
+  // ---- the editor: approving cuts, watching previews, and the worker's own routes
+  { route: "app/api/conversations/[id]/approve/route.ts", method: "POST", build: (v) => ({ params: { id: v.conversationId } }) },
+  { route: "app/api/media/[mediaId]/route.ts", method: "GET", name: `their preview, ${STORAGE_OFF}`, build: (v) => ({ params: { mediaId: v.previewMediaId! } }) },
+  {
+    route: "app/api/editor/uploads/route.ts",
+    method: "POST",
+    name: "upload links for their job, without the worker's secret",
+    build: (v) => ({ query: { job: v.editorJobId! }, body: { files: [{ name: "reel-15.mp4", contentType: "video/mp4" }] } }),
+    skipOwnerControl: "only the editor worker (bearer MODAL_EDITOR_SECRET) may ask; a signed-in user is not a way in (tested in lib/editor/__tests__/editor.test.ts)",
+  },
+  {
+    route: "app/api/editor/callback/route.ts",
+    method: "POST",
+    name: "unsigned editor callback for their job",
+    build: (v) => ({ body: { jobId: v.editorJobId!, ok: false, error: "planted", manifest: null, reply: "", question: null, usage: null } }),
+    skipOwnerControl: "the editor worker signs every callback; a signed-in user is not a way in (tested in lib/editor/__tests__/callback.test.ts)",
+  },
+
   {
     route: "app/api/twilio/sms/route.ts",
     method: "POST",

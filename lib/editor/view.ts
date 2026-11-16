@@ -1,0 +1,59 @@
+/**
+ * What the thread view needs about the editor: each job's cuts (for the reply that carries them)
+ * and whether a job is in flight. Only what the page shows; never keys, edit lists or ids of the
+ * worker's own, apart from the preview's media id (opened through requireMedia).
+ */
+import type { ConversationRow } from "@/lib/conversations/store";
+import type { EditorJobStatus } from "@/lib/db/enums";
+import { EDITOR_STUCK_AFTER_MS, jobsForThread, recoverStuckEditorJobs } from "./jobs";
+
+export interface CutView {
+  /** The cut's own label from the worker (stable within one job). */
+  key: string;
+  title: string;
+  seconds: number;
+  previewId: string;
+  hookOptions: string[];
+  caption: string;
+}
+
+export interface EditorJobView {
+  status: EditorJobStatus;
+  costUsd: number | null;
+  cuts: CutView[];
+  /** Only the thread's latest finished job can be approved. */
+  approvable: boolean;
+}
+
+export interface ThreadEditorView {
+  jobs: Map<string, EditorJobView>;
+  running: boolean;
+}
+
+/** Call before reading the thread's messages: a job found stuck is stopped here, with its message. */
+export async function threadEditorView(thread: ConversationRow, now: Date = new Date()): Promise<ThreadEditorView> {
+  let jobs = await jobsForThread(thread.id, thread.workspaceId);
+  const stale = jobs.some(
+    (j) => (j.status === "queued" || j.status === "running") && now.getTime() - (j.startedAt ?? j.createdAt).getTime() > EDITOR_STUCK_AFTER_MS,
+  );
+  if (stale && (await recoverStuckEditorJobs(now, thread.id)) > 0) jobs = await jobsForThread(thread.id, thread.workspaceId);
+
+  const latestDone = jobs.find((j) => (j.status === "done" || j.status === "approved") && (j.manifest?.cuts.length ?? 0) > 0);
+  const views = new Map<string, EditorJobView>();
+  for (const j of jobs) {
+    views.set(j.id, {
+      status: j.status,
+      costUsd: j.costUsd === null ? null : Number(j.costUsd),
+      cuts: (j.manifest?.cuts ?? []).map((c) => ({
+        key: c.id,
+        title: c.title,
+        seconds: c.seconds,
+        previewId: c.preview.mediaId,
+        hookOptions: c.hookOptions,
+        caption: c.caption,
+      })),
+      approvable: j.status === "done" && latestDone?.id === j.id,
+    });
+  }
+  return { jobs: views, running: jobs.some((j) => j.status === "queued" || j.status === "running") };
+}

@@ -1,6 +1,7 @@
 import { withCronAuth } from "@/lib/cron/auth";
 import { checkConnections } from "@/lib/connections/check";
 import { checkCredentials } from "@/lib/credentials/check";
+import { recoverStuckEditorJobs } from "@/lib/editor/jobs";
 import { recoverStuckOptimizing } from "@/lib/media/optimize";
 
 export const dynamic = "force-dynamic";
@@ -11,5 +12,14 @@ export const GET = withCronAuth(async () => {
   const keys = await checkCredentials();
   // Clips the optimizer never answered for within 2 hours: kept as uploaded.
   const clipsRecovered = await recoverStuckOptimizing();
-  return { checked: results.length, active: results.filter((r) => r.status === "connected").length, keysChecked: keys.checked, keysFailing: keys.failing, clipsRecovered };
+  // Editor jobs with no result within 35 minutes: failed, with a message in their thread.
+  const editorJobsStopped = await recoverStuckEditorJobs();
+  return {
+    checked: results.length,
+    active: results.filter((r) => r.status === "connected").length,
+    keysChecked: keys.checked,
+    keysFailing: keys.failing,
+    clipsRecovered,
+    editorJobsStopped,
+  };
 });
