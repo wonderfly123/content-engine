@@ -135,6 +135,7 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
   // A distinct, deterministic number per user (…000a -> +15550000010).
   const phone = `+1555${String(parseInt(userId.slice(-4), 16)).padStart(7, "0")}`;
   await db.insert(schema.memberPhones).values({ userId, phoneE164: phone, verifiedAt: new Date("2026-01-01T00:00:00Z") });
+  await db.insert(schema.memberPhoneBrands).values({ userId, brandId });
   return {
     user: { userId, email: `${slug}@example.test`, role: "user", status: "active" },
     workspaceId: ws.id,

@@ -104,3 +104,19 @@ export const memberPhones = pgTable(
     uniqueIndex("member_phones_phone_unique").on(t.phoneE164),
   ],
 );
+
+/**
+ * The brands a member's confirmed number texts for. A number reaches only the brands listed here:
+ * none and texts are refused, one and texts go straight to it, several and the editor asks which.
+ */
+export const memberPhoneBrands = pgTable(
+  "member_phone_brands",
+  {
+    userId: uuid("user_id").notNull(),
+    brandId: uuid("brand_id")
+      .notNull()
+      .references(() => brands.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("member_phone_brands_unique").on(t.userId, t.brandId), index("member_phone_brands_brand_idx").on(t.brandId)],
+);

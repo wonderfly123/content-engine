@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
-import { confirmPhone, removePhone, startPhoneVerification } from "@/app/settings/phone-actions";
+import { confirmPhone, removePhone, setBrandTexting, startPhoneVerification } from "@/app/settings/phone-actions";
 import { SITE } from "@/lib/site";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,13 +13,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export interface PhoneCardProps {
+  brandId: string;
+  brandName: string;
   /** Null when the caller has no number yet. */
   status: { phone: string; verified: boolean; codePending: boolean } | null;
   textingEnabled: boolean;
+  /** The caller's confirmed number texts for this brand. */
+  onForBrand: boolean;
 }
 
-/** The caller's mobile number, for texting the editor. Confirmed with a 6-digit code by text. */
-export function PhoneCard({ status, textingEnabled }: PhoneCardProps) {
+/**
+ * Texting the editor for one brand (Settings > Channels). The caller's mobile number is confirmed
+ * once with a 6-digit code by text, then turned on brand by brand; texts only reach brands it is on for.
+ */
+export function PhoneCard({ brandId, brandName, status, textingEnabled, onForBrand }: PhoneCardProps) {
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [consent, setConsent] = useState(false);
@@ -51,17 +58,18 @@ export function PhoneCard({ status, textingEnabled }: PhoneCardProps) {
             Text the editor
           </CardTitle>
           <CardDescription>
-            Add your mobile number to start reels and stories by text. Your texts and the app share the same conversations.
+            Start {brandName} reels and stories by text. Your number only reaches the brands you turn it on for; your
+            texts and the app share the same conversations.
           </CardDescription>
         </div>
-        {status?.verified ? (
+        {status?.verified && onForBrand ? (
           <Badge className="shrink-0">
             <Check className="mr-1 h-3 w-3" aria-hidden="true" />
-            Confirmed
+            On for this brand
           </Badge>
         ) : (
           <Badge variant="outline" className="shrink-0">
-            {awaitingCode ? "Waiting for code" : "Not added"}
+            {status?.verified ? "Off for this brand" : awaitingCode ? "Waiting for code" : "Not added"}
           </Badge>
         )}
       </CardHeader>
@@ -78,8 +86,26 @@ export function PhoneCard({ status, textingEnabled }: PhoneCardProps) {
               <span className="font-mono">{status.phone}</span>
               <span className="ml-2 text-muted-foreground">{status.verified ? "confirmed" : "not confirmed yet"}</span>
             </span>
-            <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => removePhone(), "Number removed.")}>
-              Remove
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => run(() => removePhone(), "Number removed from every brand.")}>
+              Remove number
+            </Button>
+          </div>
+        )}
+
+        {status?.verified && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+            <span className="text-muted-foreground">
+              {onForBrand ? `Texts from this number can start ${brandName} videos.` : `Texts from this number don't reach ${brandName}.`}
+            </span>
+            <Button
+              size="sm"
+              variant={onForBrand ? "outline" : "default"}
+              disabled={pending}
+              onClick={() =>
+                run(() => setBrandTexting({ brandId, on: !onForBrand }), onForBrand ? `Texting off for ${brandName}.` : `Texting on for ${brandName}.`)
+              }
+            >
+              {onForBrand ? "Turn off for this brand" : "Turn on for this brand"}
             </Button>
           </div>
         )}
@@ -98,7 +124,7 @@ export function PhoneCard({ status, textingEnabled }: PhoneCardProps) {
                 onChange={(e) => setCode(e.target.value)}
                 disabled={pending}
               />
-              <Button className="shrink-0" disabled={pending || code.trim().length < 6} onClick={() => run(() => confirmPhone({ code }), "Number confirmed.")}>
+              <Button className="shrink-0" disabled={pending || code.trim().length < 6} onClick={() => run(() => confirmPhone({ code, brandId }), `Number confirmed and on for ${brandName}.`)}>
                 Confirm
               </Button>
             </div>

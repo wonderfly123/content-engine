@@ -1,6 +1,6 @@
 /**
  * GET  /api/conversations?brandId=   the brand's threads (and the workspace's threads with no brand yet),
- *                                    plus whether texting is on and the caller's number is confirmed
+ *                                    plus whether texting is on and the caller's number texts for this brand
  * POST /api/conversations            { brandId, kind } — the New reel / New story buttons
  */
 import { NextResponse, type NextRequest } from "next/server";
@@ -8,7 +8,7 @@ import { z } from "zod";
 import { guard, requireBrand } from "@/lib/auth/workspace";
 import { handleInbound } from "@/lib/conversations/handle";
 import { formatPhone } from "@/lib/conversations/phone";
-import { phoneStatus } from "@/lib/conversations/phones";
+import { phoneOnForBrand } from "@/lib/conversations/phones";
 import { listThreads } from "@/lib/conversations/store";
 import { isTextingConfigured, salesmsgConfig } from "@/lib/conversations/texting";
 import { conversationKindValues } from "@/lib/db/enums";
@@ -20,12 +20,11 @@ const createSchema = z.object({ brandId: z.string(), kind: z.enum(conversationKi
 export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   const access = await requireBrand(req.nextUrl.searchParams.get("brandId"));
   const threads = await listThreads(access.workspaceId, access.brandId, access.user.userId);
-  const phone = await phoneStatus(access.user.userId);
   const ours = salesmsgConfig()?.phoneNumber;
   return NextResponse.json({
     threads,
     textingEnabled: isTextingConfigured(),
-    phoneConfirmed: phone?.verified ?? false,
+    phoneConfirmed: await phoneOnForBrand(access.user.userId, access.brandId),
     textingNumber: ours ? formatPhone(ours) : null,
   });
 });
