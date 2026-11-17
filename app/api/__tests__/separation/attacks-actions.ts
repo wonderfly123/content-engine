@@ -83,7 +83,7 @@ export const actions: ActionAttack[] = [
     file: PHONE,
     action: "startPhoneVerification",
     args: (victim) => [{ phone: victim.phone, consent: true }],
-    skipOwnerControl: "sending a code needs Twilio, which is switched off in tests (see lib/conversations/__tests__/phones.test.ts)",
+    skipOwnerControl: "sending a code needs Salesmsg, which is switched off in tests (see lib/conversations/__tests__/phones.test.ts)",
   },
   {
     file: PHONE,

@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { EDITOR_NOT_CONNECTED, listBrands } from "@/lib/conversations/router";
 import { activeBrands } from "@/lib/conversations/store";
-import { appUrl } from "@/lib/conversations/twilio";
+import { appUrl } from "@/lib/conversations/texting";
 import { getCredential } from "@/lib/credentials/store";
 import { db, schema } from "@/lib/db";
 import type { EditorJobKind } from "@/lib/db/enums";

@@ -104,12 +104,12 @@ export const routes: RouteAttack[] = [
   },
 
   {
-    route: "app/api/twilio/sms/route.ts",
+    route: "app/api/salesmsg/sms/route.ts",
     method: "POST",
-    name: "unsigned text from their number",
-    // No session can open this route: without a valid Twilio signature it is refused for everyone.
-    build: (v) => ({ form: { From: v.phone, To: "+15550009999", Body: "new reel", MessageSid: "SMplanted" } }),
-    skipOwnerControl: "Twilio signs every request; a signed-in user is not a way in (signed requests are tested in lib/conversations/__tests__/webhook.test.ts)",
+    name: "text from their number without the webhook token",
+    // No session can open this route: without Salesmsg's webhook token it is refused for everyone.
+    build: (v) => ({ body: { message: { id: "SMplanted", status: "received", body: "new reel", received_at: "2026-11-17 10:00:00" }, contact: { number: v.phone }, inbox: { id: 1 } } }),
+    skipOwnerControl: "Salesmsg calls with a shared secret; a signed-in user is not a way in (token-carrying requests are tested in lib/conversations/__tests__/webhook.test.ts)",
   },
   {
     route: "app/api/media/optimized/route.ts",

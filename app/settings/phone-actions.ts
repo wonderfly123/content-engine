@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { tryWorkspace } from "@/lib/auth/workspace";
 import { confirmCode, removePhone as removeMemberPhone, startVerification, type PhoneResult } from "@/lib/conversations/phones";
-import { isTextingConfigured } from "@/lib/conversations/twilio";
+import { isTextingConfigured } from "@/lib/conversations/texting";
 
 // Carriers require a clear, separate yes before any text is sent; the box is never pre-ticked.
 const phoneSchema = z.object({

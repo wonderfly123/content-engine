@@ -10,7 +10,7 @@ import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { requireUser } from "@/lib/auth/workspace";
 import { db, schema } from "@/lib/db";
 import { normalizePhone } from "./phone";
-import { isTextingConfigured, sendSms } from "./twilio";
+import { isTextingConfigured, sendSms } from "./texting";
 
 const { memberPhones } = schema;
 

@@ -27,11 +27,11 @@ describe("decideAccess", () => {
     expect(decideAccess("/login", null)).toEqual({ kind: "allow" });
     expect(decideAccess("/auth/callback", null)).toEqual({ kind: "allow" });
   });
-  it("lets Twilio's webhook through without a session (it checks Twilio's signature itself)", () => {
-    expect(decideAccess("/api/twilio/sms", null)).toEqual({ kind: "allow" });
+  it("lets Salesmsg's webhook through without a session (it checks its token itself)", () => {
+    expect(decideAccess("/api/salesmsg/sms", null)).toEqual({ kind: "allow" });
     // Only that prefix: the app's conversation routes still need a session.
     expect(decideAccess("/api/conversations", null)).toMatchObject({ kind: "deny", status: 401 });
-    expect(decideAccess("/api/twilio-other", null)).toMatchObject({ kind: "deny", status: 401 });
+    expect(decideAccess("/api/salesmsg-other", null)).toMatchObject({ kind: "deny", status: 401 });
   });
   it("lets the optimizer's callback through without a session (it checks the worker's signature itself)", () => {
     expect(decideAccess("/api/media/optimized", null)).toEqual({ kind: "allow" });
@@ -91,7 +91,7 @@ describe("hostRedirect", () => {
     expect(go("nekter.io", "/")).toBeNull();
     expect(go("nekter.io", "/privacy")).toBeNull();
     expect(go("www.nekter.io", "/texting")).toBeNull();
-    expect(go("nekter.io", "/api/twilio/sms")).toBeNull();
+    expect(go("nekter.io", "/api/salesmsg/sms")).toBeNull();
     expect(go("nekter.io", "/login")).toBe("https://app.nekter.io/login");
     expect(go("nekter.io", "/calendar")).toBe("https://app.nekter.io/calendar");
   });

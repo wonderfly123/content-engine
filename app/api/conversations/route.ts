@@ -7,7 +7,7 @@ import { z } from "zod";
 import { guard, requireBrand } from "@/lib/auth/workspace";
 import { handleInbound } from "@/lib/conversations/handle";
 import { listThreads } from "@/lib/conversations/store";
-import { isTextingConfigured } from "@/lib/conversations/twilio";
+import { isTextingConfigured } from "@/lib/conversations/texting";
 import { conversationKindValues } from "@/lib/db/enums";
 
 export const runtime = "nodejs";
