@@ -11,6 +11,12 @@ export function normalizePhone(raw: string): string | null {
   return null;
 }
 
+/** "+16195550123" -> "(619) 555-0123"; other numbers as given. */
+export function formatPhone(phone: string): string {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phone);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : phone;
+}
+
 /** "+16195550123" -> "•••0123", for logs and the Settings card. */
 export function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");

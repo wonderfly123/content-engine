@@ -1,5 +1,6 @@
 "use client";
 
+import { TextEditorBanner, type TextingInfo } from "@/components/conversations/text-editor-banner";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -23,7 +24,7 @@ interface ThreadRow {
   lastMessage: { body: string; direction: "in" | "out"; channel: Channel; createdAt: string } | null;
 }
 
-async function fetchThreads(brandId: string): Promise<{ threads: ThreadRow[]; textingEnabled: boolean }> {
+async function fetchThreads(brandId: string): Promise<{ threads: ThreadRow[] } & TextingInfo> {
   const res = await fetch(`/api/conversations?${new URLSearchParams({ brandId })}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -48,20 +49,7 @@ export function ThreadList() {
         <NewThreadButtons brandId={brandId} />
       </div>
 
-      {data && !data.textingEnabled && (
-        <p className="mt-4 rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-          Texting isn&apos;t switched on yet. Conversations work here in the app in the meantime.
-        </p>
-      )}
-      {data?.textingEnabled && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          To text the editor, add and confirm your number in{" "}
-          <Link href="/settings" className="underline underline-offset-4">
-            Settings
-          </Link>
-          , then text &quot;new reel&quot; or &quot;new story&quot;.
-        </p>
-      )}
+      {data && <TextEditorBanner info={data} className="mt-4" />}
 
       <div className="mt-6 space-y-2">
         {!brandId && <EmptyState icon={MessagesSquare} title="No brand selected" description="Pick a brand in the sidebar to see its conversations." />}
