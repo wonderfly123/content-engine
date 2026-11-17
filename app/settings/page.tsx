@@ -25,6 +25,8 @@ import { getAccess } from "@/lib/auth/session";
 import { connectionsForCaller } from "@/lib/credentials/view";
 import { PhoneCard } from "@/components/settings/phone-card";
 import { phoneForCaller } from "@/lib/conversations/phones";
+import { Suspense } from "react";
+import { SettingsBrandSync } from "./brand-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +110,9 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         </div>
       </div>
 
+      <Suspense fallback={null}>
+        <SettingsBrandSync renderedBrandId={activeBrand?.id ?? null} />
+      </Suspense>
       <Tabs defaultValue={defaultTab}>
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="app">App</TabsTrigger>
