@@ -133,8 +133,25 @@ export async function startVerification(userId: string, rawPhone: string, deps: 
   return { ok: true };
 }
 
-/** Checks a code. Five wrong tries, or ten minutes, and a new code is needed. */
-export async function confirmCode(userId: string, rawCode: string, now: Date = new Date()): Promise<PhoneResult> {
+/** Sent once, right after a number is confirmed: what texting the editor does. */
+export const WELCOME_TEXT = [
+  "Welcome to Nekter! Text this number to make content:",
+  '- "new reel" or "new story" starts one',
+  "- Send your clips in the app (we text you the link)",
+  '- Tell the editor what to change, reply "yes" to approve a preview',
+  "Reply HELP for help, STOP to opt out.",
+].join("\n");
+
+/**
+ * Checks a code. Five wrong tries, or ten minutes, and a new code is needed. On success the
+ * welcome text goes out; a failed send never undoes the confirmation.
+ */
+export async function confirmCode(
+  userId: string,
+  rawCode: string,
+  now: Date = new Date(),
+  deps: Pick<Partial<VerificationDeps>, "send"> = {},
+): Promise<PhoneResult> {
   const code = rawCode.replace(/\D/g, "");
   if (code.length !== 6) return { ok: false, error: "Enter the 6-digit code." };
   const row = await rowFor(userId);
@@ -156,6 +173,7 @@ export async function confirmCode(userId: string, rawCode: string, now: Date = n
     .update(memberPhones)
     .set({ verifiedAt: now, codeHash: null, codeExpiresAt: null, codeAttempts: 0, updatedAt: now })
     .where(eq(memberPhones.userId, userId));
+  await (deps.send ?? defaultDeps.send)(row.phoneE164, WELCOME_TEXT).catch(() => {});
   return { ok: true };
 }
 
