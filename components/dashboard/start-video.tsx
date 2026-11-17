@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Clapperboard, Film, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { kindLabel, type Kind } from "@/components/conversations/shared";
+import { TextEditorBanner, type TextingInfo } from "@/components/conversations/text-editor-banner";
 import { ThreadView } from "@/components/conversations/thread-view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,10 +19,11 @@ interface OpenThread {
   lastMessage: { body: string } | null;
 }
 
-async function fetchThreads(brandId: string): Promise<OpenThread[]> {
+async function fetchThreads(brandId: string): Promise<{ threads: OpenThread[] } & TextingInfo> {
   const res = await fetch(`/api/conversations?${new URLSearchParams({ brandId })}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return ((await res.json()) as { threads: OpenThread[] }).threads ?? [];
+  const json = (await res.json()) as { threads?: OpenThread[] } & TextingInfo;
+  return { ...json, threads: json.threads ?? [] };
 }
 
 const TILES = [
@@ -36,8 +38,8 @@ const TILES = [
 export function StartVideo({ brandId }: { brandId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<"reel" | "story" | null>(null);
-  const { data: threads, refetch } = useQuery({ queryKey: ["conversations", brandId], queryFn: () => fetchThreads(brandId) });
-  const current = threads?.find((t) => t.status === "open" && t.mine);
+  const { data, refetch } = useQuery({ queryKey: ["conversations", "start", brandId], queryFn: () => fetchThreads(brandId) });
+  const current = data?.threads.find((t) => t.status === "open" && t.mine);
 
   const start = async (kind: "reel" | "story") => {
     setBusy(kind);
@@ -64,7 +66,7 @@ export function StartVideo({ brandId }: { brandId: string }) {
         <CardContent className="space-y-5 p-6">
           <div>
             <h3 className="text-xl font-semibold tracking-tight">Make a video</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Upload your clips, the editor cuts them, you approve. You can also text &ldquo;new reel&rdquo; once texting is on.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Upload your clips, the editor cuts them, you approve.</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -89,6 +91,8 @@ export function StartVideo({ brandId }: { brandId: string }) {
               </button>
             ))}
           </div>
+
+          {data && <TextEditorBanner info={data} />}
 
           {current && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-background/70 p-4">
