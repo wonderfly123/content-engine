@@ -6,8 +6,8 @@
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { tryWorkspace } from "@/lib/auth/workspace";
-import { confirmCode, removePhone as removeMemberPhone, startVerification, type PhoneResult } from "@/lib/conversations/phones";
+import { tryBrand, tryWorkspace } from "@/lib/auth/workspace";
+import { confirmCode, removePhone as removeMemberPhone, startVerification, turnOffForBrand, turnOnForBrand, type PhoneResult } from "@/lib/conversations/phones";
 import { isTextingConfigured } from "@/lib/conversations/texting";
 
 // Carriers require a clear, separate yes before any text is sent; the box is never pre-ticked.
@@ -34,12 +34,22 @@ export async function startPhoneVerification(input: { phone: string; consent: bo
   return result;
 }
 
-export async function confirmPhone(input: { code: string }): Promise<PhoneResult> {
+/** Confirms the code and turns texting on for the brand whose Settings it was added from. */
+export async function confirmPhone(input: { code: string; brandId: string }): Promise<PhoneResult> {
   const parsed = codeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Enter the 6-digit code." };
-  const who = await caller();
-  if ("error" in who) return { ok: false, error: who.error };
-  const result = await confirmCode(who.userId, parsed.data.code);
+  const brand = await tryBrand(input.brandId);
+  if (!brand) return { ok: false, error: "Pick one of your brands first." };
+  const result = await confirmCode(brand.user.userId, parsed.data.code, new Date(), {}, brand.brandId);
+  revalidatePath("/settings");
+  return result;
+}
+
+/** Turns texting on or off for one of the caller's brands. */
+export async function setBrandTexting(input: { brandId: string; on: boolean }): Promise<PhoneResult> {
+  const brand = await tryBrand(input.brandId);
+  if (!brand) return { ok: false, error: "Pick one of your brands first." };
+  const result = input.on ? await turnOnForBrand(brand.user.userId, brand.brandId) : await turnOffForBrand(brand.user.userId, brand.brandId);
   revalidatePath("/settings");
   return result;
 }

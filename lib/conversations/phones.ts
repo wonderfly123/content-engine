@@ -1,18 +1,20 @@
 /**
  * A member's mobile number, confirmed with a 6-digit code sent by text. Only confirmed numbers are
- * recognised when a text comes in. A number belongs to one user across the whole platform.
+ * recognised when a text comes in. A number belongs to one user across the whole platform, and
+ * texts for only the brands it is turned on for (member_phone_brands), each chosen in that brand's
+ * Settings > Channels.
  *
  * The code is stored hashed, expires after 10 minutes and allows 5 tries; sending is rate limited
  * (one code per 30 seconds, five per hour).
  */
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { requireUser } from "@/lib/auth/workspace";
 import { db, schema } from "@/lib/db";
 import { normalizePhone } from "./phone";
 import { isTextingConfigured, sendSms } from "./texting";
 
-const { memberPhones } = schema;
+const { brands, memberPhoneBrands, memberPhones } = schema;
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
@@ -27,6 +29,52 @@ export interface PhoneStatus {
   verified: boolean;
   /** A code was sent and has not expired yet. */
   codePending: boolean;
+}
+
+/** The active brands the user's number texts for, oldest link first. */
+export async function phoneBrandIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ brandId: memberPhoneBrands.brandId })
+    .from(memberPhoneBrands)
+    .innerJoin(brands, eq(brands.id, memberPhoneBrands.brandId))
+    .where(and(eq(memberPhoneBrands.userId, userId), eq(brands.status, "active")))
+    .orderBy(asc(memberPhoneBrands.createdAt));
+  return rows.map((r) => r.brandId);
+}
+
+/** Whether the user's confirmed number texts for this brand. */
+export async function phoneOnForBrand(userId: string, brandId: string): Promise<boolean> {
+  const status = await phoneStatus(userId);
+  if (!status?.verified) return false;
+  const [row] = await db
+    .select({ brandId: memberPhoneBrands.brandId })
+    .from(memberPhoneBrands)
+    .where(and(eq(memberPhoneBrands.userId, userId), eq(memberPhoneBrands.brandId, brandId)))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Turns texting on for one brand (the caller has already checked the brand is theirs). Needs a confirmed number. */
+export async function turnOnForBrand(userId: string, brandId: string): Promise<PhoneResult> {
+  const status = await phoneStatus(userId);
+  if (!status?.verified) return { ok: false, error: "Confirm your number first." };
+  await db.insert(memberPhoneBrands).values({ userId, brandId }).onConflictDoNothing();
+  return { ok: true };
+}
+
+export async function turnOffForBrand(userId: string, brandId: string): Promise<PhoneResult> {
+  await db.delete(memberPhoneBrands).where(and(eq(memberPhoneBrands.userId, userId), eq(memberPhoneBrands.brandId, brandId)));
+  return { ok: true };
+}
+
+/** Of these brands, the ones the user's number texts for. */
+export async function brandsTextingFor(userId: string, brandIds: string[]): Promise<Set<string>> {
+  if (brandIds.length === 0) return new Set();
+  const rows = await db
+    .select({ brandId: memberPhoneBrands.brandId })
+    .from(memberPhoneBrands)
+    .where(and(eq(memberPhoneBrands.userId, userId), inArray(memberPhoneBrands.brandId, brandIds)));
+  return new Set(rows.map((r) => r.brandId));
 }
 
 export interface VerificationDeps {
@@ -143,14 +191,16 @@ export const WELCOME_TEXT = [
 ].join("\n");
 
 /**
- * Checks a code. Five wrong tries, or ten minutes, and a new code is needed. On success the
- * welcome text goes out; a failed send never undoes the confirmation.
+ * Checks a code. Five wrong tries, or ten minutes, and a new code is needed. On success the number
+ * is turned on for `brandId` (the brand whose Settings it was added from, already checked by the
+ * caller) and the welcome text goes out; a failed send never undoes the confirmation.
  */
 export async function confirmCode(
   userId: string,
   rawCode: string,
   now: Date = new Date(),
   deps: Pick<Partial<VerificationDeps>, "send"> = {},
+  brandId?: string,
 ): Promise<PhoneResult> {
   const code = rawCode.replace(/\D/g, "");
   if (code.length !== 6) return { ok: false, error: "Enter the 6-digit code." };
@@ -173,18 +223,27 @@ export async function confirmCode(
     .update(memberPhones)
     .set({ verifiedAt: now, codeHash: null, codeExpiresAt: null, codeAttempts: 0, updatedAt: now })
     .where(eq(memberPhones.userId, userId));
+  if (brandId) await db.insert(memberPhoneBrands).values({ userId, brandId }).onConflictDoNothing();
   await (deps.send ?? defaultDeps.send)(row.phoneE164, WELCOME_TEXT).catch(() => {});
   return { ok: true };
 }
 
+/** Removes the number and turns it off for every brand. */
 export async function removePhone(userId: string): Promise<PhoneResult> {
+  await db.delete(memberPhoneBrands).where(eq(memberPhoneBrands.userId, userId));
   await db.delete(memberPhones).where(eq(memberPhones.userId, userId));
   return { ok: true };
 }
 
-/** What the Settings card shows the signed-in caller (null when not signed in). */
-export async function phoneForCaller(): Promise<{ status: PhoneStatus | null; textingEnabled: boolean } | null> {
+/** What a brand's Settings card shows the signed-in caller (null when not signed in). */
+export async function phoneForCaller(
+  brandId: string,
+): Promise<{ status: PhoneStatus | null; textingEnabled: boolean; onForBrand: boolean } | null> {
   const user = await requireUser().catch(() => null);
   if (!user) return null;
-  return { status: await phoneStatus(user.userId), textingEnabled: isTextingConfigured() };
+  return {
+    status: await phoneStatus(user.userId),
+    textingEnabled: isTextingConfigured(),
+    onForBrand: await phoneOnForBrand(user.userId, brandId),
+  };
 }

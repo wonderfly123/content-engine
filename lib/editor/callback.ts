@@ -203,6 +203,6 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
     throw err;
   }
 
-  if (last.channel === "sms") await textMember(last.authorUserId ?? thread.startedBy, `${body}\n${threadLink(thread.id)}`);
+  if (last.channel === "sms") await textMember(last.authorUserId ?? thread.startedBy, `${body}\n${threadLink(thread.id)}`, thread.brandId);
   return { status: 200, body: { applied: true, cuts: r.manifest?.cuts.length ?? 0 } };
 }

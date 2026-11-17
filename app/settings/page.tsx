@@ -92,8 +92,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   // The workspace's own keys (statuses only), and whether the caller runs the platform.
   const connections = await connectionsForCaller().catch(() => null);
   const isPlatformAdmin = (await getAccess().catch(() => null))?.role === "admin";
-  // The caller's own mobile number, for texting the editor.
-  const phone = await phoneForCaller().catch(() => null);
+  // The caller's own mobile number, and whether it texts for this brand.
+  const phone = activeBrand ? await phoneForCaller(activeBrand.id).catch(() => null) : null;
 
   // An old link to a tab that no longer exists opens the App tab.
   const defaultTab = sp.tab && SETTINGS_TABS.includes(sp.tab) ? sp.tab : "app";
@@ -136,7 +136,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             </CardHeader>
           </Card>
 
-          {phone && <PhoneCard status={phone.status} textingEnabled={phone.textingEnabled} />}
 
           {isPlatformAdmin && (
           <Card>
@@ -208,6 +207,15 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
             <TabsContent value="channels" className="space-y-4 pt-4">
 <Step6Channels brand={activeBrand} />
+              {phone && (
+                <PhoneCard
+                  brandId={activeBrand.id}
+                  brandName={activeBrand.name}
+                  status={phone.status}
+                  textingEnabled={phone.textingEnabled}
+                  onForBrand={phone.onForBrand}
+                />
+              )}
               <AnalyticsVisibilityCard
                 brandId={activeBrand.id}
                 initialEnabled={resolveEnabledChannels(

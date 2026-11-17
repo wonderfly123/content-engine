@@ -245,4 +245,8 @@ export function replyFor(decision: Decision, ctx: ReplyContext, editor?: { queue
 }
 
 export const UNKNOWN_NUMBER_REPLY =
-  "This number isn't linked to an account. Add and confirm it under Settings in the app to text the editor.";
+  "This number isn't linked to an account. Add and confirm it under a brand's Settings > Channels in the app to text the editor.";
+
+/** A confirmed number that is not turned on for any brand. */
+export const NO_BRAND_REPLY =
+  "Texting isn't on for any of your brands. Turn it on under a brand's Settings > Channels in the app.";

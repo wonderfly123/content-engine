@@ -92,7 +92,7 @@ export function StartVideo({ brandId }: { brandId: string }) {
             ))}
           </div>
 
-          {data && <TextEditorBanner info={data} />}
+          {data && <TextEditorBanner info={data} brandId={brandId} />}
 
           {current && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-background/70 p-4">

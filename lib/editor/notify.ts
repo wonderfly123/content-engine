@@ -12,7 +12,7 @@ import { appUrl, isTextingConfigured, sendSms } from "@/lib/conversations/textin
 import { db, schema } from "@/lib/db";
 import type { MessageChannel } from "@/lib/db/enums";
 
-const { conversationMessages, memberPhones } = schema;
+const { conversationMessages, memberPhoneBrands, memberPhones } = schema;
 const MAX_TEXT_CHARS = 1600;
 
 /** The channel and author of the thread's last inbound message (app, when there is none). */
@@ -42,14 +42,25 @@ export async function postEditorMessage(thread: ConversationRow, body: string, o
   const message = await addMessage({ conversationId: thread.id, direction: "out", channel, body, editorJobId: opts.editorJobId ?? null });
   if (channel === "sms") {
     const text = opts.linkInText ? `${body}\n${threadLink(thread.id)}` : body;
-    await textMember(last.authorUserId ?? thread.startedBy, text);
+    await textMember(last.authorUserId ?? thread.startedBy, text, thread.brandId);
   }
   return message;
 }
 
-/** Texts one member at their confirmed number, when texting is on (best effort). */
-export async function textMember(userId: string, body: string): Promise<void> {
+/**
+ * Texts one member at their confirmed number, when texting is on (best effort). For a thread with a
+ * brand, only when the number is turned on for that brand.
+ */
+export async function textMember(userId: string, body: string, brandId?: string | null): Promise<void> {
   if (!isTextingConfigured()) return;
+  if (brandId) {
+    const [on] = await db
+      .select({ brandId: memberPhoneBrands.brandId })
+      .from(memberPhoneBrands)
+      .where(and(eq(memberPhoneBrands.userId, userId), eq(memberPhoneBrands.brandId, brandId)))
+      .limit(1);
+    if (!on) return;
+  }
   const [phone] = await db
     .select({ phone: memberPhones.phoneE164 })
     .from(memberPhones)

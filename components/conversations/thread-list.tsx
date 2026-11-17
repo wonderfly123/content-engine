@@ -49,7 +49,7 @@ export function ThreadList() {
         <NewThreadButtons brandId={brandId} />
       </div>
 
-      {data && <TextEditorBanner info={data} className="mt-4" />}
+      {data && brandId && <TextEditorBanner info={data} brandId={brandId} className="mt-4" />}
 
       <div className="mt-6 space-y-2">
         {!brandId && <EmptyState icon={MessagesSquare} title="No brand selected" description="Pick a brand in the sidebar to see its conversations." />}

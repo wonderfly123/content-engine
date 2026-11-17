@@ -88,8 +88,11 @@ export const actions: ActionAttack[] = [
   {
     file: PHONE,
     action: "confirmPhone",
-    args: () => [{ code: "123456" }],
+    args: (victim) => [{ code: "123456", brandId: victim.brandId }],
     skipOwnerControl: "no code is pending for anyone in the test world (codes are tested in phones.test.ts)",
   },
+  // Turning texting on or off for someone else's brand must fail and leave their links untouched.
+  { file: PHONE, action: "setBrandTexting", args: (victim) => [{ brandId: victim.brandId, on: false }] },
+  { file: PHONE, action: "setBrandTexting", args: (victim) => [{ brandId: victim.brandId, on: true }] },
   { file: PHONE, action: "removePhone", args: () => [], attackerMayPass: "removes the caller's own number only" },
 ];

@@ -13,12 +13,13 @@
  */
 import { createHash } from "node:crypto";
 import { AccessError, listMemberships } from "@/lib/auth/workspace";
-import { db } from "@/lib/db";
+import { inArray } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
 import type { ConversationKind, MessageChannel } from "@/lib/db/enums";
 import { approvePendingPreview, handOffToEditor, type EditorHandoff } from "./editor";
 import { normalizePhone } from "./phone";
-import { findVerifiedUserByPhone } from "./phones";
-import { carrierKeyword, decide, NOTHING_TO_APPROVE, replyFor, UNKNOWN_NUMBER_REPLY, type Decision } from "./router";
+import { findVerifiedUserByPhone, phoneBrandIds } from "./phones";
+import { carrierKeyword, decide, NO_BRAND_REPLY, NOTHING_TO_APPROVE, replyFor, UNKNOWN_NUMBER_REPLY, type Decision } from "./router";
 import {
   activeBrands,
   addMessage,
@@ -49,6 +50,8 @@ export interface InboundInput {
   brandId?: string;
   /** For the link back to the thread when APP_URL is not set. */
   origin?: string | null;
+  /** Texts only: the brands the sender's number texts for. Other brands are never offered or reached. */
+  allowedBrandIds?: string[];
 }
 
 export interface InboundResult {
@@ -81,9 +84,13 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
   const seen = await duplicateOf(input.providerMessageId);
   if (seen) return seen;
 
-  const brands = await activeBrands(input.workspaceId);
+  const allowed = input.allowedBrandIds;
+  const brands = (await activeBrands(input.workspaceId)).filter((b) => !allowed || allowed.includes(b.id));
   const single = brands.length === 1 ? brands[0].id : null;
-  const target = input.threadId ? await getThread(input.threadId, input.workspaceId) : await findOpenThread(input.workspaceId, input.userId);
+  let target = input.threadId ? await getThread(input.threadId, input.workspaceId) : await findOpenThread(input.workspaceId, input.userId);
+  // A text never lands in a thread for a brand the number has been turned off for: that thread is closed instead.
+  const offBrandThread = Boolean(allowed && target?.brandId && !allowed.includes(target.brandId));
+  if (offBrandThread) target = null;
   const state = target ? { kind: target.kind, brandId: target.brandId } : { kind: null, brandId: single };
   const decided = decide({ body, channel: input.channel, thread: state, brands });
   const decision: Decision =
@@ -104,6 +111,7 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
         await closeOpenThreadFor(input.workspaceId, input.userId, "new_thread", tx);
         t = await createThread({ workspaceId: input.workspaceId, userId: input.userId, startedVia: input.channel, kind: decision.kind, brandId: decision.brandId }, tx);
       } else if (!target) {
+        if (offBrandThread) await closeOpenThreadFor(input.workspaceId, input.userId, "brand_texting_off", tx);
         t = await createThread({ workspaceId: input.workspaceId, userId: input.userId, startedVia: input.channel, kind: null, brandId: single }, tx);
       } else {
         t = target;
@@ -166,13 +174,13 @@ export function resetUnknownNumberMemory(): void {
   repliedToUnknown.clear();
 }
 
-function unknownNumberReply(phone: string, now = Date.now()): string | null {
+function unknownNumberReply(phone: string, reply: string = UNKNOWN_NUMBER_REPLY, now = Date.now()): string | null {
   const key = createHash("sha256").update(phone).digest("hex");
   const last = repliedToUnknown.get(key);
   if (last !== undefined && now - last < UNKNOWN_REPLY_EVERY_MS) return null;
   if (repliedToUnknown.size > 10_000) repliedToUnknown.clear();
   repliedToUnknown.set(key, now);
-  return UNKNOWN_NUMBER_REPLY;
+  return reply;
 }
 
 export interface IncomingText {
@@ -184,22 +192,33 @@ export interface IncomingText {
 
 /**
  * A text from Salesmsg (the webhook token is already checked). The sender is known only by a confirmed
- * phone number. Limitation: someone in several workspaces texts into their first (oldest) one.
+ * phone number, and reaches only the brands that number is turned on for: none and they are told to
+ * turn it on; one and the text goes straight to it; several and the editor asks which. Brands in
+ * several workspaces: the workspace of the brand turned on first.
  */
 export async function handleIncomingText(input: IncomingText): Promise<string | null> {
   const phone = normalizePhone(input.from);
   if (!phone) return null;
   const keyword = carrierKeyword(input.body);
   const userId = await findVerifiedUserByPhone(phone);
-  const [first] = userId ? await listMemberships(userId) : [];
-  if (!userId || !first) return keyword ? null : unknownNumberReply(phone);
+  if (!userId) return keyword ? null : unknownNumberReply(phone);
+  const brandIds = await phoneBrandIds(userId);
+  const memberships = await listMemberships(userId);
+  const workspaceOf = new Map(
+    (brandIds.length ? await db.select({ id: schema.brands.id, workspaceId: schema.brands.workspaceId }).from(schema.brands).where(inArray(schema.brands.id, brandIds)) : []).map(
+      (b) => [b.id, b.workspaceId],
+    ),
+  );
+  const workspaceId = brandIds.map((id) => workspaceOf.get(id)).find((ws) => ws && memberships.some((m) => m.workspaceId === ws));
+  if (!workspaceId) return keyword ? null : unknownNumberReply(phone, NO_BRAND_REPLY);
   const result = await handleInbound({
-    workspaceId: first.workspaceId,
+    workspaceId,
     userId,
     channel: "sms",
     body: input.body,
     providerMessageId: input.messageSid,
     origin: input.origin,
+    allowedBrandIds: brandIds.filter((id) => workspaceOf.get(id) === workspaceId),
   });
   return result.reply;
 }

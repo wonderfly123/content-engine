@@ -16,7 +16,7 @@ export type Exec = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[
 export type ConversationRow = typeof conversations.$inferSelect;
 export type MessageRow = typeof conversationMessages.$inferSelect;
 
-export type CloseReason = "new_thread" | "published";
+export type CloseReason = "new_thread" | "published" | "brand_texting_off";
 
 /** The workspace's active brands, for "use the only one" and "Which brand?". */
 export async function activeBrands(workspaceId: string, exec: Exec = db): Promise<BrandRef[]> {
