@@ -15,7 +15,7 @@ vi.mock("@/lib/db", async () => {
 });
 vi.mock("@/lib/auth/session", () => ({ getAccess: async () => null }));
 
-import { confirmCode, findVerifiedUserByPhone, MAX_CODE_ATTEMPTS, phoneStatus, removePhone, startVerification } from "../phones";
+import { confirmCode, findVerifiedUserByPhone, MAX_CODE_ATTEMPTS, phoneStatus, removePhone, startVerification, WELCOME_TEXT } from "../phones";
 
 let db: TestDb;
 let a: Seeded;
@@ -46,9 +46,24 @@ describe("adding a number", () => {
     const [row] = await db.select().from(schema.memberPhones).where(eq(schema.memberPhones.userId, a.user.userId));
     expect(row.codeHash).not.toContain("123456");
     expect(await findVerifiedUserByPhone(NEW)).toBeNull();
-    expect(await confirmCode(a.user.userId, "123 456", later(60_000))).toEqual({ ok: true });
+    expect(await confirmCode(a.user.userId, "123 456", later(60_000), d)).toEqual({ ok: true });
     expect(await findVerifiedUserByPhone(NEW)).toBe(a.user.userId);
     expect(await phoneStatus(a.user.userId)).toMatchObject({ phone: NEW, verified: true, codePending: false });
+    expect(sent[1]).toEqual({ to: NEW, body: WELCOME_TEXT });
+  });
+
+  it("stays confirmed when the welcome text fails to send", async () => {
+    await startVerification(a.user.userId, NEW, deps().deps);
+    const failing = async () => Promise.reject(new Error("salesmsg down"));
+    expect(await confirmCode(a.user.userId, "123456", later(1000), { send: failing })).toEqual({ ok: true });
+    expect(await findVerifiedUserByPhone(NEW)).toBe(a.user.userId);
+  });
+
+  it("sends no welcome for a wrong code", async () => {
+    const { sent, deps: d } = deps();
+    await startVerification(a.user.userId, NEW, d);
+    await confirmCode(a.user.userId, "000000", later(1000), d);
+    expect(sent).toHaveLength(1);
   });
 
   it("rejects a wrong code and counts the try", async () => {
