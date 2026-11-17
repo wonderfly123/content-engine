@@ -8,7 +8,7 @@
  */
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { addMessage, type ConversationRow, type MessageRow } from "@/lib/conversations/store";
-import { appUrl, isTextingConfigured, sendSms } from "@/lib/conversations/twilio";
+import { appUrl, isTextingConfigured, sendSms } from "@/lib/conversations/texting";
 import { db, schema } from "@/lib/db";
 import type { MessageChannel } from "@/lib/db/enums";
 

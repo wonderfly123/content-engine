@@ -96,7 +96,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  for (const k of ["MODAL_EDITOR_SECRET", "APP_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"]) delete process.env[k];
+  for (const k of ["MODAL_EDITOR_SECRET", "APP_URL", "SALESMSG_API_TOKEN", "SALESMSG_TEAM_ID"]) delete process.env[k];
 });
 
 describe("POST /api/editor/callback", () => {
@@ -136,16 +136,16 @@ describe("POST /api/editor/callback", () => {
   });
 
   it("texts the reply with a link when the thread's last message came by text", async () => {
-    process.env.TWILIO_ACCOUNT_SID = "AC1";
-    process.env.TWILIO_AUTH_TOKEN = "t";
-    process.env.TWILIO_PHONE_NUMBER = "+15550009999";
+    process.env.SALESMSG_API_TOKEN = "t";
+    process.env.SALESMSG_TEAM_ID = "4242";
     const id = await runningJob();
     await send(result(id));
-    const twilio = fetchMock.mock.calls.find(([url]) => String(url).includes("api.twilio.com"));
-    expect(twilio).toBeDefined();
-    const body = new URLSearchParams((twilio![1] as RequestInit).body as string);
-    expect(body.get("To")).toBe(a.phone);
-    expect(body.get("Body")).toBe(`Here's a 15-second cut.\nhttps://app.test/conversations/${a.conversationId}`);
+    const salesmsg = fetchMock.mock.calls.find(([url]) => String(url).includes("api.salesmessage.com"));
+    expect(salesmsg).toBeDefined();
+    const body = new URL(String(salesmsg![0])).searchParams;
+    expect(body.get("number")).toBe(a.phone);
+    expect(body.get("team_id")).toBe("4242");
+    expect(body.get("message")).toBe(`Here's a 15-second cut.\nhttps://app.test/conversations/${a.conversationId}`);
   });
 
   it("applies a job once: a repeated callback is acknowledged and ignored", async () => {

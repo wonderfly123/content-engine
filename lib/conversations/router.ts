@@ -20,7 +20,7 @@ export interface ThreadState {
 }
 
 export type Decision =
-  /** STOP / START / HELP and friends, texts only. Twilio answers these itself, so we stay silent. */
+  /** STOP / START / HELP and friends, texts only. Salesmsg answers these itself, so we stay silent. */
   | { type: "keyword"; keyword: "stop" | "start" | "help" }
   /** "new reel" / "new story": close the open thread and open a new one. */
   | { type: "new_thread"; kind: ConversationKind; brandId: string | null }
@@ -129,7 +129,7 @@ function mentionedBrand(normalized: string, brands: BrandRef[]): BrandRef | null
 
 const isYes = (raw: string, normalized: string) => YES.has(normalized) || /^\s*(👍|✅|👌)+\s*$/u.test(raw);
 
-/** STOP / START / HELP (and their variants), which carriers require and Twilio answers itself. */
+/** STOP / START / HELP (and their variants), which carriers require and Salesmsg answers itself. */
 export function carrierKeyword(body: string): "stop" | "start" | "help" | null {
   const text = normalize(body);
   if (STOP_WORDS.has(text)) return "stop";

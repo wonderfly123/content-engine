@@ -16,9 +16,9 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
 /**
  * Routes that can never carry a session, so they prove the caller another way. Each one is held to
  * exactly that way below; add to this list only with the same care.
- *  - Twilio's webhook: Twilio signs every request. The handler is wrapped in `withTwilioSignature`
- *    (lib/conversations/twilio.ts), which refuses with 403, before any database work, unless the
- *    X-Twilio-Signature matches TWILIO_AUTH_TOKEN (and refuses everything when it is not set).
+ *  - Salesmsg's webhook: Salesmsg calls it with a shared secret in ?token=. The handler is wrapped in
+ *    `withSalesmsgToken` (lib/conversations/texting.ts), which refuses with 403, before any database
+ *    work, unless the token matches SALESMSG_WEBHOOK_SECRET (and refuses everything when it is not set).
  *  - The optimizer worker's callback (workers/optimize on Modal): the worker signs the raw body
  *    with an HMAC-SHA256 of MODAL_OPTIMIZE_SECRET. The handler is wrapped in `withWorkerSignature`
  *    (lib/media/worker-signature.ts), which refuses with 403, before any database work, unless the
@@ -30,7 +30,7 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  *      - its result callback signs the raw body with it, HMAC-SHA256 (`withEditorSignature`).
  */
 const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; verifier: string }> = {
-  "app/api/twilio/sms/route.ts": { wrapper: "withTwilioSignature", module: "lib/conversations/twilio.ts", verifier: "isValidTwilioSignature" },
+  "app/api/salesmsg/sms/route.ts": { wrapper: "withSalesmsgToken", module: "lib/conversations/texting.ts", verifier: "isValidWebhookToken" },
   "app/api/media/optimized/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
   "app/api/editor/uploads/route.ts": { wrapper: "withEditorBearer", module: "lib/editor/worker-auth.ts", verifier: "isValidEditorBearer" },
   "app/api/editor/callback/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },

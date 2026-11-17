@@ -9,7 +9,7 @@
  *  - Everything else is handed to the editor (lib/conversations/editor.ts).
  *
  * The reply is stored in the thread on the channel the message came from; the caller delivers it
- * (TwiML for a text, the API response for the app).
+ * (a Salesmsg text for a text, the API response for the app).
  */
 import { createHash } from "node:crypto";
 import { AccessError, listMemberships } from "@/lib/auth/workspace";
@@ -32,7 +32,7 @@ import {
   updateThread,
   type ConversationRow,
 } from "./store";
-import { appUrl } from "./twilio";
+import { appUrl } from "./texting";
 
 export const MAX_BODY_CHARS = 1600;
 
@@ -41,7 +41,7 @@ export interface InboundInput {
   userId: string;
   channel: MessageChannel;
   body: string;
-  /** Twilio's MessageSid: a retried webhook with the same id is stored once. */
+  /** Salesmsg message id: a retried webhook with the same id is stored once. */
   providerMessageId?: string | null;
   /** App only: the thread the person is looking at (already checked with requireConversation). */
   threadId?: string;
@@ -183,7 +183,7 @@ export interface IncomingText {
 }
 
 /**
- * A text from Twilio (the signature is already checked). The sender is known only by a confirmed
+ * A text from Salesmsg (the webhook token is already checked). The sender is known only by a confirmed
  * phone number. Limitation: someone in several workspaces texts into their first (oldest) one.
  */
 export async function handleIncomingText(input: IncomingText): Promise<string | null> {

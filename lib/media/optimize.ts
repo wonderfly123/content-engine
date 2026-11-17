@@ -18,7 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
-import { appUrl } from "@/lib/conversations/twilio";
+import { appUrl } from "@/lib/conversations/texting";
 import { startFirstCutIfClipsReady } from "@/lib/editor/clips-ready";
 import { db, schema } from "@/lib/db";
 import { buildOptimizedKey, isWorkspaceKey } from "@/lib/storage/keys";
