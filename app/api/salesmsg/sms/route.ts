@@ -16,11 +16,29 @@ import { parseIncomingText, salesmsgConfig, sendSms, withSalesmsgToken } from "@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** The payload's structure with every value replaced by its type, except short ids/status words. Never the text or a number. */
+function payloadShape(v: unknown, depth = 0): unknown {
+  if (depth > 3) return "…";
+  if (Array.isArray(v)) return v.length ? [payloadShape(v[0], depth + 1)] : [];
+  if (v && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, x]) => {
+        const keep = /^(id|.*_id|status|type|event|direction)$/.test(k) && (typeof x === "number" || (typeof x === "string" && x.length < 40 && !/\d{7}/.test(x)));
+        return [k, keep ? x : payloadShape(x, depth + 1)];
+      }),
+    );
+  }
+  return v === null ? null : typeof v;
+}
+
 export const POST = withSalesmsgToken(async (req: NextRequest, payload: unknown) => {
   const config = salesmsgConfig();
   if (!config) return Response.json({ ok: true, ignored: true });
   const text = parseIncomingText(payload, config);
-  if (!text) return Response.json({ ok: true, ignored: true });
+  if (!text) {
+    console.info("salesmsg webhook ignored:", JSON.stringify(payloadShape(payload)));
+    return Response.json({ ok: true, ignored: true });
+  }
   try {
     const reply = await handleIncomingText({
       from: text.from,
