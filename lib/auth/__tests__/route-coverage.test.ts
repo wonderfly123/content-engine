@@ -41,6 +41,7 @@ const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; veri
   "app/api/u/[token]/uploads/[mediaId]/abort/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
   "app/api/u/[token]/uploads/done/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
   "app/api/media/optimized/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
+  "app/api/media/frames/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
   "app/api/editor/uploads/route.ts": { wrapper: "withEditorBearer", module: "lib/editor/worker-auth.ts", verifier: "isValidEditorBearer" },
   "app/api/editor/callback/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },
 };

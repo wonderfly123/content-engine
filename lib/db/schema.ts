@@ -380,7 +380,19 @@ export const assets = pgTable("assets", {
   externalModifiedAt: tsNullable(),
   syncedAt: tsNullable(),
   createdAt: ts(),
-});
+  /** The uploaded clip this asset is (chat uploads land here automatically); FK in drizzle/0008. */
+  mediaObjectId: uuid("media_object_id"),
+  /** One sentence from the AI describing what the clip shows (lib/media/describe.ts). */
+  description: text(),
+  /** AI description: null (never asked), "pending", "done" or "failed". */
+  describeStatus: text("describe_status"),
+  /** The frames job in flight; the worker's callback must name it. */
+  describeJobId: text("describe_job_id"),
+  describeError: text("describe_error"),
+}, (t) => [
+  uniqueIndex("assets_media_object_unique").on(t.mediaObjectId),
+  uniqueIndex("assets_describe_job_unique").on(t.describeJobId),
+]);
 
 export const draftAssets = pgTable(
   "draft_assets",

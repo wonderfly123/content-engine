@@ -24,6 +24,7 @@ import { db, schema } from "@/lib/db";
 import { buildOptimizedKey, isWorkspaceKey } from "@/lib/storage/keys";
 import { deleteObject, headObject, presignGet, presignPut } from "@/lib/storage/r2";
 import type { MediaRow } from "./access";
+import { addClipToLibrary } from "./describe";
 import { optimizeSecret } from "./worker-signature";
 
 const { mediaObjects } = schema;
@@ -66,7 +67,10 @@ async function keepOriginal(m: MediaRow, error: string | null, jobId?: string): 
       ),
     )
     .returning();
-  if (row) await startFirstCutIfClipsReady(row.conversationId);
+  if (row) {
+    await startFirstCutIfClipsReady(row.conversationId);
+    await addClipToLibrary(row);
+  }
   return row ?? null;
 }
 
@@ -191,6 +195,8 @@ export async function applyOptimizeResult(payload: unknown): Promise<ApplyOutcom
   if (media.r2Key !== outputKey) await bestEffortDelete(media.r2Key, "original upload");
   // The thread's last clip ready: the editor can start the first cut.
   await startFirstCutIfClipsReady(row.conversationId);
+  // Into the brand's Assets library, described and tagged by AI (lib/media/describe.ts).
+  await addClipToLibrary(row);
   return { status: 200, body: { applied: true, sizeBytes: row.sizeBytes, codec: r.codec ?? null } };
 }
 

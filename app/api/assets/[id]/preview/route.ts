@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
 import { generateThumbnail } from "@/lib/assets/thumbnail";
+import { viewable } from "@/lib/assets/viewable";
 import { guard, requireOwned } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
@@ -30,7 +31,7 @@ export const GET = guard(async (
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   if (row.thumbnailUrl) {
-    return NextResponse.json({ url: row.thumbnailUrl, cached: true });
+    return NextResponse.json({ url: viewable(row).thumbnailUrl, cached: true });
   }
   const thumb = await generateThumbnail(row.storageUrl, row.kind);
   if (thumb.url) {

@@ -27,7 +27,8 @@ export async function workspaceStorageBytes(workspaceId: string): Promise<number
     .select({ bytes: sql<string>`coalesce(sum(${schema.assets.sizeBytes}), 0)` })
     .from(schema.assets)
     .innerJoin(schema.brands, eq(schema.brands.id, schema.assets.brandId))
-    .where(eq(schema.brands.workspaceId, workspaceId));
+    // A library entry for an uploaded clip is the clip itself, already counted below.
+    .where(and(eq(schema.brands.workspaceId, workspaceId), isNull(schema.assets.mediaObjectId)));
   const [media] = await db
     .select({ bytes: sql<string>`coalesce(sum(${schema.mediaObjects.sizeBytes}), 0)` })
     .from(schema.mediaObjects)

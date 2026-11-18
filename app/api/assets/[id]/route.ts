@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { viewable } from "@/lib/assets/viewable";
 import { assets, draftAssets, drafts } from "@/lib/db/schema";
 import { updateAssetRequestSchema } from "@/lib/assets/types";
 import { guard, requireOwned } from "@/lib/auth/workspace";
@@ -39,7 +40,7 @@ export const GET = guard(async (
     .where(eq(draftAssets.assetId, id));
 
   return NextResponse.json({
-    asset: { ...row, usageCount: Number(count) },
+    asset: { ...viewable(row), usageCount: Number(count) },
     usedBy,
   });
 });

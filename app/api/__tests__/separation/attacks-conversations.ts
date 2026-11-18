@@ -156,4 +156,12 @@ export const routes: RouteAttack[] = [
     build: (v) => ({ body: { jobId: "00000000-0000-4000-8000-0000000000aa", mediaId: v.mediaId, ok: true, sizeBytes: 1, codec: "hevc" } }),
     skipOwnerControl: "the optimizer worker signs every callback; a signed-in user is not a way in (signed callbacks are tested in lib/media/__tests__/optimize.test.ts)",
   },
+  {
+    route: "app/api/media/frames/route.ts",
+    method: "POST",
+    name: "unsigned frames callback describing their clip",
+    // No session can open this route: without the worker's HMAC signature it is refused for everyone.
+    build: () => ({ body: { jobId: "00000000-0000-4000-8000-0000000000ab", assetId: "00000000-0000-4000-8000-0000000000ac", ok: true } }),
+    skipOwnerControl: "the frames worker signs every callback; a signed-in user is not a way in (signed callbacks are tested in lib/media/__tests__/describe.test.ts)",
+  },
 ];

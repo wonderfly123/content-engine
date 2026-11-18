@@ -9,6 +9,13 @@ answers 202 straight away and spawns `optimize`, which:
   { jobId, mediaId, ok, sizeBytes, width, height, durationSec, codec, error? }
   signed with X-Nekter-Signature = hex HMAC-SHA256(raw body, MODAL_OPTIMIZE_SECRET).
 
+POST <frames endpoint>  (same Authorization)
+  { jobId, assetId, sourceUrl, sheetUrl, thumbUrl, callbackUrl }
+answers 202 and spawns `frames`: six frames spread through the clip, tiled 3x2 into one contact
+sheet (what the AI looks at to describe the clip) plus a thumbnail from the middle, both read
+straight from the source with ranged requests (no full download) and PUT to their presigned links;
+then POSTs { jobId, assetId, ok, durationSec, error? }, signed the same way.
+
 The worker only ever holds presigned links: no storage keys, no database, no other secrets.
 Errors reported back never include URLs.
 
@@ -90,6 +97,76 @@ async def submit(request: Request):
         return JSONResponse({"error": "invalid job"}, status_code=400)
     optimize.spawn(job)
     return JSONResponse({"accepted": True, "jobId": job["jobId"]}, status_code=202)
+
+
+FRAME_COUNT = 6
+FRAMES_TIMEOUT_SEC = 10 * 60
+
+
+def _valid_frames_job(job: Any) -> Optional[Dict[str, str]]:
+    keys = ("jobId", "assetId", "sourceUrl", "sheetUrl", "thumbUrl", "callbackUrl")
+    if not isinstance(job, dict) or not all(isinstance(job.get(k), str) and 0 < len(job[k]) < 8192 for k in keys):
+        return None
+    if not all(job[k].startswith("https://") for k in ("sourceUrl", "sheetUrl", "thumbUrl", "callbackUrl")):
+        return None
+    return {k: job[k] for k in keys}
+
+
+@app.function(secrets=[secret], timeout=60)
+@modal.fastapi_endpoint(method="POST")
+async def frames_submit(request: Request):
+    expected = f"Bearer {_secret()}".encode()
+    if not hmac.compare_digest(request.headers.get("authorization", "").encode(), expected):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        job = _valid_frames_job(await request.json())
+    except ValueError:
+        job = None
+    if job is None:
+        return JSONResponse({"error": "invalid job"}, status_code=400)
+    frames.spawn(job)
+    return JSONResponse({"accepted": True, "jobId": job["jobId"]}, status_code=202)
+
+
+def _put_jpeg(url: str, path: str) -> None:
+    size = os.path.getsize(path)
+    try:
+        with open(path, "rb") as f:
+            res = requests.put(url, data=f, headers={"Content-Type": "image/jpeg", "Content-Length": str(size)}, timeout=(15, 120))
+    except requests.RequestException as err:
+        raise JobError(f"Upload failed ({type(err).__name__}).") from None
+    if res.status_code not in (200, 201):
+        raise JobError(f"Upload failed (HTTP {res.status_code}).")
+
+
+# Every frame letterboxed into the same vertical box, so horizontal clips tile cleanly too.
+FRAME_BOX = "scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2:black"
+
+
+@app.function(secrets=[secret], cpu=2.0, memory=2048, timeout=FRAMES_TIMEOUT_SEC, retries=0)
+def frames(job: Dict[str, str]) -> None:
+    result: Dict[str, Any] = {"jobId": job["jobId"], "assetId": job["assetId"], "ok": False}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            info = _probe(job["sourceUrl"])
+            duration = float((info.get("format") or {}).get("duration") or 0)
+            if duration <= 0:
+                raise JobError("The clip has no length.")
+            times = [duration * (i + 0.5) / FRAME_COUNT for i in range(FRAME_COUNT)]
+            for i, t in enumerate(times):
+                _ffmpeg(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", job["sourceUrl"], "-frames:v", "1", "-vf", FRAME_BOX, "-q:v", "4", os.path.join(tmp, f"f{i}.jpg")], 120)
+            sheet, thumb = os.path.join(tmp, "sheet.jpg"), os.path.join(tmp, "thumb.jpg")
+            _ffmpeg(["ffmpeg", "-v", "error", "-y", "-i", os.path.join(tmp, "f%d.jpg"), "-vf", "tile=3x2", "-frames:v", "1", "-q:v", "4", sheet], 60)
+            _ffmpeg(["ffmpeg", "-v", "error", "-y", "-ss", f"{duration / 2:.3f}", "-i", job["sourceUrl"], "-frames:v", "1", "-vf", "scale=540:-2", "-q:v", "4", thumb], 120)
+            _put_jpeg(job["sheetUrl"], sheet)
+            _put_jpeg(job["thumbUrl"], thumb)
+            result.update(ok=True, durationSec=duration)
+    except JobError as err:
+        result["error"] = str(err)
+    except Exception as err:  # never send a raw message: it could hold a URL
+        result["error"] = f"Unexpected error ({type(err).__name__})."
+    print(json.dumps({k: v for k, v in result.items() if k != "assetId"}))
+    _callback(job["callbackUrl"], result)
 
 
 def _download(url: str, path: str) -> int:

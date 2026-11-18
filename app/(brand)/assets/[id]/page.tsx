@@ -129,6 +129,13 @@ export default function AssetDetailPage({
             {asset.archived && <Badge variant="secondary">Archived</Badge>}
           </div>
 
+          {asset.description && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">What it shows (AI)</p>
+              <p className="text-sm">{asset.description}</p>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="label">Label</Label>
             <Input

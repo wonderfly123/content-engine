@@ -78,6 +78,8 @@ export async function purgeExpiredRawClips(now: Date = new Date(), remove: (key:
     try {
       await remove(clip.r2Key);
       await db.update(mediaObjects).set({ deletedAt: now, updatedAt: now }).where(eq(mediaObjects.id, clip.id));
+      // Its library entry has nothing left to play: archive it.
+      await db.update(schema.assets).set({ archived: true }).where(eq(schema.assets.mediaObjectId, clip.id));
       deleted++;
     } catch {
       failed++; // left as is; the next run tries again
