@@ -80,7 +80,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
+function Cut({ cut, compact, story }: { cut: CutView; compact: boolean; story: boolean }) {
   return (
     <div className="space-y-2">
       <video
@@ -96,7 +96,8 @@ function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
         </p>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{length(cut.seconds)}</span>
       </div>
-      {cut.caption && (
+      {/* Stories have no caption on Instagram, so none is shown for them. */}
+      {cut.caption && !story && (
         <div className="rounded-2xl border px-3 py-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Caption</span>
@@ -125,13 +126,25 @@ function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
 }
 
 /** The cuts an editor reply carries: inline previews, captions, hooks, its AI cost, Approve. */
-export function EditorCuts({ job, compact, onApprove, approving }: { job: EditorJobView; compact: boolean; onApprove: () => void; approving: boolean }) {
+export function EditorCuts({
+  job,
+  compact,
+  story = false,
+  onApprove,
+  approving,
+}: {
+  job: EditorJobView;
+  compact: boolean;
+  story?: boolean;
+  onApprove: () => void;
+  approving: boolean;
+}) {
   if (job.cuts.length === 0) return job.costUsd !== null ? <p className="px-1 text-[11px] text-muted-foreground">AI cost {money(job.costUsd)}</p> : null;
   return (
     <div className="w-full space-y-3">
       <div className={cn("grid gap-4", !compact && job.cuts.length > 1 && "sm:grid-cols-2")}>
         {job.cuts.map((cut) => (
-          <Cut key={cut.key} cut={cut} compact={compact} />
+          <Cut key={cut.key} cut={cut} compact={compact} story={story} />
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
