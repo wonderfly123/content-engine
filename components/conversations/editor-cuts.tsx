@@ -31,9 +31,9 @@ const length = (seconds: number) => {
 const money = (usd: number) => (usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`);
 
 /** The N avatar, matching the editor's chat bubbles. */
-function EditorAvatar() {
+export function EditorAvatar() {
   return (
-    <span className="mb-5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white" aria-hidden="true">
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-xs font-bold text-white" aria-hidden="true">
       N
     </span>
   );
@@ -42,9 +42,9 @@ function EditorAvatar() {
 /** Shown while the editor is working on a job. */
 export function EditingBubble() {
   return (
-    <div className="flex items-end gap-2" role="status">
+    <div className="flex gap-3" role="status">
       <EditorAvatar />
-      <div className="mb-5 flex items-center gap-2 rounded-2xl rounded-bl-md border bg-background px-3.5 py-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 pt-0.5 text-[15px] text-muted-foreground">
         <span className="flex gap-1" aria-hidden="true">
           {[0, 150, 300].map((delay) => (
             <span key={delay} className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: `${delay}ms` }} />
@@ -82,13 +82,13 @@ function CopyButton({ text }: { text: string }) {
 
 function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
   return (
-    <div className="space-y-2 rounded-xl border bg-background p-2.5">
+    <div className="space-y-2">
       <video
         controls
         playsInline
         preload="metadata"
         src={`/api/media/${cut.previewId}`}
-        className={cn("mx-auto aspect-[9/16] w-auto rounded-lg bg-black", compact ? "max-h-[50vh]" : "max-h-[60vh]")}
+        className={cn("aspect-[9/16] w-auto max-w-full rounded-2xl bg-black", compact ? "max-h-[50vh]" : "max-h-[60vh]")}
       />
       <div className="flex items-baseline justify-between gap-2 px-0.5">
         <p className="truncate text-sm font-medium" title={cut.title}>
@@ -97,7 +97,7 @@ function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{length(cut.seconds)}</span>
       </div>
       {cut.caption && (
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+        <div className="rounded-2xl border px-3 py-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Caption</span>
             <CopyButton text={cut.caption} />
@@ -128,8 +128,8 @@ function Cut({ cut, compact }: { cut: CutView; compact: boolean }) {
 export function EditorCuts({ job, compact, onApprove, approving }: { job: EditorJobView; compact: boolean; onApprove: () => void; approving: boolean }) {
   if (job.cuts.length === 0) return job.costUsd !== null ? <p className="px-1 text-[11px] text-muted-foreground">AI cost {money(job.costUsd)}</p> : null;
   return (
-    <div className="w-full space-y-2">
-      <div className={cn("grid gap-2", !compact && job.cuts.length > 1 && "sm:grid-cols-2")}>
+    <div className="w-full space-y-3">
+      <div className={cn("grid gap-4", !compact && job.cuts.length > 1 && "sm:grid-cols-2")}>
         {job.cuts.map((cut) => (
           <Cut key={cut.key} cut={cut} compact={compact} />
         ))}
@@ -141,12 +141,12 @@ export function EditorCuts({ job, compact, onApprove, approving }: { job: Editor
             Approved
           </span>
         ) : (
-          <Button size="sm" onClick={onApprove} disabled={!job.approvable || approving} title={job.approvable ? undefined : "A newer version replaced this one"}>
+          <Button size="sm" className="rounded-full" onClick={onApprove} disabled={!job.approvable || approving} title={job.approvable ? undefined : "A newer version replaced this one"}>
             <Check className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
             {approving ? "Approving…" : "Approve"}
           </Button>
         )}
-        <Button size="sm" variant="outline" disabled title="Coming next">
+        <Button size="sm" variant="ghost" className="rounded-full" disabled title="Coming next">
           <PenLine className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
           Open in editor
         </Button>
