@@ -1,7 +1,7 @@
 /**
  * The clip upload routes against the in-memory database, with every R2 call mocked.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, like } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { seedWorkspace, tableNames, type Seeded, type TestDb } from "@/app/api/__tests__/separation/world";
@@ -194,13 +194,23 @@ describe("done", () => {
       .insert(schema.mediaObjects)
       .values({ ...(await row(a.mediaId)), id: undefined, r2Key: `ws/${a.workspaceId}/conv/${a.conversationId}/raw/00000000-0000-4000-8000-0000000000ff-x.mov`, sizeBytes: Math.round(1.2 * GB) - 2000 })
       .returning();
-    const res = await done(req({ mediaIds: [a.mediaId, second.id] }), ctx({ id: a.conversationId }));
+    const res = await done(req({ mediaIds: [a.mediaId, second.id], description: "The cider stand on opening day", seconds: 15 }), ctx({ id: a.conversationId }));
     expect(res.status).toBe(200);
+    // The clips and what they're about arrive as the person's own message.
     const added = await db
       .select()
       .from(schema.conversationMessages)
-      .where(and(eq(schema.conversationMessages.conversationId, a.conversationId), eq(schema.conversationMessages.direction, "out")));
-    expect(added.map((m) => m.body)).toEqual(["Added 2 clips (1.2 GB)"]);
+      .where(and(eq(schema.conversationMessages.conversationId, a.conversationId), eq(schema.conversationMessages.direction, "in"), like(schema.conversationMessages.body, "Added %")));
+    expect(added.map((m) => m.body)).toEqual(["Added 2 clips (1.2 GB)\n\nThe cider stand on opening day\n\nLength: 15 seconds"]);
+    expect(added[0].authorUserId).toBe(a.user.userId);
+    // Named once from the description (no Anthropic key in tests: the first words).
+    const [thread] = await db.select().from(schema.conversations).where(eq(schema.conversations.id, a.conversationId));
+    expect(thread).toMatchObject({ title: "The cider stand on opening", description: "The cider stand on opening day" });
+    const replies = await db
+      .select()
+      .from(schema.conversationMessages)
+      .where(and(eq(schema.conversationMessages.conversationId, a.conversationId), eq(schema.conversationMessages.direction, "out"), like(schema.conversationMessages.body, "Got your%")));
+    expect(replies[0].body).toMatch(/^Got your 2 clips\. Making a 15s reel: "The cider stand on opening"\./);
     expect(editor.handOffToEditor).toHaveBeenCalledTimes(1);
     expect(editor.handOffToEditor).toHaveBeenCalledWith(a.conversationId, added[0].id, "http://localhost");
   });

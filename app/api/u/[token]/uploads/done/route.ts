@@ -8,4 +8,4 @@ import { uploadsDone } from "@/lib/media/upload-handlers";
 
 export const runtime = "nodejs";
 
-export const POST = withUploadLink(async (req: NextRequest, access, _params) => uploadsDone(req, access));
+export const POST = withUploadLink(async (req: NextRequest, access, _params) => uploadsDone(req, access, "sms"));

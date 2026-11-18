@@ -25,7 +25,8 @@ const ACTIVE: UploadStatus[] = ["resumable", "queued", "uploading"];
 let seq = 0;
 
 /** `base`: where the upload routes live (an upload link's /api/u/<token>/uploads); default, the signed-in ones. */
-export function useClipUploads(conversationId: string, onChange: () => void, base?: string) {
+export function useClipUploads(conversationId: string, onChange: () => void, base?: string, opts: { autoReport?: boolean } = {}) {
+  const autoReport = opts.autoReport ?? true;
   const [items, setItems] = useState<UploadItem[]>([]);
   const [leftover, setLeftover] = useState(0);
   const itemsRef = useRef(items);
@@ -107,14 +108,26 @@ export function useClipUploads(conversationId: string, onChange: () => void, bas
       void run(next);
       return;
     }
-    if (items.some((i) => ACTIVE.includes(i.status)) || finished.current.length === 0) return;
+    if (!autoReport || items.some((i) => ACTIVE.includes(i.status)) || finished.current.length === 0) return;
     const ids = finished.current;
     finished.current = [];
     reportBatchDone(conversationId, ids, base)
       .then(() => onChangeRef.current())
       .catch((err: Error) => toast.error(`Clips uploaded, but the thread was not told: ${err.message}`));
     setLeftover(resumeStore.count(conversationId));
-  }, [items, run, conversationId, base]);
+  }, [items, run, conversationId, base, autoReport]);
+
+  /** Without autoReport: tells the thread about every clip finished so far, with what it's about. */
+  const report = useCallback(
+    async (extra: { description?: string; seconds?: 15 | 30 | 60 }) => {
+      const ids = finished.current;
+      if (ids.length === 0) return;
+      await reportBatchDone(conversationId, ids, base, extra);
+      finished.current = [];
+      onChangeRef.current();
+    },
+    [conversationId, base],
+  );
 
   const uploading = items.some((i) => i.status === "uploading" || i.status === "queued");
 
@@ -173,5 +186,5 @@ export function useClipUploads(conversationId: string, onChange: () => void, bas
   const totalBytes = counted.reduce((s, i) => s + i.file.size, 0);
   const sentBytes = counted.reduce((s, i) => s + (i.status === "done" ? i.file.size : i.uploaded), 0);
 
-  return { items, leftover, uploading, totalBytes, sentBytes, addFiles, cancel, resume, startOver, retry, clearFinished };
+  return { items, leftover, uploading, totalBytes, sentBytes, addFiles, cancel, resume, startOver, retry, clearFinished, report };
 }

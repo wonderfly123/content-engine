@@ -1,18 +1,48 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { CheckCircle2, Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useClipUploads, type UploadItem } from "@/components/conversations/use-clip-uploads";
 import { formatBytes } from "@/lib/media/rules";
 
 const pct = (i: UploadItem) => (i.file.size ? Math.min(100, Math.round((i.uploaded / i.file.size) * 100)) : 0);
 
-/** The phone page behind an upload link: pick clips, watch them go up, done. Finished batches are reported automatically. */
-export function UploadLinkClient({ token, conversationId, title }: { token: string; conversationId: string; title: string }) {
+const LENGTHS = [
+  { value: undefined, label: "Editor's pick" },
+  { value: 15, label: "15s" },
+  { value: 30, label: "30s" },
+  { value: 60, label: "60s" },
+] as const;
+
+/**
+ * The phone page behind an upload link: say what it's about, pick clips, watch them go up, then
+ * send it all to the editor in one go (the clips and the description arrive as one message).
+ */
+export function UploadLinkClient({ token, conversationId, title, named }: { token: string; conversationId: string; title: string; named: boolean }) {
   const input = useRef<HTMLInputElement>(null);
-  const { items, uploading, addFiles, cancel, resume, retry } = useClipUploads(conversationId, () => undefined, `/api/u/${token}/uploads`);
+  const { items, uploading, addFiles, cancel, resume, retry, report } = useClipUploads(conversationId, () => undefined, `/api/u/${token}/uploads`, {
+    autoReport: false,
+  });
+  const [description, setDescription] = useState("");
+  const [seconds, setSeconds] = useState<15 | 30 | 60 | undefined>(undefined);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const done = items.filter((i) => i.status === "done");
-  const allDone = items.length > 0 && !uploading && items.every((i) => i.status === "done" || i.status === "cancelled");
+  const unsent = done.length - sent;
+  const allDone = items.length > 0 && !uploading && items.every((i) => i.status === "done" || i.status === "cancelled" || i.status === "failed");
+  const send = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      await report({ description: description.trim() || undefined, seconds });
+      setSent(done.length);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-5 pb-10 pt-8">
@@ -21,6 +51,37 @@ export function UploadLinkClient({ token, conversationId, title }: { token: stri
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 text-muted-foreground">Pick the clips from your camera roll. They upload at full quality.</p>
       </header>
+
+      {!named && sent === 0 && (
+        <section className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">What&apos;s this one about?</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              maxLength={1500}
+              placeholder="e.g. The cider stand we built for Bloomingdale's opening day. Show the crowd and end on the sign."
+              className="rounded-xl border bg-background p-3 text-base"
+            />
+          </label>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">Length</span>
+            <div className="flex flex-wrap gap-2">
+              {LENGTHS.map((l) => (
+                <button
+                  key={l.label}
+                  type="button"
+                  onClick={() => setSeconds(l.value)}
+                  className={`rounded-full border px-3 py-1.5 text-sm ${seconds === l.value ? "border-orange-500 bg-orange-50 text-orange-900 dark:bg-orange-950/40 dark:text-orange-100" : ""}`}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <input
         ref={input}
@@ -94,12 +155,22 @@ export function UploadLinkClient({ token, conversationId, title }: { token: stri
           Keep this page open until they finish.
         </p>
       )}
-      {allDone && done.length > 0 && (
+      {allDone && unsent > 0 && (
+        <button
+          type="button"
+          onClick={() => void send()}
+          disabled={sending}
+          className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-foreground text-lg font-semibold text-background disabled:opacity-60"
+        >
+          {sending && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+          Send {unsent} {unsent === 1 ? "clip" : "clips"} to the editor
+        </button>
+      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {sent > 0 && unsent === 0 && !uploading && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-100">
-          <p className="font-semibold">
-            {done.length} {done.length === 1 ? "clip" : "clips"} sent to the editor.
-          </p>
-          <p className="mt-1 text-sm">We&apos;ll text you when the first cut is ready. You can close this page.</p>
+          <p className="font-semibold">Sent to the editor.</p>
+          <p className="mt-1 text-sm">We&apos;ll text you what we&apos;re making, then again when the first cut is ready. You can close this page.</p>
         </div>
       )}
     </main>

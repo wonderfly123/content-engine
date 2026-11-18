@@ -13,20 +13,20 @@
  */
 import { createHash } from "node:crypto";
 import { AccessError, listMemberships } from "@/lib/auth/workspace";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import type { ConversationKind, MessageChannel } from "@/lib/db/enums";
 import { approvePendingPreview, handOffToEditor, type EditorHandoff } from "./editor";
 import { normalizePhone } from "./phone";
 import { findVerifiedUserByPhone, phoneBrandIds } from "./phones";
-import { carrierKeyword, decide, NO_BRAND_REPLY, NOTHING_TO_APPROVE, replyFor, UNKNOWN_NUMBER_REPLY, type Decision } from "./router";
+import { carrierKeyword, decide, isApproval, normalize, NO_BRAND_REPLY, NOTHING_TO_APPROVE, replyFor, UNKNOWN_NUMBER_REPLY, type Decision } from "./router";
 import {
   activeBrands,
   addMessage,
-  closeOpenThreadFor,
+  closeThread,
   createThread,
   findMessageByProviderId,
-  findOpenThread,
+  findOpenThreads,
   getThread,
   hasAskedBrand,
   replyAfter,
@@ -80,18 +80,68 @@ async function duplicateOf(providerMessageId: string | null | undefined): Promis
   return { conversationId: dup.conversationId, reply: await replyAfter(dup), duplicate: true };
 }
 
+/** "[Cider stand opening] …": every text about a named video starts with its name. */
+export const withName = (thread: Pick<ConversationRow, "title">, text: string) => (thread.title ? `[${thread.title}] ${text}` : text);
+
+/**
+ * "fall arch: shorter" aims a text at the open video named "Fall Arch…". Returns that thread and
+ * the rest of the text, or null when the text doesn't start with a name.
+ */
+export function pickByName(body: string, threads: ConversationRow[]): { thread: ConversationRow; rest: string } | null {
+  const m = /^\s*\[?([^:\]\n]{2,60})\]?\s*:\s*([\s\S]+)$/.exec(body);
+  if (!m) return null;
+  const said = normalize(m[1]);
+  const hits = threads.filter((t) => {
+    const title = t.title ? normalize(t.title) : "";
+    return title && (title === said || title.startsWith(said) || said.startsWith(title));
+  });
+  return hits.length === 1 ? { thread: hits[0], rest: m[2].trim() } : null;
+}
+
+/** Of these threads, the ones with a cut waiting for approval. */
+async function awaitingApproval(threadIds: string[]): Promise<Set<string>> {
+  if (threadIds.length === 0) return new Set();
+  const rows = await db
+    .select({ id: schema.editorJobs.conversationId })
+    .from(schema.editorJobs)
+    .where(and(inArray(schema.editorJobs.conversationId, threadIds), eq(schema.editorJobs.status, "done"), isNotNull(schema.editorJobs.manifest)));
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function handleInbound(input: InboundInput): Promise<InboundResult> {
-  const body = input.body.trim().slice(0, MAX_BODY_CHARS);
+  let body = input.body.trim().slice(0, MAX_BODY_CHARS);
   const seen = await duplicateOf(input.providerMessageId);
   if (seen) return seen;
 
   const allowed = input.allowedBrandIds;
   const brands = (await activeBrands(input.workspaceId)).filter((b) => !allowed || allowed.includes(b.id));
   const single = brands.length === 1 ? brands[0].id : null;
-  let target = input.threadId ? await getThread(input.threadId, input.workspaceId) : await findOpenThread(input.workspaceId, input.userId);
-  // A text never lands in a thread for a brand the number has been turned off for: that thread is closed instead.
-  const offBrandThread = Boolean(allowed && target?.brandId && !allowed.includes(target.brandId));
-  if (offBrandThread) target = null;
+  let target: ConversationRow | null;
+  // Open threads for brands the number has been turned off for are closed, never written to.
+  let offBrand: ConversationRow[] = [];
+  let open: ConversationRow[] = [];
+  if (input.threadId) {
+    target = await getThread(input.threadId, input.workspaceId);
+  } else {
+    const all = await findOpenThreads(input.workspaceId, input.userId);
+    offBrand = allowed ? all.filter((t) => t.brandId && !allowed.includes(t.brandId)) : [];
+    open = all.filter((t) => !offBrand.includes(t));
+    const named = pickByName(body, open);
+    if (named) body = named.rest;
+    // Aimed by name, else the video the person last heard about.
+    target = named?.thread ?? open[0] ?? null;
+    if (!named && open.length > 1 && isApproval(body)) {
+      const waiting = await awaitingApproval(open.map((t) => t.id));
+      const choices = open.filter((t) => waiting.has(t.id) && t.title);
+      if (choices.length > 1) {
+        const names = choices.map((t) => `"${t.title}"`);
+        return {
+          conversationId: null,
+          reply: `Which one: ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}? Reply with its name first, like "${choices[0].title}: yes".`,
+        };
+      }
+    }
+  }
   const state = target ? { kind: target.kind, brandId: target.brandId } : { kind: null, brandId: single };
   const decided = decide({ body, channel: input.channel, thread: state, brands });
   const decision: Decision =
@@ -108,11 +158,11 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
   try {
     ({ thread, inboundId } = await db.transaction(async (tx) => {
       let t: ConversationRow;
+      for (const off of offBrand) await closeThread(off.id, "brand_texting_off", tx);
       if (decision.type === "new_thread") {
-        await closeOpenThreadFor(input.workspaceId, input.userId, "new_thread", tx);
+        // Several can run at once: starting one never closes another.
         t = await createThread({ workspaceId: input.workspaceId, userId: input.userId, startedVia: input.channel, kind: decision.kind, brandId: decision.brandId }, tx);
       } else if (!target) {
-        if (offBrandThread) await closeOpenThreadFor(input.workspaceId, input.userId, "brand_texting_off", tx);
         t = await createThread({ workspaceId: input.workspaceId, userId: input.userId, startedVia: input.channel, kind: null, brandId: single }, tx);
       } else {
         t = target;
@@ -156,7 +206,8 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
     );
   }
   if (reply) await addMessage({ conversationId: thread.id, direction: "out", channel: input.channel, body: reply });
-  return { conversationId: thread.id, reply };
+  // Texts carry the video's name; the thread itself shows it in its header instead.
+  return { conversationId: thread.id, reply: reply && input.channel === "sms" ? withName(thread, reply) : reply };
 }
 
 // ---------------------------------------------------------------------------------------------

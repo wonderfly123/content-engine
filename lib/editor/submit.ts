@@ -9,6 +9,7 @@
  * Anthropic key (decrypted here, at send time only) and nothing else: no database access, and
  * every storage key it writes to is derived here from the job, never taken from it.
  */
+import { isClipsMessage } from "@/lib/media/rules";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { EDITOR_NOT_CONNECTED, listBrands } from "@/lib/conversations/router";
@@ -123,8 +124,8 @@ export async function startEditorJob(threadId: string, messageId: string, origin
     .where(and(eq(conversationMessages.id, messageId), eq(conversationMessages.conversationId, thread.id)))
     .limit(1);
   if (!trigger) return { queued: false, reason: "unknown message" };
-  // New clips (the app's "Added N clips" line) start a first cut only; after that, the person asks.
-  const byClips = trigger.direction === "out";
+  // New clips (the person's "Added N clips" message) start a first cut only; after that, the person asks.
+  const byClips = isClipsMessage(trigger.body);
   if (byClips && (await hasAnyJob(thread.id))) return { queued: false, reason: "clips added to a thread that already has cuts" };
 
   const clipRows = await db

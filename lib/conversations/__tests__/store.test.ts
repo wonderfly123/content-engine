@@ -44,24 +44,15 @@ beforeEach(async () => {
   state.current = null;
 });
 
-describe("one open thread per person", () => {
-  it("is enforced by the database", async () => {
-    await expect(
-      db.insert(schema.conversations).values({ workspaceId: a.workspaceId, startedBy: a.user.userId, startedVia: "app", status: "open" }),
-    ).rejects.toThrow();
-    // A closed one is fine.
-    await db.insert(schema.conversations).values({ workspaceId: a.workspaceId, startedBy: a.user.userId, startedVia: "app", status: "closed" });
-  });
-
-  it("new reel closes the old thread and opens a new one", async () => {
+describe("several videos at once", () => {
+  it("new reel opens another thread and leaves the first one open", async () => {
     const result = await sms(a, "new reel");
     expect(result.conversationId).not.toBe(a.conversationId);
     const [old] = await db.select().from(schema.conversations).where(eq(schema.conversations.id, a.conversationId));
-    expect(old).toMatchObject({ status: "closed", closedReason: "new_thread" });
-    expect(old.closedAt).toBeInstanceOf(Date);
+    expect(old.status).toBe("open");
     const open = await openThreads(a.workspaceId);
-    expect(open).toHaveLength(1);
-    expect(open[0]).toMatchObject({ id: result.conversationId, kind: "reel", brandId: a.brandId, startedVia: "sms" });
+    expect(open).toHaveLength(2);
+    expect(open.find((t) => t.id === result.conversationId)).toMatchObject({ kind: "reel", brandId: a.brandId, startedVia: "sms" });
     expect(result.reply).toMatch(/^New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
   });
 });
@@ -179,5 +170,40 @@ describe("separation", () => {
     await handleIncomingText({ from: a.phone, body: "make it shorter", messageSid: "SM-a-2" });
     const [stored] = await db.select().from(schema.conversationMessages).where(eq(schema.conversationMessages.providerMessageId, "SM-a-2"));
     expect(stored.conversationId).toBe(a.conversationId);
+  });
+});
+
+describe("texts across several open videos", () => {
+  const name = (id: string, title: string) => db.update(schema.conversations).set({ title }).where(eq(schema.conversations.id, id));
+
+  it("go to the video the person last heard about, and say its name", async () => {
+    const second = await sms(a, "new reel");
+    await name(a.conversationId, "Cider Stand Opening");
+    await name(second.conversationId!, "Fall Arch");
+    const r = await sms(a, "make it shorter");
+    expect(r.conversationId).toBe(second.conversationId);
+    expect(r.reply === null || r.reply.startsWith("[Fall Arch] ")).toBe(true);
+  });
+
+  it("can be aimed at a video by its name", async () => {
+    const second = await sms(a, "new reel");
+    await name(a.conversationId, "Cider Stand Opening");
+    await name(second.conversationId!, "Fall Arch");
+    const r = await sms(a, "cider stand: make it shorter");
+    expect(r.conversationId).toBe(a.conversationId);
+    const [last] = (await messages(a.conversationId)).filter((m) => m.direction === "in").slice(-1);
+    expect(last.body).toBe("make it shorter");
+  });
+
+  it("ask which one when a bare yes could approve two videos", async () => {
+    const second = await sms(a, "new reel");
+    await name(a.conversationId, "Cider Stand Opening");
+    await name(second.conversationId!, "Fall Arch");
+    for (const id of [a.conversationId, second.conversationId!]) {
+      await db.insert(schema.editorJobs).values({ conversationId: id, workspaceId: a.workspaceId, kind: "first_cut", model: "test", status: "done", manifest: { cuts: [] } } as never);
+    }
+    const r = await sms(a, "yes");
+    expect(r.conversationId).toBeNull();
+    expect(r.reply).toMatch(/^Which one: "(Cider Stand Opening|Fall Arch)" or "(Cider Stand Opening|Fall Arch)"\? Reply with its name first/);
   });
 });

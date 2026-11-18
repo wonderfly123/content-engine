@@ -244,6 +244,11 @@ export async function abortClip(conversationId: string, mediaId: string, base = 
 }
 
 /** After a batch: one message in the thread, and the hand-off to the editor. */
-export async function reportBatchDone(conversationId: string, mediaIds: string[], base = uploadsBase(conversationId)): Promise<void> {
-  await api(`${base}/done`, { mediaIds });
+export async function reportBatchDone(
+  conversationId: string,
+  mediaIds: string[],
+  base = uploadsBase(conversationId),
+  extra: { description?: string; seconds?: 15 | 30 | 60 } = {},
+): Promise<void> {
+  await api(`${base}/done`, { mediaIds, ...extra });
 }

@@ -17,6 +17,7 @@ import { kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
 interface ThreadRow {
   id: string;
   kind: Kind;
+  title: string | null;
   status: "open" | "closed";
   startedVia: Channel;
   brandId: string | null;
@@ -146,7 +147,8 @@ function ThreadItem({ thread: t }: { thread: ThreadRow }) {
         <CardContent className="flex items-start justify-between gap-4 p-4">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{kindLabel(t.kind)}</span>
+              <span className="font-medium">{t.title ?? kindLabel(t.kind)}</span>
+              {t.title && <span className="text-sm text-muted-foreground">{kindLabel(t.kind)}</span>}
               <StartedVia channel={t.startedVia} />
               {t.status === "open" ? <Badge>Open</Badge> : <Badge variant="outline">Closed</Badge>}
               {!t.brandId && <Badge variant="secondary">Brand not chosen</Badge>}

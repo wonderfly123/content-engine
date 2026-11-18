@@ -51,6 +51,9 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+/** The person's message for a batch of clips: it starts with "Added 3 clips (1.2 GB)". */
+export const isClipsMessage = (body: string) => /^Added \d+ clips? \(/.test(body);
+
 /** The thread message after a batch: "Added 3 clips (1.2 GB)". */
 export function clipsAddedMessage(count: number, totalBytes: number): string {
   return `Added ${count} ${count === 1 ? "clip" : "clips"} (${formatBytes(totalBytes)})`;

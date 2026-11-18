@@ -41,7 +41,8 @@ export async function postEditorMessage(thread: ConversationRow, body: string, o
   const channel = opts.channel ?? last.channel;
   const message = await addMessage({ conversationId: thread.id, direction: "out", channel, body, editorJobId: opts.editorJobId ?? null });
   if (channel === "sms") {
-    const text = opts.linkInText ? `${body}\n${threadLink(thread.id)}` : body;
+    const named = thread.title ? `[${thread.title}] ${body}` : body;
+    const text = opts.linkInText ? `${named}\n${threadLink(thread.id)}` : named;
     await textMember(last.authorUserId ?? thread.startedBy, text, thread.brandId);
   }
   return message;
