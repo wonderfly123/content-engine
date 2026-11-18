@@ -11,13 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes, isClipsMessage } from "@/lib/media/rules";
-import { useBrandStore } from "@/lib/stores/brand-store";
 import { cn } from "@/lib/utils";
 import type { Clip } from "./clip-list";
 import { UploadProgress } from "./clip-uploader";
 import { EditingBubble, EditorAvatar, EditorCuts, type EditorJobView } from "./editor-cuts";
 import { SchedulePanel } from "./schedule-panel";
-import { kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
+import { kindLabel, type Channel, type Kind } from "./shared";
 import { useClipUploads } from "./use-clip-uploads";
 
 interface Message {
@@ -101,7 +100,6 @@ export function ThreadView({
 }) {
   const router = useRouter();
   const qc = useQueryClient();
-  const active = useBrandStore((s) => s.active);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -123,6 +121,27 @@ export function ThreadView({
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [count, up.items.length, running]);
+
+  // Stay pinned to the bottom while things load in (videos grow the page), unless they scrolled up.
+  const pinned = useRef(true);
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = scroller.current;
+    const inner = content.current;
+    if (!box || !inner) return;
+    const onScroll = () => {
+      pinned.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    };
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) box.scrollTop = box.scrollHeight;
+    });
+    box.addEventListener("scroll", onScroll, { passive: true });
+    ro.observe(inner);
+    return () => {
+      box.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [isLoading]);
 
   // Grow the composer with its text, up to a few lines.
   useEffect(() => {
@@ -172,8 +191,8 @@ export function ThreadView({
     }
   };
 
-  // Full page: fill the space under the top bar edge to edge (cancelling the layout's 1.5rem padding).
-  const height = compact ? "h-[calc(100dvh-7.5rem)]" : "-m-6 h-[calc(100%+3rem)]";
+  // Full page: fill the pane beside the conversations column.
+  const height = compact ? "h-[calc(100dvh-7.5rem)]" : "h-full w-full";
   if (isLoading) return <Skeleton className={cn("w-full rounded-xl", compact ? height : "h-[calc(100dvh-7rem)]")} />;
   if (error || !data) {
     return (
@@ -211,7 +230,7 @@ export function ThreadView({
       <div className={cn("flex shrink-0 items-center justify-between gap-2 border-b py-2", compact ? "px-3" : "px-4 sm:px-6")}>
         <div className="flex min-w-0 items-center gap-2">
           {!compact && (
-            <Link href="/conversations" aria-label="Back to conversations" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Link href="/conversations" aria-label="Back to conversations" className="rounded-md p-1 md:hidden text-muted-foreground hover:bg-muted hover:text-foreground">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             </Link>
           )}
@@ -228,14 +247,12 @@ export function ThreadView({
           <Link href={`/conversations/${id}`} className="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             Open full page
           </Link>
-        ) : (
-          <NewThreadButtons brandId={c.brand?.id ?? active?.id} />
-        )}
+        ) : null}
       </div>
 
       {/* Messages */}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
-        <div className={cn(column, "space-y-6 py-6")}>
+        <div ref={content} className={cn(column, "space-y-6 py-6")}>
           <p className="text-center text-xs text-muted-foreground">
             Started {format(new Date(c.createdAt), "MMM d, h:mm a")}
             {c.startedVia === "sms" ? " by text" : ""}

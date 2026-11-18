@@ -3,12 +3,10 @@
 import { TextEditorBanner, type TextingInfo } from "@/components/conversations/text-editor-banner";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowStrict } from "date-fns";
 import { useEffect, useState } from "react";
-import { Monitor, MessagesSquare, Smartphone } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { usePathname } from "next/navigation";
+import { Monitor, Smartphone } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrandStore } from "@/lib/stores/brand-store";
 import { cn } from "@/lib/utils";
@@ -27,7 +25,7 @@ interface ThreadRow {
   lastMessage: { body: string; direction: "in" | "out"; channel: Channel; createdAt: string } | null;
 }
 
-async function fetchThreads(brandId: string): Promise<{ threads: ThreadRow[] } & TextingInfo> {
+export async function fetchThreads(brandId: string): Promise<{ threads: ThreadRow[] } & TextingInfo> {
   const res = await fetch(`/api/conversations?${new URLSearchParams({ brandId })}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -58,8 +56,27 @@ export function StartedVia({ channel }: { channel: Channel }) {
   );
 }
 
-/** The active brand's conversations with the editor, newest first, filterable by where they started. */
-export function ThreadList() {
+/** The active brand's id, when one is chosen. */
+export function useActiveBrandId(): string | undefined {
+  const active = useBrandStore((s) => s.active);
+  return active && /^[0-9a-f-]{36}$/i.test(active.id) ? active.id : undefined;
+}
+
+/** The brand's threads plus texting info; one cache shared by the sidebar and the empty page. */
+export function useThreads(brandId: string | undefined) {
+  return useQuery({
+    queryKey: ["conversations", brandId],
+    queryFn: () => fetchThreads(brandId!),
+    enabled: Boolean(brandId),
+    refetchInterval: 15_000,
+  });
+}
+
+/**
+ * The conversations column, like ChatGPT's: New reel / New story at the top, the brand's threads
+ * newest first (filterable by where they started), the open one highlighted.
+ */
+export function ConversationSidebar({ className }: { className?: string }) {
   const [filter, setFilter] = useState<Filter>("all");
   useEffect(() => {
     try {
@@ -77,30 +94,23 @@ export function ThreadList() {
       /* ignore */
     }
   };
-  const active = useBrandStore((s) => s.active);
-  const brandId = active && /^[0-9a-f-]{36}$/i.test(active.id) ? active.id : undefined;
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["conversations", brandId],
-    queryFn: () => fetchThreads(brandId!),
-    enabled: Boolean(brandId),
-  });
+  const brandId = useActiveBrandId();
+  const pathname = usePathname();
+  const activeId = pathname.split("/")[2];
+  const { data, isLoading, isError, refetch } = useThreads(brandId);
+  // A thread just started (or a reply moved to a new one): show it straight away.
+  useEffect(() => {
+    if (brandId) void refetch();
+  }, [pathname, brandId, refetch]);
 
+  const rows = data ? shown(data.threads, filter) : [];
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Conversations</h2>
-        </div>
+    <aside className={cn("h-full w-full shrink-0 flex-col border-r bg-muted/30 md:w-72", className)} aria-label="Conversations">
+      <div className="space-y-3 p-3">
         <NewThreadButtons brandId={brandId} />
-      </div>
-
-      {data && brandId && <TextEditorBanner info={data} brandId={brandId} className="mt-4" />}
-
-      {data && data.threads.length > 0 && (
-        <div role="tablist" aria-label="Show conversations" className="mt-6 inline-flex rounded-lg border p-0.5">
-          {FILTERS.map((f) => {
-            const count = f.value === "all" ? data.threads.length : data.threads.filter((t) => t.startedVia === f.value).length;
-            return (
+        {data && data.threads.length > 0 && (
+          <div role="tablist" aria-label="Show conversations" className="flex gap-1">
+            {FILTERS.map((f) => (
               <button
                 key={f.value}
                 type="button"
@@ -108,65 +118,58 @@ export function ThreadList() {
                 aria-selected={filter === f.value}
                 onClick={() => choose(f.value)}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
-                  filter === f.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  "rounded-full px-2.5 py-1 text-xs transition-colors",
+                  filter === f.value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
-                {f.label} <span className="opacity-70">{count}</span>
+                {f.label}
               </button>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="mt-4 space-y-2">
-        {!brandId && <EmptyState icon={MessagesSquare} title="No brand selected" description="Pick a brand in the sidebar to see its conversations." />}
-        {isLoading && [0, 1, 2].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
-        {isError && <p className="text-sm text-destructive">Could not load conversations.</p>}
-        {data && data.threads.length === 0 && (
-          <EmptyState icon={MessagesSquare} title="No conversations yet" description="Start a new reel or story to talk to the editor." />
+            ))}
+          </div>
         )}
-        {data && data.threads.length > 0 && shown(data.threads, filter).length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No conversations {filter === "sms" ? "started by text" : "started in the app"} yet.
-          </p>
-        )}
-        {data && shown(data.threads, filter).map((t) => <ThreadItem key={t.id} thread={t} />)}
       </div>
-    </>
+
+      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+        {!brandId && <p className="px-3 py-2 text-sm text-muted-foreground">Pick a brand to see its conversations.</p>}
+        {isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+        {isError && <p className="px-3 py-2 text-sm text-destructive">Could not load conversations.</p>}
+        {data && data.threads.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No conversations yet.</p>}
+        {data && data.threads.length > 0 && rows.length === 0 && (
+          <p className="px-3 py-2 text-sm text-muted-foreground">None {filter === "sms" ? "started by text" : "started in the app"} yet.</p>
+        )}
+        {rows.map((t) => (
+          <ThreadRowLink key={t.id} thread={t} active={t.id === activeId} />
+        ))}
+      </nav>
+
+      {data && brandId && <TextEditorBanner info={data} brandId={brandId} className="m-3 p-3" />}
+    </aside>
   );
 }
 
 const shown = (threads: ThreadRow[], filter: Filter) => (filter === "all" ? threads : threads.filter((t) => t.startedVia === filter));
 
-function ThreadItem({ thread: t }: { thread: ThreadRow }) {
+function ThreadRowLink({ thread: t, active }: { thread: ThreadRow; active: boolean }) {
   const last = t.lastMessage;
+  const closed = t.status === "closed";
   return (
-    <Link href={`/conversations/${t.id}`} className="block rounded-xl focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-      <Card className="py-0 transition-colors hover:bg-accent/40">
-        <CardContent className="flex items-start justify-between gap-4 p-4">
-          <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{t.title ?? kindLabel(t.kind)}</span>
-              {t.title && <span className="text-sm text-muted-foreground">{kindLabel(t.kind)}</span>}
-              <StartedVia channel={t.startedVia} />
-              {t.status === "open" ? <Badge>Open</Badge> : <Badge variant="outline">Closed</Badge>}
-              {!t.brandId && <Badge variant="secondary">Brand not chosen</Badge>}
-              {!t.mine && <Badge variant="secondary">Teammate</Badge>}
-            </div>
-            {last ? (
-              <p className="truncate text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{last.direction === "in" ? (t.mine ? "You" : "Teammate") : "Editor"}:</span> {last.body}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">No messages yet.</p>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
-            <span>{formatDistanceToNow(new Date(last?.createdAt ?? t.createdAt), { addSuffix: true })}</span>
-          </div>
-        </CardContent>
-      </Card>
+    <Link
+      href={`/conversations/${t.id}`}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "block rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "bg-muted" : "hover:bg-muted/60",
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        {t.startedVia === "sms" && <Smartphone className="h-3 w-3 shrink-0 text-sky-600 dark:text-sky-400" aria-label="Started by text" />}
+        <span className={cn("truncate text-sm", closed ? "text-muted-foreground" : "font-medium")}>{t.title ?? kindLabel(t.kind)}</span>
+        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatDistanceToNowStrict(new Date(last?.createdAt ?? t.createdAt))}</span>
+      </div>
+      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+        {!t.mine && "Teammate · "}
+        {last ? last.body : "No messages yet"}
+      </p>
     </Link>
   );
 }
