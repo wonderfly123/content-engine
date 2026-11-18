@@ -244,10 +244,13 @@ function isInbound(m: Obj): boolean {
  * The inbound text in a Salesmsg webhook payload, or null for anything else: texts we sent, calls
  * and voicemails, contact updates, and events from the account's other inboxes.
  *
- * Payload (message.received): { message: { id, status, body, received_at, sent_at, type, inbox_id? },
- * contact: { number }, inbox: { id }?, number: <our number>? }.
+ * Payload: { event: "message.received", data: { message: { id, status, body, received_at, sent_at, type },
+ * contact: { number }, inbox: { id }, number: { number, numberable_id } } } (an unwrapped body is accepted too).
  */
-export function parseIncomingText(payload: unknown, config: Pick<SalesmsgConfig, "teamId" | "phoneNumber">): IncomingSalesmsgText | null {
+export function parseIncomingText(raw: unknown, config: Pick<SalesmsgConfig, "teamId" | "phoneNumber">): IncomingSalesmsgText | null {
+  // Salesmsg wraps the event: { event: "message.received", data: { message, contact, inbox, number } }.
+  const payload = isObj(raw) && isObj(raw.data) && !isObj(raw.message) ? raw.data : raw;
+  if (isObj(raw) && typeof raw.event === "string" && raw.event !== "message.received") return null;
   if (!isObj(payload) || !isObj(payload.message)) return null;
   const message = payload.message;
   if (/call|voice|record/i.test(typeof message.type === "string" ? message.type : "")) return null;

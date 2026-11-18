@@ -124,6 +124,21 @@ describe("webhook", () => {
     });
   });
 
+  it("reads Salesmsg's real envelope: { event, data: { message, contact, inbox, number } }", () => {
+    const real = {
+      event: "message.received",
+      data: {
+        message: { id: 742373204, conversation_id: 1, status: "received", type: "sms", body: "New story", received_at: "2026-11-18 00:01:57", sent_at: null },
+        contact: { id: 1, number: "+14439359040" },
+        inbox: { id: 4242, organization_id: 1 },
+        number: { id: 256061, number: "+18014570307", numberable_id: 4242 },
+      },
+    };
+    expect(parseIncomingText(real, config)).toEqual({ from: "+14439359040", body: "New story", messageId: "742373204" });
+    expect(parseIncomingText({ ...real, event: "message.sent" }, config)).toBeNull();
+    expect(parseIncomingText({ ...real, data: { ...real.data, inbox: { id: 223202 }, number: { number: "+18056000211" } } }, config)).toBeNull();
+  });
+
   it("ignores other inboxes, outbound texts, calls and payloads without a message", () => {
     expect(parseIncomingText({ message: msg, contact: { number: "+16195550123" }, inbox: { id: 223202 } }, config)).toBeNull();
     expect(parseIncomingText({ message: msg, contact: { number: "+16195550123" } }, config)).toBeNull();
