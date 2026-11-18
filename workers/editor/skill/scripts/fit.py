@@ -3,7 +3,8 @@
 EDL line: file|in_seconds|source_seconds|speed|crop_x(optional)
 Scales all sped-up shots by one factor so the cut lands exactly on the target length (with no sped-up
 shots, scales the real-speed shot lengths instead), then checks every shot sits inside its clip's real
-length and that no source range is reused. Exits 1 on any problem."""
+length, that no source range is reused, and the pacing (enough shots for the length, mostly real speed).
+Exits 1 on any problem."""
 import os, subprocess, sys
 
 root, src, target, out = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
@@ -33,6 +34,15 @@ for i, r in enumerate(rows, 1):
     for a, b, j in used.get(f, []):
         if tin < b and a < tin + sd: bad.append(f"shot {i} {f}: overlaps shot {j}")
     used.setdefault(f, []).append((tin, tin + sd, i))
+# Pacing (profiles/build.md, "Pacing"): average shot length by cut length, and real-speed moments must lead.
+n = len(rows)
+max_avg = 1.6 if target <= 20 else 2.2 if target <= 35 else 3.2 if target <= 50 else 3.8
+min_shots = max(1, int(target / max_avg + 0.999))
+if target >= 8 and n < min_shots:
+    bad.append(f"pacing: {n} shots for {target:.0f}s averages {target / n:.1f}s a shot; aim for {max_avg:.1f}s or less, so at least {min_shots} shots")
+sped = sum(1 for r in rows if float(r[3]) != 1)
+if n >= 4 and sped / n > 0.7:
+    bad.append(f"pacing: {sped} of {n} shots are sped up; most shots should be real-speed moments, with speed-ups only for pans and long takes")
 open(out, "w").write("\n".join("|".join(r) for r in rows) + "\n")
 print(f"{os.path.basename(src)}: {len(rows)} shots, real-speed {real:.1f}s, sped-up {fast:.1f}s -> {note}, problems: {bad or 'none'}")
 sys.exit(1 if bad else 0)

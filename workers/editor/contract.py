@@ -29,7 +29,7 @@ MAX_TEXT = 20_000
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
 MODEL_RE = re.compile(r"^claude-[a-z0-9.\-]{1,60}$")
 # The skill's editable markdown files (same list as EDITABLE_SKILL_PATHS in lib/editor/skill-files.ts).
-SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md")
+SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md")
 MAX_SKILL_BYTES = 200 * 1024
 
 
