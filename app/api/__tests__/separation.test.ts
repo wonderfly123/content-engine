@@ -150,6 +150,8 @@ describe("coverage", () => {
       // The editor skill's versions belong to the platform, not to any workspace: platform admin only
       // (app/api/admin/skill), and every workspace's jobs run on the current set.
       "editor_skill_versions",
+      // Platform-wide settings (raw clip retention): platform admin only (app/api/admin/storage).
+      "platform_settings",
     ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))

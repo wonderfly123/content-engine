@@ -57,12 +57,14 @@ export type Decision =
 
 // "/api/salesmsg/": Salesmsg's webhook has no session; it proves itself with a shared secret
 // in ?token= (withSalesmsgToken in lib/conversations/texting.ts) and refuses everything else with 403.
+// "/u/" and "/api/u/": upload links. The link's signed token is the key; the page and its upload
+// routes check it (withUploadLink / requireUploadLink in lib/conversations/upload-link.ts), else 403/404.
 // "/api/media/optimized": the optimizer worker's callback has no session either; it proves itself
 // with an HMAC of the body (withWorkerSignature in lib/media/worker-signature.ts), else 403.
 // "/api/editor/uploads" and "/api/editor/callback": the editor worker has no session; it proves
 // itself with MODAL_EDITOR_SECRET, as a bearer token for upload links and as an HMAC of the body for
 // its result (withEditorBearer / withEditorSignature in lib/editor/worker-auth.ts), else 403.
-const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/salesmsg/", "/api/media/optimized", "/api/editor/uploads", "/api/editor/callback"];
+const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/salesmsg/", "/u/", "/api/u/", "/api/media/optimized", "/api/editor/uploads", "/api/editor/callback"];
 /** The public website: the landing page and the policy pages carriers and visitors read without signing in. */
 export const PUBLIC_PAGES = ["/", "/privacy", "/terms", "/texting"];
 /** Finishes a first sign-in (public: it checks the session itself). */

@@ -7,7 +7,7 @@
  * through `requireMedia` (lib/media/access.ts); uploads into a thread go through
  * `requireConversation` and must name a media object of that same thread.
  */
-import { bigint, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { mediaKindEnum, mediaStatusEnum } from "./enums";
 import { brands, workspaces } from "./schema";
 import { conversations } from "./schema-conversations";
@@ -49,3 +49,14 @@ export const mediaObjects = pgTable(
     index("media_objects_workspace_idx").on(t.workspaceId),
   ],
 );
+
+/**
+ * Platform-wide settings the admin changes in Admin (one row per key), e.g. how long raw clips are
+ * kept (lib/media/retention.ts). Not per workspace: only the platform admin reads or writes them.
+ */
+export const platformSettings = pgTable("platform_settings", {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+  updatedBy: uuid("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

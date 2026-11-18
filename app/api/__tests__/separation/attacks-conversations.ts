@@ -1,3 +1,4 @@
+import { createUploadToken } from "@/lib/conversations/upload-link";
 import type { RouteAttack } from "./attacks";
 import type { Seeded } from "./world";
 
@@ -9,8 +10,33 @@ const STORAGE_OFF = "owner reaches storage";
 const clip = (v: Seeded, mediaId = v.uploadingMediaId) => ({ id: v.conversationId, mediaId });
 const UPLOADS = "app/api/conversations/[id]/uploads";
 
+/**
+ * A token naming the victim's thread with a forged signature: the shape of a real upload link, but
+ * not signed with the server's key. The link is the only key to these routes, so a session does nothing.
+ */
+const forged = (v: Seeded) => {
+  const raw = Buffer.alloc(32);
+  Buffer.from(v.conversationId.replace(/-/g, ""), "hex").copy(raw, 0);
+  raw.writeUInt32BE(Math.floor(Date.now() / 1000) + 3600, 16);
+  return raw.toString("base64url");
+};
+const LINK = "app/api/u/[token]/uploads";
+const LINK_KEY = "the upload link is the only key (no session works); valid links are tested in lib/conversations/__tests__/upload-link.test.ts";
+
 /** Conversations with the editor: threads reach their workspace directly (requireConversation). */
 export const routes: RouteAttack[] = [
+  { route: `${LINK}/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v) }, body: { filename: "clip.mov", size: 1000, contentType: "video/quicktime" } }), skipOwnerControl: LINK_KEY },
+  { route: `${LINK}/[mediaId]/parts/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId }, body: { partNumbers: [1] } }), skipOwnerControl: LINK_KEY },
+  {
+    route: `${LINK}/[mediaId]/parts/route.ts`,
+    method: "POST",
+    name: "own link, their clip",
+    build: (v, a) => ({ params: { token: createUploadToken(a.conversationId), mediaId: v.uploadingMediaId }, body: { partNumbers: [1] } }),
+    skipOwnerControl: MIXED,
+  },
+  { route: `${LINK}/[mediaId]/complete/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId }, body: { parts: [{ partNumber: 1, etag: '"e"' }] } }), skipOwnerControl: LINK_KEY },
+  { route: `${LINK}/[mediaId]/abort/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId } }), skipOwnerControl: LINK_KEY },
+  { route: `${LINK}/done/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v) }, body: { mediaIds: [v.mediaId] } }), skipOwnerControl: LINK_KEY },
   { route: "app/api/conversations/route.ts", method: "GET", build: (v) => ({ query: { brandId: v.brandId } }) },
   { route: "app/api/conversations/route.ts", method: "POST", build: (v) => ({ body: { brandId: v.brandId, kind: "reel" } }) },
   { route: "app/api/conversations/[id]/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },

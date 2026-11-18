@@ -24,7 +24,8 @@ export interface UploadItem {
 const ACTIVE: UploadStatus[] = ["resumable", "queued", "uploading"];
 let seq = 0;
 
-export function useClipUploads(conversationId: string, onChange: () => void) {
+/** `base`: where the upload routes live (an upload link's /api/u/<token>/uploads); default, the signed-in ones. */
+export function useClipUploads(conversationId: string, onChange: () => void, base?: string) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [leftover, setLeftover] = useState(0);
   const itemsRef = useRef(items);
@@ -70,6 +71,7 @@ export function useClipUploads(conversationId: string, onChange: () => void) {
       try {
         const mediaId = await uploadClip({
           conversationId,
+          base,
           file: item.file,
           resume: item.resume,
           signal: ctrl.signal,
@@ -93,7 +95,7 @@ export function useClipUploads(conversationId: string, onChange: () => void) {
         setItems((prev) => [...prev]); // run the queue again
       }
     },
-    [conversationId, patch],
+    [conversationId, base, patch],
   );
 
   // One file at a time; when nothing is left to do, report the finished batch once.
@@ -108,11 +110,11 @@ export function useClipUploads(conversationId: string, onChange: () => void) {
     if (items.some((i) => ACTIVE.includes(i.status)) || finished.current.length === 0) return;
     const ids = finished.current;
     finished.current = [];
-    reportBatchDone(conversationId, ids)
+    reportBatchDone(conversationId, ids, base)
       .then(() => onChangeRef.current())
       .catch((err: Error) => toast.error(`Clips uploaded, but the thread was not told: ${err.message}`));
     setLeftover(resumeStore.count(conversationId));
-  }, [items, run, conversationId]);
+  }, [items, run, conversationId, base]);
 
   const uploading = items.some((i) => i.status === "uploading" || i.status === "queued");
 
@@ -136,7 +138,7 @@ export function useClipUploads(conversationId: string, onChange: () => void) {
       if (!item) return;
       controllers.current.get(id)?.abort();
       const mediaId = item.mediaId ?? item.resume?.mediaId;
-      if (mediaId) void abortClip(conversationId, mediaId).then(() => onChangeRef.current());
+      if (mediaId) void abortClip(conversationId, mediaId, base).then(() => onChangeRef.current());
       resumeStore.clear(conversationId, item.file);
       patch(id, { status: "cancelled", resume: null });
     },
@@ -149,7 +151,7 @@ export function useClipUploads(conversationId: string, onChange: () => void) {
     (id: string) => {
       const item = itemsRef.current.find((i) => i.id === id);
       if (!item) return;
-      if (item.resume) void abortClip(conversationId, item.resume.mediaId);
+      if (item.resume) void abortClip(conversationId, item.resume.mediaId, base);
       resumeStore.clear(conversationId, item.file);
       patch(id, { status: "queued", resume: null, uploaded: 0 });
     },

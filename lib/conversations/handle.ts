@@ -34,6 +34,7 @@ import {
   type ConversationRow,
 } from "./store";
 import { appUrl } from "./texting";
+import { uploadLinkPath } from "./upload-link";
 
 export const MAX_BODY_CHARS = 1600;
 
@@ -149,7 +150,7 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
         thread: { kind: thread.kind, brandId: thread.brandId },
         brands,
         askedBrand: await hasAskedBrand(thread.id),
-        link: `${appUrl(input.origin)}/conversations/${thread.id}`,
+        link: input.channel === "sms" ? `${appUrl(input.origin)}${uploadLinkPath(thread.id)}` : `${appUrl(input.origin)}/conversations/${thread.id}`,
       },
       editor,
     );

@@ -31,6 +31,8 @@ export const routes: RouteAttack[] = [
 
   // Admin
   { route: "app/api/admin/connections/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
+  { route: "app/api/admin/storage/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
+  { route: "app/api/admin/storage/route.ts", method: "PUT", build: () => ({ body: { retention: "after_post" } }), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/connections/route.ts", method: "POST", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/users/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
   {
