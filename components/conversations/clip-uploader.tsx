@@ -91,11 +91,30 @@ export function UploadProgress({ up }: { up: ReturnType<typeof useClipUploads> }
             <Bar value={pct(up.sentBytes, up.totalBytes)} />
             {up.uploading && <p className="text-xs font-medium text-foreground">Keep this page open while clips upload.</p>}
           </div>
-          <ul className="space-y-2">
-            {up.items.map((item) => (
-              <UploadRow key={item.id} item={item} onCancel={up.cancel} onResume={up.resume} onStartOver={up.startOver} onRetry={up.retry} />
-            ))}
-          </ul>
+          {/* Only files that still need something are listed (in a short scrolling box); finished ones are counted. */}
+          {(() => {
+            const open = up.items.filter((i) => i.status !== "done" && i.status !== "cancelled");
+            const done = up.items.filter((i) => i.status === "done").length;
+            const cancelled = up.items.filter((i) => i.status === "cancelled").length;
+            return (
+              <>
+                {(done > 0 || cancelled > 0) && (
+                  <p className="text-xs text-muted-foreground">
+                    {done > 0 && `${done} uploaded`}
+                    {done > 0 && cancelled > 0 && " · "}
+                    {cancelled > 0 && `${cancelled} cancelled`}
+                  </p>
+                )}
+                {open.length > 0 && (
+                  <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                    {open.map((item) => (
+                      <UploadRow key={item.id} item={item} onCancel={up.cancel} onResume={up.resume} onStartOver={up.startOver} onRetry={up.retry} />
+                    ))}
+                  </ul>
+                )}
+              </>
+            );
+          })()}
           {anyFinished && !up.uploading && (
             <div className="flex justify-end">
               <Button size="xs" variant="ghost" onClick={up.clearFinished}>

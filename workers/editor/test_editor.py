@@ -168,6 +168,11 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             validate_manifest(m, self.files)
 
+    def test_empty_caption_allowed(self):
+        m = good_manifest()
+        m["cuts"][0]["caption"] = ""
+        self.assertEqual(validate_manifest(m, self.files)["cuts"][0]["caption"], "")
+
     def test_unknown_clip(self):
         m = good_manifest()
         m["cuts"][0]["edl"][0]["file"] = "NOT_HERE.mov"

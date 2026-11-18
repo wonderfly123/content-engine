@@ -223,9 +223,11 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
         if not _str(cid, 64) or cid in ids:
             raise ManifestError(f"{where} has a missing or repeated id.")
         ids.add(cid)
-        for k in ("title", "caption"):
-            if not _str(c.get(k), 3000):
-                raise ManifestError(f"{where} is missing {k}.")
+        if not _str(c.get("title"), 3000):
+            raise ManifestError(f"{where} is missing title.")
+        # A story has no caption on Instagram, so an empty one is fine; it must still be there.
+        if not isinstance(c.get("caption"), str) or len(c["caption"]) > 3000:
+            raise ManifestError(f"{where} is missing caption.")
         if not _num(c.get("seconds")) or not 0 < c["seconds"] <= 180:
             raise ManifestError(f"{where} has no valid seconds.")
         if c.get("mode") not in MODES:
