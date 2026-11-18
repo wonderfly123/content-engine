@@ -62,10 +62,10 @@ export type Decision =
 // routes check it (withUploadLink / requireUploadLink in lib/conversations/upload-link.ts), else 403/404.
 // "/api/media/optimized" and "/api/media/frames": the optimizer worker's callbacks have no session either; they prove themselves
 // with an HMAC of the body (withWorkerSignature in lib/media/worker-signature.ts), else 403.
-// "/api/editor/uploads" and "/api/editor/callback": the editor worker has no session; it proves
+// "/api/editor/uploads", "/api/editor/callback" and "/api/editor/progress": the editor worker has no session; it proves
 // itself with MODAL_EDITOR_SECRET, as a bearer token for upload links and as an HMAC of the body for
 // its result (withEditorBearer / withEditorSignature in lib/editor/worker-auth.ts), else 403.
-const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/salesmsg/", "/u/", "/api/u/", "/w/", "/api/w/", "/api/media/optimized", "/api/media/frames", "/api/editor/uploads", "/api/editor/callback"];
+const PUBLIC_PREFIXES = ["/login", "/auth/", "/api/salesmsg/", "/u/", "/api/u/", "/w/", "/api/w/", "/api/media/optimized", "/api/media/frames", "/api/editor/uploads", "/api/editor/callback", "/api/editor/progress"];
 /** The public website: the landing page and the policy pages carriers and visitors read without signing in. */
 export const PUBLIC_PAGES = ["/", "/privacy", "/terms", "/texting"];
 /** Finishes a first sign-in (public: it checks the session itself). */

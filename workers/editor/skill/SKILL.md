@@ -33,11 +33,14 @@ Clips are only ever read; never modify or delete anything in `footage/`.
 3. **Intake**: decide everything from the brief with `intake.md`. Do not ask unless it says to.
 4. **Select**: shortlist clips per cut, then `printf '%s\n' clipA.mov clipB.mov | bash $SK/sample.sh footage work/samples/<cut>`
    for gated frame sampling (4 / 6 / 10 frames by clip length; it prints each frame's time). Read the sheets and
-   choose moments with the profile in `profiles/` (only `build.md` exists).
+   choose moments with the profile `intake.md` picks (`profiles/build.md` or `profiles/event.md`). Sample every
+   clip you might use and pick the part where the moment happens; never take a clip from its start by default.
+   Decide per shot: a real-speed snippet (the default) or sped up (only pans and long takes, per the profile).
 5. **Assemble**: write a draft EDL per cut in `work/edl/<id>.draft.tsv`, one shot per line:
    `clip_filename|in_seconds|source_seconds|speed|crop_x(optional)` (filename as in `footage/`, no folder).
    Then `python3 $SK/fit.py footage work/edl/<id>.draft.tsv <seconds> work/edl/<id>.tsv` (exact length,
-   bounds, no reused range). Fix every problem it reports and run it again.
+   bounds, no reused range, pacing). Fix every problem it reports and run it again; a pacing problem means
+   more, shorter real-speed shots, not faster ones.
 6. **Render**: `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4`. Read
    `out/previews/<id>.check.jpg`: every shot upright, filling the frame, not black, and the strongest part of its
    clip under the profile. Fix the EDL and render again if not. Do 15s first, then 30s.

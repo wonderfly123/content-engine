@@ -10,13 +10,14 @@ export const edlEntrySchema = z.object({
   mediaId: z.string().uuid(),
   in: z.number().nonnegative(),
   dur: z.number().positive(),
-  speed: z.number().positive().max(16),
+  // Same limits as the worker (workers/editor/contract.py): a fast pan can be sped up a lot.
+  speed: z.number().positive().max(500),
   cropX: z.number().nullable(),
 });
 
 export const cutSchema = z.object({
   id: text(100).min(1),
-  title: text(200),
+  title: text(3000),
   seconds: z.number().nonnegative().max(60 * 60),
   mode: z.enum(["music", "voice"]),
   preview: z.object({ key: text(1024).min(1) }),

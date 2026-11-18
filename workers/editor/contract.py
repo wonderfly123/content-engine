@@ -29,7 +29,7 @@ MAX_TEXT = 20_000
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
 MODEL_RE = re.compile(r"^claude-[a-z0-9.\-]{1,60}$")
 # The skill's editable markdown files (same list as EDITABLE_SKILL_PATHS in lib/editor/skill-files.ts).
-SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md")
+SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md")
 MAX_SKILL_BYTES = 200 * 1024
 
 
@@ -264,8 +264,8 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
                 media_id = e["mediaId"]
             if media_id is None:
                 raise ManifestError(f"{where} shot {j} uses a clip that is not in this job.")
-            if not (_num(e.get("in")) and e["in"] >= 0 and _num(e.get("dur")) and e["dur"] > 0 and _num(e.get("speed")) and e["speed"] > 0):
-                raise ManifestError(f"{where} shot {j} needs in >= 0, dur > 0 and speed > 0.")
+            if not (_num(e.get("in")) and e["in"] >= 0 and _num(e.get("dur")) and e["dur"] > 0 and _num(e.get("speed")) and 0 < e["speed"] <= 500):
+                raise ManifestError(f"{where} shot {j} needs in >= 0, dur > 0 and speed between 0 and 500.")
             crop = e.get("cropX")
             if crop is not None and not (_num(crop) and 0 <= crop <= 1):
                 raise ManifestError(f"{where} shot {j} has cropX outside 0-1.")
@@ -331,6 +331,61 @@ def extract_usage(result: Any, seconds: float, fallback_tokens: Optional[Dict[st
     usage["costUsd"] = round(usage["costUsd"], 4)
     usage["turns"] = _int(_get(result, "num_turns"))
     return usage
+
+
+# ---- progress ------------------------------------------------------------------------------------
+
+_CUT_ID = re.compile(r"\b(reel|story)-(\d{1,3})\b")
+
+
+def _cut_name(text: str) -> Optional[str]:
+    m = _CUT_ID.search(text or "")
+    return f"the {m.group(2)}s {m.group(1)}" if m else None
+
+
+def progress_url(callback_url: str) -> Optional[str]:
+    """The app's progress endpoint, next to its result callback."""
+    suffix = "/api/editor/callback"
+    return callback_url[: -len(suffix)] + "/api/editor/progress" if isinstance(callback_url, str) and callback_url.endswith(suffix) else None
+
+
+def step_label(tool: Optional[str], tool_input: Dict[str, Any]) -> Optional[str]:
+    """A plain-English step for one of the agent's tool calls, or None for the ones not worth showing.
+    Labels never carry file names or commands: only what kind of work is happening."""
+    if tool == "Bash":
+        cmd = str(tool_input.get("command") or "")
+        if "scan.py" in cmd:
+            return "Looking through the clips"
+        if "sample.sh" in cmd:
+            return "Picking the best moments"
+        if "fit.py" in cmd:
+            cut = _cut_name(cmd)
+            return f"Fitting {cut} to length" if cut else "Fitting the cut to length"
+        if "render.sh" in cmd:
+            cut = _cut_name(cmd)
+            return f"Rendering {cut}" if cut else "Rendering a preview"
+        return None
+    path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+    if tool == "Read":
+        if path.endswith("job.json"):
+            return "Reading your request"
+        if path.endswith("previous.json"):
+            return "Looking at the last version"
+        if ".check.jpg" in path:
+            cut = _cut_name(path)
+            return f"Checking {cut}" if cut else "Checking the cut"
+        if "/scan/" in path:
+            return "Looking through the clips"
+        if "/samples/" in path:
+            return "Picking the best moments"
+        return None
+    if tool in ("Write", "Edit"):
+        if path.endswith("manifest.json"):
+            return "Writing hooks and caption"
+        if "/edl/" in path:
+            cut = _cut_name(path)
+            return f"Planning the shots for {cut}" if cut else "Planning the shot order"
+    return None
 
 
 def sign(secret: str, body: bytes) -> str:

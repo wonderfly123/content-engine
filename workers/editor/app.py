@@ -25,6 +25,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import modal
@@ -67,7 +69,8 @@ with image.imports():
 
     from contract import (
         ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial,
-        preview_path, previous_for_agent, previous_keys, sign, valid_job, validate_manifest, write_skill_files,
+        preview_path, previous_for_agent, previous_keys, progress_url, sign, step_label, valid_job, validate_manifest,
+        write_skill_files,
     )
 
 
@@ -192,6 +195,36 @@ def _callback(url: str, payload: Dict[str, Any]) -> None:
         time.sleep(2 * 2**attempt)
 
 
+class Progress:
+    """Sends the job's steps to the app as they start (each update carries the whole list), signed like the result.
+    Best effort and off the agent's path: a slow or failed update never holds the edit up."""
+
+    MAX_STEPS = 80
+
+    def __init__(self, job: Dict[str, Any]) -> None:
+        self.url = progress_url(job["callbackUrl"])
+        self.job_id = job["jobId"]
+        self.steps: List[Dict[str, str]] = []
+        self.pool = ThreadPoolExecutor(max_workers=1)
+
+    def step(self, label: Optional[str]) -> None:
+        if not label or not self.url or len(self.steps) >= self.MAX_STEPS or any(s["label"] == label for s in self.steps):
+            return
+        at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        self.steps.append({"label": label, "at": at})
+        self.pool.submit(self._send, {"jobId": self.job_id, "steps": list(self.steps)})
+
+    def _send(self, payload: Dict[str, Any]) -> None:
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        try:
+            requests.post(self.url, data=body, headers={"Content-Type": "application/json", "X-Nekter-Signature": sign(_secret(), body)}, timeout=5)
+        except requests.RequestException:
+            pass
+
+    def close(self) -> None:
+        self.pool.shutdown(wait=True)
+
+
 # ---- the agent ---------------------------------------------------------------------------------
 
 
@@ -210,7 +243,8 @@ def _agent_env(api_key: str, tmp: str) -> Dict[str, str]:
     return env
 
 
-async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, budget_sec: float, state: Dict[str, Any]) -> Optional[str]:
+async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, budget_sec: float, state: Dict[str, Any],
+                     progress: Optional["Progress"] = None) -> Optional[str]:
     """Runs the agent. Fills state["result"] (the ResultMessage) and state["tokens"] as it goes, so they survive
     an exception; returns a safe error message or None."""
     from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage
@@ -227,6 +261,8 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
         else:
             reason = None
         print(f"tool {name}{' (refused)' if reason else ''}")
+        if not reason and progress is not None:
+            progress.step(step_label(name, tool_input))
         if reason:
             return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
         return {}
@@ -305,10 +341,12 @@ def run_job(job: Dict[str, Any]) -> None:
                            "reply": "Something went wrong while editing, so there is nothing new to watch yet.", "question": None}
     state: Dict[str, Any] = {"result": None, "tokens": {"inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "turns": 0}}
     agent_sec = 0.0
+    progress = Progress(job)
     try:
         with tempfile.TemporaryDirectory(prefix="editor-") as tmp:
             files = clip_filenames(job["clips"])
             ws = _workspace(tmp, job, files)
+            progress.step(f"Downloading {len(files)} {'clip' if len(files) == 1 else 'clips'}")
             _download_all(job["clips"], files, os.path.join(ws, "footage"))
             print(f"job {job['jobId']}: {len(files)} clips downloaded in {time.monotonic() - started:.0f}s")
 
@@ -318,7 +356,7 @@ def run_job(job: Dict[str, Any]) -> None:
             agent_start = time.monotonic()
             try:
                 agent_err = asyncio.run(
-                    _run_agent(ws, tmp, build_prompt(job, files, SKILL_NAME), job["model"], job["anthropicApiKey"], budget, state))
+                    _run_agent(ws, tmp, build_prompt(job, files, SKILL_NAME), job["model"], job["anthropicApiKey"], budget, state, progress))
             except Exception as err:  # never send a raw message: it could carry CLI output
                 agent_err = f"The editor could not run ({type(err).__name__})."
             agent_sec = time.monotonic() - agent_start
@@ -332,6 +370,8 @@ def run_job(job: Dict[str, Any]) -> None:
             except (ValueError, OSError):
                 raise JobError("The editor's result was not valid JSON.") from None
             checked = validate_manifest(raw, files, previous_keys(job.get("previous")))
+            if checked["cuts"]:
+                progress.step("Uploading the cut" if len(checked["cuts"]) == 1 else "Uploading the cuts")
             _upload_previews(job, checked["cuts"], ws)
             out.update(ok=True, manifest={"cuts": checked["cuts"]} if checked["cuts"] else None,
                        reply=checked["reply"], question=checked["question"])
@@ -339,6 +379,7 @@ def run_job(job: Dict[str, Any]) -> None:
         out["error"] = str(err)
     except Exception as err:
         out["error"] = f"Unexpected error ({type(err).__name__})."
+    progress.close()  # the last step lands before the result, which ends the job
     result = state["result"]
     duration_ms = getattr(result, "duration_ms", None) if result is not None else None
     out["usage"] = extract_usage(result, duration_ms / 1000 if duration_ms else agent_sec, state["tokens"])
