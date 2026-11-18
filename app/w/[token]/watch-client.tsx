@@ -60,7 +60,8 @@ export function WatchClient({ token, title, subtitle, videoUrl, caption, initial
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
       </header>
 
-      <video src={videoUrl} controls playsInline preload="metadata" className="aspect-[9/16] w-full rounded-2xl bg-black object-contain" />
+      {/* Capped at about half the screen so the next step (Approve, Now…) stays in view on a phone. */}
+      <video src={videoUrl} controls playsInline preload="metadata" className="mx-auto aspect-[9/16] max-h-[52dvh] w-auto max-w-full rounded-2xl bg-black object-contain" />
 
       {!story && caption && (
         <section className="rounded-xl border p-3">
