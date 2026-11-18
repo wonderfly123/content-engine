@@ -114,6 +114,33 @@ describe('MetaPublisher', () => {
     await expect(other.publish({ ...reelPost }, [{ ...videoAsset }])).rejects.toMatchObject({ code: 'api_error' });
   });
 
+  it('publish creates a Story container for a story: no caption, cover or trial', async () => {
+    const calls: Array<{ url: string; body: URLSearchParams }> = [];
+    const pub = reelPublisher(async (url, init) => {
+      calls.push({ url, body: init?.body as URLSearchParams });
+      return new Response(JSON.stringify({ id: 'story-container' }), { status: 200 });
+    });
+    const result = await pub.publish({ ...reelPost, format: 'story', trial: 'manual', thumb_offset_ms: 1000 }, [{ ...videoAsset }]);
+    expect(result).toEqual({ externalId: '', url: '', pending: true, containerId: 'story-container' });
+    const body = calls[0].body;
+    expect(body.get('media_type')).toBe('STORIES');
+    expect(body.get('video_url')).toBe(videoAsset.storage_url);
+    expect(body.has('caption')).toBe(false);
+    expect(body.has('trial_params')).toBe(false);
+    expect(body.has('thumb_offset')).toBe(false);
+  });
+
+  it('publish uses thumb_offset for a Reel cover when there is no cover image', async () => {
+    const bodies: URLSearchParams[] = [];
+    const pub = reelPublisher(async (_url, init) => {
+      bodies.push(init?.body as URLSearchParams);
+      return new Response(JSON.stringify({ id: 'c' }), { status: 200 });
+    });
+    await pub.publish({ ...reelPost, thumb_offset_ms: 1500 }, [{ ...videoAsset }]);
+    expect(bodies[0].get('thumb_offset')).toBe('1500');
+    expect(bodies[0].has('cover_url')).toBe(false);
+  });
+
   it('publish refuses a missing or non-public video, a missing connection, and unsupported formats', async () => {
     const never = async () => { throw new Error('must not call the network'); };
     const pub = reelPublisher(never);

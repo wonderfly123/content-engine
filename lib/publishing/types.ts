@@ -64,6 +64,8 @@ export interface Post {
    * graduates it in the app; 'auto' = Instagram graduates it on performance.
    */
   trial?: 'manual' | 'auto' | null;
+  /** Reels without a cover image: the frame to use as the cover, in milliseconds (Instagram `thumb_offset`). */
+  thumb_offset_ms?: number | null;
 }
 
 export interface AnalyticsSnapshot {

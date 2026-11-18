@@ -205,6 +205,17 @@ export function presignGet(key: string, expiresIn = 600): string {
   return presignUrl({ method: "GET", host, path, date: new Date(), creds, expiresIn });
 }
 
+/** How an asset stored on our private R2 bucket is recorded in `assets.storage_url`: r2://<key>. */
+export const R2_URI_PREFIX = "r2://";
+
+/**
+ * A URL someone outside (Instagram) can fetch: r2://<key> becomes a presigned GET (default 6 hours,
+ * made at publish time so it never goes stale while a post waits); anything else is returned as is.
+ */
+export function resolveStorageUrl(storageUrl: string, expiresIn = 6 * 60 * 60): string {
+  return storageUrl.startsWith(R2_URI_PREFIX) ? presignGet(storageUrl.slice(R2_URI_PREFIX.length), expiresIn) : storageUrl;
+}
+
 /** A short-lived link to write one object with a single PUT (the optimizer's output). */
 export function presignPut(key: string, expiresIn = 7200): string {
   const { creds, host, path } = target(key);

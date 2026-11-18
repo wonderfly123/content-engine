@@ -182,9 +182,9 @@ export class MetaPublisher implements Publisher {
    * Instagram for videos of about 45 s or longer during testing (Nov 2026).
    */
   async publish(post: Post, assets: Asset[]): Promise<PublishResult> {
-    if (this.channel !== 'instagram' || post.format !== 'reel') {
+    if (this.channel !== 'instagram' || (post.format !== 'reel' && post.format !== 'story')) {
       throw new PublisherError(
-        `MetaPublisher.publish only supports Instagram Reels so far (got ${this.channel}/${post.format}).`,
+        `MetaPublisher.publish only supports Instagram Reels and video Stories so far (got ${this.channel}/${post.format}).`,
         'not_implemented',
       );
     }
@@ -214,6 +214,16 @@ export class MetaPublisher implements Publisher {
       );
     }
 
+    // A Story: a video container with media_type=STORIES. Stories take no caption, cover or trial.
+    if (post.format === 'story') {
+      const story = new URLSearchParams({
+        media_type: 'STORIES',
+        video_url: video.storage_url,
+        access_token: conn.access_token,
+      });
+      return this.createContainer(igUserId, story);
+    }
+
     const body = new URLSearchParams({
       media_type: 'REELS',
       video_url: video.storage_url,
@@ -222,6 +232,7 @@ export class MetaPublisher implements Publisher {
     });
     const cover = assets.find((a) => a.role === 'cover' && a.kind !== 'video');
     if (cover) body.set('cover_url', cover.storage_url);
+    else if (post.thumb_offset_ms != null && post.thumb_offset_ms >= 0) body.set('thumb_offset', String(Math.round(post.thumb_offset_ms)));
     if (post.trial) {
       body.set(
         'trial_params',
@@ -231,6 +242,11 @@ export class MetaPublisher implements Publisher {
       );
     }
 
+    return this.createContainer(igUserId, body);
+  }
+
+  /** Creates an unpublished media container; the publish cron polls it and calls media_publish. */
+  private async createContainer(igUserId: string, body: URLSearchParams): Promise<PublishResult> {
     const res = await this.http(this.graphUrl(`${igUserId}/media`), {
       method: 'POST',
       body,

@@ -13,6 +13,7 @@ import {
 } from "../publish";
 import type { Publisher } from "@/lib/publishing";
 import { makeFakeDb, type FakeDB } from "./_helpers";
+import { onPostPublished } from "../published-hooks";
 
 function mkPublisher(overrides: Partial<Publisher> = {}): Publisher {
   return {
@@ -320,5 +321,46 @@ describe("audit log", () => {
     const events = db.store.get("events") ?? [];
     expect(events.length).toBeGreaterThan(0);
     expect(events.every((e) => e.brandId === "b1")).toBe(true);
+  });
+});
+
+describe("publishDuePosts — cloud-editor cuts and the published hook", () => {
+  it("hands Instagram a fresh presigned link for an r2:// video, and the draft's cover offset", async () => {
+    process.env.R2_ACCOUNT_ID = "acct";
+    process.env.R2_ACCESS_KEY_ID = "key";
+    process.env.R2_SECRET_ACCESS_KEY = "secret";
+    process.env.R2_BUCKET = "bucket";
+    const db = buildDb();
+    db.store.set("drafts", [{ id: "d1", format: "story", caption: "c", metaJson: { coverAtMs: 1000 } }]);
+    // The fake db's join returns the draft_assets rows, so they carry the asset's columns too.
+    db.store.set("draft_assets", [{ id: "a1", brandId: "b1", kind: "video", storageUrl: "r2://w/c/previews/cut.mp4", thumbnailUrl: null, mimeType: "video/mp4", width: null, height: null, durationSec: 15, sizeBytes: null, slotIndex: 0, role: "primary" }]);
+    const publish = vi.fn().mockResolvedValue({ externalId: "", url: "", pending: true, containerId: "c1" });
+    try {
+      await publishDuePosts({
+        db: db as unknown as NonNullable<Parameters<typeof publishDuePosts>[0]>["db"],
+        getPublisherFor: () => mkPublisher({ publish }),
+      });
+    } finally {
+      for (const k of ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"]) delete process.env[k];
+    }
+    const [post, assets] = publish.mock.calls[0];
+    expect(post.format).toBe("story");
+    expect(post.thumb_offset_ms).toBe(1000);
+    expect(assets[0].storage_url).toMatch(/^https:\/\/.*w\/c\/previews\/cut\.mp4\?.*X-Amz-Signature=/);
+  });
+
+  it("tells the published listeners, with the post's link", async () => {
+    const db = buildDb();
+    const seen: Array<{ postId: string; externalUrl: string }> = [];
+    const off = onPostPublished((p) => void seen.push({ postId: p.postId, externalUrl: p.externalUrl }));
+    try {
+      await publishDuePosts({
+        db: db as unknown as NonNullable<Parameters<typeof publishDuePosts>[0]>["db"],
+        getPublisherFor: () => mkPublisher({ publish: vi.fn().mockResolvedValue({ externalId: "m1", url: "https://instagram.com/p/x" }) }),
+      });
+    } finally {
+      off();
+    }
+    expect(seen).toEqual([{ postId: "p1", externalUrl: "https://instagram.com/p/x" }]);
   });
 });
