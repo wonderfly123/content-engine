@@ -11,7 +11,7 @@ export const edlEntrySchema = z.object({
   in: z.number().nonnegative(),
   dur: z.number().positive(),
   // Same limits as the worker (workers/editor/contract.py): a fast pan can be sped up a lot.
-  speed: z.number().positive().max(100),
+  speed: z.number().positive().max(500),
   cropX: z.number().nullable(),
 });
 

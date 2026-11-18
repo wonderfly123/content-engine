@@ -115,16 +115,16 @@ describe("POST /api/editor/callback", () => {
     expect((await send(result("99999999-9999-4999-8999-999999999999"))).status).toBe(404);
   });
 
-  it("accepts what the worker accepts: a fast pan over 16x and a long title", async () => {
+  it("accepts what the worker accepts: a long take at 300x and a long title", async () => {
     const id = await runningJob();
-    const fast = cut(id, { title: "T".repeat(500), edl: [{ mediaId: a.mediaId, in: 0, dur: 30, speed: 24, cropX: null }] });
+    const fast = cut(id, { title: "T".repeat(500), edl: [{ mediaId: a.mediaId, in: 0, dur: 30, speed: 300, cropX: null }] });
     expect((await send(result(id, { manifest: { cuts: [fast] } }))).status).toBe(200);
     expect((await job(id)).status).toBe("done");
   });
 
   it("a result in the wrong shape fails its job at once, with the field that failed", async () => {
     const id = await runningJob();
-    const bad = cut(id, { edl: [{ mediaId: a.mediaId, in: 0, dur: 3, speed: 500, cropX: null }] });
+    const bad = cut(id, { edl: [{ mediaId: a.mediaId, in: 0, dur: 3, speed: 900, cropX: null }] });
     expect((await send(result(id, { manifest: { cuts: [bad] } }))).status).toBe(400);
     const j = await job(id);
     expect(j.status).toBe("failed");

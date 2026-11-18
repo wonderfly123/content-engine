@@ -264,8 +264,8 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
                 media_id = e["mediaId"]
             if media_id is None:
                 raise ManifestError(f"{where} shot {j} uses a clip that is not in this job.")
-            if not (_num(e.get("in")) and e["in"] >= 0 and _num(e.get("dur")) and e["dur"] > 0 and _num(e.get("speed")) and 0 < e["speed"] <= 100):
-                raise ManifestError(f"{where} shot {j} needs in >= 0, dur > 0 and speed between 0 and 100.")
+            if not (_num(e.get("in")) and e["in"] >= 0 and _num(e.get("dur")) and e["dur"] > 0 and _num(e.get("speed")) and 0 < e["speed"] <= 500):
+                raise ManifestError(f"{where} shot {j} needs in >= 0, dur > 0 and speed between 0 and 500.")
             crop = e.get("cropX")
             if crop is not None and not (_num(crop) and 0 <= crop <= 1):
                 raise ManifestError(f"{where} shot {j} has cropX outside 0-1.")
