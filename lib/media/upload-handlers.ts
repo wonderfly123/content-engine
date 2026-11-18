@@ -210,6 +210,13 @@ export async function uploadsDone(req: NextRequest, access: ConversationAccess, 
   const body = [clipsAddedMessage(clips.length, total), description, seconds ? `Length: ${seconds} seconds` : null].filter(Boolean).join("\n\n");
   const message = await addMessage({ conversationId: access.conversation.id, direction: "in", channel, body, authorUserId: access.user.userId });
 
+  // A campaign chat's uploads join the brand's library (once ready) for the plan; nothing is edited until "go".
+  if (access.conversation.kind === "campaign") {
+    const n = clips.length;
+    await postEditorMessage(access.conversation, `Got your ${n} ${n === 1 ? "clip" : "clips"}. They're going into your library, so I can use them in the plan.`, { channel: "app" });
+    return NextResponse.json({ messageId: message.id, count: n, totalBytes: total, editor: { queued: false } });
+  }
+
   // Name it once, from what they said it's about.
   let thread = access.conversation;
   let namedReply: string | null = null;

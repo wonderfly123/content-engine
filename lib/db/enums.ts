@@ -170,8 +170,8 @@ export const eventActorValues = ["system", "user"] as const;
 export const eventActorEnum = pgEnum("event_actor", eventActorValues);
 export type EventActor = (typeof eventActorValues)[number];
 
-// Conversations with the video editor (lib/conversations).
-export const conversationKindValues = ["reel", "story"] as const;
+// Conversations with the video editor (lib/conversations). "campaign": one chat that plans and makes many videos (lib/campaigns).
+export const conversationKindValues = ["reel", "story", "campaign"] as const;
 export const conversationKindEnum = pgEnum("conversation_kind", conversationKindValues);
 export type ConversationKind = (typeof conversationKindValues)[number];
 

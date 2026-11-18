@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { Clip } from "./clip-list";
 import { UploadProgress } from "./clip-uploader";
 import { EditingBubble, EditorAvatar, EditorCuts, type EditorJobView } from "./editor-cuts";
+import { CampaignPlan, campaignKey } from "./campaign-plan";
 import { SchedulePanel } from "./schedule-panel";
 import { kindLabel, type Channel, type Kind } from "./shared";
 import { useClipUploads } from "./use-clip-uploads";
@@ -186,7 +187,10 @@ export function ThreadView({
       if (json.conversationId && json.conversationId !== id) {
         if (onSwitch) onSwitch(json.conversationId);
         else router.push(`/conversations/${json.conversationId}`);
-      } else await qc.invalidateQueries({ queryKey: ["conversation", id] });
+      } else {
+        void qc.invalidateQueries({ queryKey: campaignKey(id) });
+        await qc.invalidateQueries({ queryKey: ["conversation", id] });
+      }
     } catch (e) {
       // Not sent: take it back out and give the text back to edit.
       if (before) qc.setQueryData(key, before);
@@ -197,13 +201,19 @@ export function ThreadView({
     }
   };
 
-  const approve = async () => {
+  /** A campaign chat names the plan item's job; a reel or story chat approves its latest cut. */
+  const approve = async (jobId?: string) => {
     if (approving) return;
     setApproving(true);
     try {
-      const res = await fetch(`/api/conversations/${id}/approve`, { method: "POST" });
+      const res = await fetch(`/api/conversations/${id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(jobId ? { jobId } : {}),
+      });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      void qc.invalidateQueries({ queryKey: campaignKey(id) });
       await qc.invalidateQueries({ queryKey: ["conversation", id] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -226,6 +236,7 @@ export function ThreadView({
 
   const c = data.conversation;
   const closed = c.status === "closed";
+  const campaign = c.kind === "campaign";
   const { byMessage, rest } = attachClips(data.messages, data.clips ?? []);
   // Messages use the whole pane (editor on the far left, you on the far right); the message box stays centred.
   const column = cn("mx-auto w-full", compact ? "px-3" : "px-4 sm:px-12 lg:px-20");
@@ -274,6 +285,9 @@ export function ThreadView({
         ) : null}
       </div>
 
+      {/* A campaign's plan stays pinned above its chat. */}
+      {campaign && <CampaignPlan conversationId={id} closed={closed} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
+
       {/* Messages */}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
         <div ref={content} className={cn(column, "space-y-8 pb-16 pt-8")}>
@@ -290,8 +304,10 @@ export function ThreadView({
             </div>
           )}
           {running && <EditingBubble steps={data.editor?.steps} startedAt={data.editor?.startedAt} />}
-          {/* After approval: when it posts (the same step as the watch page and texts) */}
-          {!closed && <SchedulePanel conversationId={id} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
+          {/* A campaign's editor thinks before it answers (a Claude call, up to a minute or so). */}
+          {campaign && sending && !running && <EditingBubble steps={[{ label: "Thinking it through", at: new Date().toISOString() }]} />}
+          {/* After approval: when it posts (the same step as the watch page and texts). A campaign schedules each video at its plan date. */}
+          {!closed && !campaign && <SchedulePanel conversationId={id} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
           {data.messages.length === 0 && <p className="text-center text-sm text-muted-foreground">No messages yet.</p>}
         </div>
       </div>
@@ -348,7 +364,11 @@ export function ThreadView({
                 <ArrowUp aria-hidden="true" />
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground">Add clips with the paperclip or drop them here. Ask for changes, or reply &ldquo;yes&rdquo; to approve.</p>
+            <p className="text-center text-xs text-muted-foreground">
+              {campaign
+                ? "Talk through the campaign, say “make the plan”, then “go” for each video. Clips you add go into the library."
+                : "Add clips with the paperclip or drop them here. Ask for changes, or reply “yes” to approve."}
+            </p>
           </>
         )}
       </div>
@@ -430,7 +450,7 @@ function Turn({
   mine: boolean;
   compact: boolean;
   story: boolean;
-  onApprove: () => void;
+  onApprove: (jobId?: string) => void;
   approving: boolean;
 }) {
   // A clips upload is always the person's, even on older threads that stored it as the editor's.
@@ -449,7 +469,7 @@ function Turn({
       {/* Kept to a readable width on the left, so your messages on the right stand clearly apart. */}
       <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-2">
         <div className="whitespace-pre-wrap break-words pt-0.5 text-[15px] leading-relaxed">{m.body}</div>
-        {m.editor && <EditorCuts job={m.editor} compact={compact} story={story} onApprove={onApprove} approving={approving} />}
+        {m.editor && <EditorCuts job={m.editor} compact={compact} story={story} onApprove={() => onApprove(m.editor?.id)} approving={approving} />}
         <Meta m={m} teammate={false} />
       </div>
     </div>

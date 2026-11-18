@@ -38,6 +38,15 @@ export interface ScheduleEditorCutInput {
   when: Date;
   /** Reels only (Stories have no trial mode). Default "trial-manual", like the montage skill. */
   mode?: ReelMode;
+  /** A campaign item says reel or story itself (the chat is neither); default: the thread's kind. */
+  format?: "reel" | "story";
+  /** A campaign item's own title; default: the thread's name, else the cut's. */
+  title?: string;
+  /**
+   * Whether the thread is linked to the post (publishing it then closes the thread). A campaign chat
+   * makes many posts and stays open, so it is not linked. Default true.
+   */
+  linkThread?: boolean;
 }
 
 export interface ScheduledEditorCut {
@@ -98,8 +107,8 @@ export async function scheduleEditorCut(input: ScheduleEditorCutInput): Promise<
 
   // Scheduling the same cut again moves the time instead of making a second post.
   const existing = await scheduledPostFor(jobId, cutId);
-  const format = access.conversation.kind === "story" ? "story" : "reel";
-  const title = conversationTitle(access.conversation) ?? cut.title;
+  const format = input.format ?? (access.conversation.kind === "story" ? "story" : "reel");
+  const title = input.title?.trim() || (conversationTitle(access.conversation) ?? cut.title);
   if (existing) {
     if (existing.status !== "queued") throw new ScheduleError(existing.status === "published" ? "This one is already posted." : "This one is already posting.");
     await db.update(posts).set({ scheduledFor: when, updatedAt: new Date() }).where(eq(posts.id, existing.postId));
@@ -152,7 +161,7 @@ export async function scheduleEditorCut(input: ScheduleEditorCutInput): Promise<
       .insert(posts)
       .values({ draftId: draft.id, brandId: brand.id, channel: "instagram", status: "queued", scheduledFor: when })
       .returning({ id: posts.id });
-    await tx.update(conversations).set({ postId: post.id, updatedAt: new Date() }).where(eq(conversations.id, access.conversation.id));
+    if (input.linkThread !== false) await tx.update(conversations).set({ postId: post.id, updatedAt: new Date() }).where(eq(conversations.id, access.conversation.id));
     return { postId: post.id, when, format, title };
   });
 }

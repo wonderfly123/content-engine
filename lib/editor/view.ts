@@ -18,10 +18,12 @@ export interface CutView {
 }
 
 export interface EditorJobView {
+  /** The job's id: a campaign chat approves one plan item's job by id. */
+  id: string;
   status: EditorJobStatus;
   costUsd: number | null;
   cuts: CutView[];
-  /** Only the thread's latest finished job can be approved. */
+  /** Only the thread's latest finished job can be approved (in a campaign: its plan item's latest). */
   approvable: boolean;
   /** What the editor did, step by step, and how long it took (seconds; null while running). */
   steps: Array<{ label: string; at: string }>;
@@ -44,10 +46,15 @@ export async function threadEditorView(thread: ConversationRow, now: Date = new 
   );
   if (stale && (await recoverStuckEditorJobs(now, thread.id)) > 0) jobs = await jobsForThread(thread.id, thread.workspaceId);
 
-  const latestDone = jobs.find((j) => (j.status === "done" || j.status === "approved") && (j.manifest?.cuts.length ?? 0) > 0);
+  const hasCuts = (j: (typeof jobs)[number]) => (j.status === "done" || j.status === "approved") && (j.manifest?.cuts.length ?? 0) > 0;
+  const latestDone = jobs.find(hasCuts);
+  // Campaign chats have one current cut per plan item; jobs are newest first, so the first seen wins.
+  const latestOfItem = new Map<string, string>();
+  for (const j of jobs) if (j.campaignItemId && hasCuts(j) && !latestOfItem.has(j.campaignItemId)) latestOfItem.set(j.campaignItemId, j.id);
   const views = new Map<string, EditorJobView>();
   for (const j of jobs) {
     views.set(j.id, {
+      id: j.id,
       status: j.status,
       costUsd: j.costUsd === null ? null : Number(j.costUsd),
       cuts: (j.manifest?.cuts ?? []).map((c) => ({
@@ -58,7 +65,7 @@ export async function threadEditorView(thread: ConversationRow, now: Date = new 
         hookOptions: c.hookOptions,
         caption: c.caption,
       })),
-      approvable: j.status === "done" && latestDone?.id === j.id,
+      approvable: j.status === "done" && (j.campaignItemId ? latestOfItem.get(j.campaignItemId) === j.id : latestDone?.id === j.id),
       steps: j.progress ?? [],
       seconds: j.startedAt && j.finishedAt ? Math.round((j.finishedAt.getTime() - j.startedAt.getTime()) / 1000) : null,
     });
