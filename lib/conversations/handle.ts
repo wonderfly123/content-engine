@@ -167,7 +167,8 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
   } else {
     const all = await findOpenThreads(input.workspaceId, input.userId);
     offBrand = allowed ? all.filter((t) => t.brandId && !allowed.includes(t.brandId)) : [];
-    open = all.filter((t) => !offBrand.includes(t));
+    // Campaign chats are app only (lib/campaigns/chat.ts): a text never lands in one.
+    open = all.filter((t) => !offBrand.includes(t) && t.kind !== "campaign");
     const named = pickByName(body, open);
     if (named) body = named.rest;
     // Aimed by name, else the video the person last heard about.
@@ -184,6 +185,8 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
       }
     }
   }
+  // The messages route hands campaign chats to lib/campaigns/chat.ts; they never take this path.
+  if (target?.kind === "campaign") throw new AccessError(404, "Not found.");
   // After approval: a time schedules it, UNDO takes it off the calendar (texts and app alike).
   if (target && target.status === "open") {
     const after = await afterApproval(input, target, body);

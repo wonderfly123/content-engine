@@ -3,15 +3,15 @@
 import { Monitor, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, Film } from "lucide-react";
+import { Clapperboard, Film, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type Kind = "reel" | "story" | null;
+export type Kind = "reel" | "story" | "campaign" | null;
 export type Channel = "sms" | "app";
 
-export const kindLabel = (kind: Kind) => (kind === "reel" ? "Reel" : kind === "story" ? "Story" : "Reel or story?");
+export const kindLabel = (kind: Kind) => (kind === "reel" ? "Reel" : kind === "story" ? "Story" : kind === "campaign" ? "Campaign" : "Reel or story?");
 
 /** "Text" or "App", with an icon: where a message was written or sent. */
 export function ChannelMarker({ channel, className }: { channel: Channel; className?: string }) {
@@ -24,7 +24,7 @@ export function ChannelMarker({ channel, className }: { channel: Channel; classN
   );
 }
 
-/** New reel / New story: closes your open thread and opens a new one for this brand. */
+/** New reel / New story / New campaign: opens a new chat for this brand (a campaign plans and makes many videos). */
 export function NewThreadButtons({
   brandId,
   size = "sm",
@@ -36,9 +36,9 @@ export function NewThreadButtons({
   onStarted?: (conversationId: string) => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<"reel" | "story" | null>(null);
+  const [busy, setBusy] = useState<"reel" | "story" | "campaign" | null>(null);
 
-  const start = async (kind: "reel" | "story") => {
+  const start = async (kind: "reel" | "story" | "campaign") => {
     if (!brandId) return;
     setBusy(kind);
     try {
@@ -62,7 +62,7 @@ export function NewThreadButtons({
   };
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button size={size} onClick={() => start("reel")} disabled={!brandId || busy !== null}>
         <Clapperboard className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
         {busy === "reel" ? "Starting..." : "New reel"}
@@ -70,6 +70,10 @@ export function NewThreadButtons({
       <Button size={size} variant="outline" onClick={() => start("story")} disabled={!brandId || busy !== null}>
         <Film className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
         {busy === "story" ? "Starting..." : "New story"}
+      </Button>
+      <Button size={size} variant="outline" onClick={() => start("campaign")} disabled={!brandId || busy !== null}>
+        <Megaphone className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+        {busy === "campaign" ? "Starting..." : "New campaign"}
       </Button>
     </div>
   );

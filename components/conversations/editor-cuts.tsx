@@ -21,6 +21,8 @@ export interface Step {
 }
 
 export interface EditorJobView {
+  /** The job's id: a campaign chat approves one plan item's job by id. */
+  id?: string;
   status: "queued" | "running" | "done" | "failed" | "approved";
   costUsd: number | null;
   cuts: CutView[];

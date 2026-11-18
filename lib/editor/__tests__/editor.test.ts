@@ -265,10 +265,11 @@ describe("approving", () => {
 
 describe("GET /api/conversations/[id]", () => {
   it("gives the editor reply its cuts and cost, and says when a job is running", async () => {
-    const { editorMessageId, previewMediaId } = await seedEditorJob(db, a, "Alpha");
+    const { editorMessageId, previewMediaId, editorJobId } = await seedEditorJob(db, a, "Alpha");
     let json = await (await threadRoute(new NextRequest("http://localhost/x"), ctx({ id: a.conversationId }))).json();
     const reply = json.messages.find((m: { id: string }) => m.id === editorMessageId);
     expect(reply.editor).toEqual({
+      id: editorJobId,
       status: "done",
       costUsd: 1.42,
       approvable: true,

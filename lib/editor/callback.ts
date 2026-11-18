@@ -3,10 +3,11 @@
  * is still `running` is applied, once; any later or repeated callback is acknowledged and ignored.
  *
  * Nothing the worker says is taken on trust: every preview key must sit under that job's own
- * prefix and exist in storage, every clip an edit list names must be a raw clip of that thread,
- * and the media rows (workspace, thread, brand, size) are built here from the job and storage.
+ * prefix and exist in storage, every clip an edit list names must be a raw clip of that thread (or
+ * a library clip of the same workspace and brand that the job was sent), and the media rows
+ * (workspace, thread, brand, size) are built here from the job and storage.
  */
-import { and, desc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { addMessage } from "@/lib/conversations/store";
 import { db, schema } from "@/lib/db";
 import { isJobPreviewKey } from "@/lib/storage/keys";
@@ -63,6 +64,8 @@ async function reusablePreviews(job: EditorJobRow): Promise<Map<string, string>>
       and(
         eq(editorJobs.conversationId, job.conversationId),
         eq(editorJobs.workspaceId, job.workspaceId),
+        // In a campaign, only the same plan item's earlier version.
+        ...(job.campaignItemId ? [eq(editorJobs.campaignItemId, job.campaignItemId)] : []),
         inArray(editorJobs.status, ["done", "approved"]),
         isNotNull(editorJobs.manifest),
         lt(editorJobs.createdAt, job.createdAt),
@@ -106,13 +109,18 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
 
   const named = [...new Set(manifest.cuts.flatMap((c) => c.edl.map((e) => e.mediaId.toLowerCase())))];
   if (named.length > 0) {
+    // A clip of this thread, or a library clip the job was sent (a campaign's footage from the brand's
+    // other chats), checked again here: same workspace and same brand as the job, never anyone else's.
+    const sent = (job.clipIds ?? []).map((id) => id.toLowerCase());
+    const ownThread = eq(mediaObjects.conversationId, job.conversationId);
+    const sentLibrary = sent.length > 0 && job.brandId ? and(inArray(mediaObjects.id, sent), eq(mediaObjects.brandId, job.brandId)) : undefined;
     const found = await db
       .select({ id: mediaObjects.id })
       .from(mediaObjects)
       .where(
         and(
           inArray(mediaObjects.id, named),
-          eq(mediaObjects.conversationId, job.conversationId),
+          sentLibrary ? or(ownThread, sentLibrary) : ownThread,
           eq(mediaObjects.workspaceId, job.workspaceId),
           eq(mediaObjects.kind, "raw"),
           isNull(mediaObjects.deletedAt),

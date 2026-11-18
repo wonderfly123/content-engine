@@ -50,6 +50,7 @@ export const routes: RouteAttack[] = [
   { route: "app/api/conversations/[id]/schedule/route.ts", method: "DELETE", build: (v) => ({ params: { id: v.conversationId } }) },
   { route: "app/api/conversations/route.ts", method: "GET", build: (v) => ({ query: { brandId: v.brandId } }) },
   { route: "app/api/conversations/route.ts", method: "POST", build: (v) => ({ body: { brandId: v.brandId, kind: "reel" } }) },
+  { route: "app/api/conversations/route.ts", method: "POST", name: "a campaign for their brand", build: (v) => ({ body: { brandId: v.brandId, kind: "campaign" } }) },
   { route: "app/api/conversations/[id]/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },
   {
     route: "app/api/conversations/[id]/messages/route.ts",
@@ -124,6 +125,22 @@ export const routes: RouteAttack[] = [
 
   // ---- the editor: approving cuts, watching previews, and the worker's own routes
   { route: "app/api/conversations/[id]/approve/route.ts", method: "POST", build: (v) => ({ params: { id: v.conversationId } }) },
+  {
+    route: "app/api/conversations/[id]/approve/route.ts",
+    method: "POST",
+    name: "their thread, naming their job",
+    build: (v) => ({ params: { id: v.conversationId }, body: { jobId: v.editorJobId! } }),
+  },
+
+  // ---- campaigns: the plan pinned in a campaign chat (a reel chat answers null / 409 to its owner)
+  { route: "app/api/conversations/[id]/campaign/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },
+  { route: "app/api/conversations/[id]/campaign/route.ts", method: "POST", name: "make their next video", build: (v) => ({ params: { id: v.conversationId }, body: { action: "next" } }) },
+  {
+    route: "app/api/conversations/[id]/campaign/route.ts",
+    method: "POST",
+    name: "approve their calendar",
+    build: (v) => ({ params: { id: v.conversationId }, body: { action: "approve_plan" } }),
+  },
   { route: "app/api/media/[mediaId]/route.ts", method: "GET", name: `their preview, ${STORAGE_OFF}`, build: (v) => ({ params: { mediaId: v.previewMediaId! } }) },
   {
     route: "app/api/editor/uploads/route.ts",

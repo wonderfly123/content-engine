@@ -53,6 +53,8 @@ export interface EditorHandoff {
   reason?: string;
   /** What to say back in the thread; none means the router's own reply stands. */
   reply?: string | null;
+  /** The job that was sent, when queued. */
+  jobId?: string;
 }
 
 export interface EditorJobRequest {
@@ -112,6 +114,8 @@ async function recentRequests(conversationId: string): Promise<string> {
 export async function startEditorJob(threadId: string, messageId: string, origin?: string | null): Promise<EditorHandoff> {
   const [thread] = await db.select().from(conversations).where(eq(conversations.id, threadId)).limit(1);
   if (!thread || thread.status !== "open") return { queued: false, reason: "no open thread" };
+  // A campaign makes its videos from the plan (lib/campaigns/run.ts), never from a loose message.
+  if (thread.kind === "campaign") return { queued: false, reason: "campaign thread" };
   // The router asks "Reel or story?" / "Which brand?" first.
   if (!thread.kind) return { queued: false, reason: "kind not known yet" };
   if (!thread.brandId) {
@@ -142,8 +146,6 @@ export async function startEditorJob(threadId: string, messageId: string, origin
 
   await recoverStuckEditorJobs(new Date(), thread.id);
   if (await activeJob(thread.id)) return { queued: false, reason: "busy", reply: REPLIES.busy };
-  const apiKey = await getCredential(thread.workspaceId, "anthropic");
-  if (!apiKey) return { queued: false, reason: "no anthropic key", reply: REPLIES.noKey };
 
   const [brand] = await db
     .select()
@@ -154,6 +156,49 @@ export async function startEditorJob(threadId: string, messageId: string, origin
   const previous = await latestFinishedJob(thread.id);
   const kind: EditorJobKind = previous?.manifest ? "revision" : "first_cut";
   const request = (byClips ? await recentRequests(thread.id) : trigger.body).slice(0, MAX_REQUEST_CHARS);
+  const handoff = await dispatchEditorJob({
+    thread,
+    brand,
+    kind,
+    videoKind: thread.kind === "story" ? "story" : "reel",
+    request,
+    instructions: "",
+    clips: ready,
+    previous: previous?.manifest ?? null,
+    triggerMessageId: trigger.id,
+    origin,
+  });
+  return handoff.queued ? { queued: true, reply: kind === "revision" ? REPLIES.revision : REPLIES.firstCut } : handoff;
+}
+
+type BrandRow = typeof brands.$inferSelect;
+type MediaRow = typeof mediaObjects.$inferSelect;
+
+export interface DispatchInput {
+  thread: typeof conversations.$inferSelect;
+  brand: BrandRow;
+  kind: EditorJobKind;
+  videoKind: "reel" | "story";
+  request: string;
+  instructions: string;
+  /** Ready raw clips, already checked to belong to the thread's workspace (and brand, for library clips). */
+  clips: MediaRow[];
+  previous: EditorManifest | null;
+  triggerMessageId: string | null;
+  /** In a campaign chat: the plan item this job makes. */
+  campaignItemId?: string | null;
+  origin?: string | null;
+}
+
+/**
+ * Records the job (one in flight per thread), then sends it to the worker with presigned links to
+ * the given clips and the workspace's own key. The caller has checked the thread, brand and clips.
+ */
+export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHandoff> {
+  const { thread, brand, kind, request } = input;
+  const apiKey = await getCredential(thread.workspaceId, "anthropic");
+  if (!apiKey) return { queued: false, reason: "no anthropic key", reply: REPLIES.noKey };
+  const clipRows = input.clips.filter((m) => isWorkspaceKey(m.r2Key, thread.workspaceId));
 
   const jobId = randomUUID();
   try {
@@ -164,9 +209,11 @@ export async function startEditorJob(threadId: string, messageId: string, origin
       brandId: brand.id,
       kind,
       status: "queued",
-      triggerMessageId: trigger.id,
+      triggerMessageId: input.triggerMessageId,
       request,
       model: EDITOR_MODEL,
+      campaignItemId: input.campaignItemId ?? null,
+      clipIds: clipRows.map((m) => m.id),
     });
   } catch (err) {
     if (isUniqueViolation(err)) return { queued: false, reason: "busy", reply: REPLIES.busy };
@@ -182,7 +229,7 @@ export async function startEditorJob(threadId: string, messageId: string, origin
 
   let clips: EditorJobRequest["clips"];
   try {
-    clips = ready.map((m) => ({ mediaId: m.id, filename: m.filename, url: presignGet(m.r2Key, EDITOR_LINK_SECONDS) }));
+    clips = clipRows.map((m) => ({ mediaId: m.id, filename: m.filename, url: presignGet(m.r2Key, EDITOR_LINK_SECONDS) }));
   } catch {
     await failJob(jobId, "Storage is not configured.");
     return { queued: false, reason: "storage not configured", reply: REPLIES.storageOff };
@@ -192,16 +239,16 @@ export async function startEditorJob(threadId: string, messageId: string, origin
   const now = new Date();
   await db.update(editorJobs).set({ status: "running", startedAt: now, updatedAt: now }).where(and(eq(editorJobs.id, jobId), eq(editorJobs.status, "queued")));
 
-  const base = appUrl(origin);
+  const base = appUrl(input.origin);
   const job: EditorJobRequest = {
     jobId,
     kind,
-    videoKind: thread.kind,
+    videoKind: input.videoKind,
     brand: { name: brand.name, voice: brandVoice(brand) },
-    instructions: "",
+    instructions: input.instructions,
     request,
     clips,
-    previous: previous?.manifest ? { manifest: previous.manifest } : null,
+    previous: input.previous ? { manifest: input.previous } : null,
     uploads: { url: `${base}${UPLOADS_PATH}?job=${jobId}` },
     anthropicApiKey: apiKey,
     model: EDITOR_MODEL,
@@ -227,5 +274,5 @@ export async function startEditorJob(threadId: string, messageId: string, origin
     await failJob(jobId, "The editor worker could not be reached.", ["running"]);
     return { queued: false, reason: "unreachable", reply: REPLIES.refused };
   }
-  return { queued: true, reply: kind === "revision" ? REPLIES.revision : REPLIES.firstCut };
+  return { queued: true, jobId };
 }

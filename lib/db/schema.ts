@@ -65,6 +65,8 @@ export * from "./schema-conversations";
 export * from "./schema-media";
 // The cloud video editor's jobs reach their workspace directly, through their conversation.
 export * from "./schema-editor";
+// Campaigns: one chat that plans and makes many videos (lib/campaigns).
+export * from "./schema-campaigns";
 
 const ts = () => timestamp({ withTimezone: true }).defaultNow().notNull();
 const tsNullable = () => timestamp({ withTimezone: true });

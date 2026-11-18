@@ -8,10 +8,11 @@
  * At most one job per conversation is queued or running at a time.
  */
 import { sql } from "drizzle-orm";
-import { index, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { EditorManifest, EditorUsage } from "@/lib/editor/manifest";
 import { editorJobKindEnum, editorJobStatusEnum } from "./enums";
 import { brands, workspaces } from "./schema";
+import { campaignItems } from "./schema-campaigns";
 import { conversationMessages, conversations } from "./schema-conversations";
 
 export const editorJobs = pgTable(
@@ -43,6 +44,13 @@ export const editorJobs = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** In a campaign chat: the plan item this job makes (lib/campaigns). Null for reel and story chats. */
+    campaignItemId: uuid("campaign_item_id").references((): AnyPgColumn => campaignItems.id, { onDelete: "set null" }),
+    /**
+     * Every clip (media id) the worker was sent. An edit list may name these, besides the thread's own
+     * clips: a campaign uses library clips from the brand's other chats (checked again in the callback).
+     */
+    clipIds: jsonb("clip_ids").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -50,6 +58,7 @@ export const editorJobs = pgTable(
     index("editor_jobs_conversation_idx").on(t.conversationId, t.createdAt),
     index("editor_jobs_workspace_idx").on(t.workspaceId),
     index("editor_jobs_status_idx").on(t.status, t.startedAt),
+    index("editor_jobs_campaign_item_idx").on(t.campaignItemId, t.createdAt),
     // At most one job in flight per conversation.
     uniqueIndex("editor_jobs_one_active_per_conversation")
       .on(t.conversationId)
