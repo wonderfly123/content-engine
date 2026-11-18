@@ -193,7 +193,7 @@ export interface ReplyContext {
   brands: BrandRef[];
   /** Whether this thread has already asked which brand (it asks once). */
   askedBrand: boolean;
-  /** Link to the thread in the app. */
+  /** Where to add clips: for a text, the thread's upload link (no sign-in); in the app, the thread. */
   link: string;
 }
 
@@ -206,9 +206,9 @@ export function nextQuestion(ctx: ReplyContext): string | null {
   return null;
 }
 
-/** Clips cannot come by text (carrier limits): texts get a link to the thread in the app. */
+/** Clips cannot come by text (carriers shrink video): texts get the thread's upload link instead. */
 export function footageLine(channel: MessageChannel, link: string): string {
-  return channel === "sms" ? `Send your clips in the app: ${link}` : "Add your clips with the paperclip below, or drop them in.";
+  return channel === "sms" ? `Tap to add your clips: ${link}` : "Add your clips with the paperclip below, or drop them in.";
 }
 
 function subject(ctx: ReplyContext): string {

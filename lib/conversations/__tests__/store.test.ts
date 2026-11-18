@@ -62,7 +62,7 @@ describe("one open thread per person", () => {
     const open = await openThreads(a.workspaceId);
     expect(open).toHaveLength(1);
     expect(open[0]).toMatchObject({ id: result.conversationId, kind: "reel", brandId: a.brandId, startedVia: "sms" });
-    expect(result.reply).toBe(`New reel for Alpha brand started. Send your clips in the app: https://app.test/conversations/${result.conversationId}`);
+    expect(result.reply).toMatch(/^New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
   });
 });
 

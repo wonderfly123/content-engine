@@ -1,0 +1,107 @@
+"use client";
+
+import { useRef } from "react";
+import { CheckCircle2, Loader2, Plus, RotateCcw, X } from "lucide-react";
+import { useClipUploads, type UploadItem } from "@/components/conversations/use-clip-uploads";
+import { formatBytes } from "@/lib/media/rules";
+
+const pct = (i: UploadItem) => (i.file.size ? Math.min(100, Math.round((i.uploaded / i.file.size) * 100)) : 0);
+
+/** The phone page behind an upload link: pick clips, watch them go up, done. Finished batches are reported automatically. */
+export function UploadLinkClient({ token, conversationId, title }: { token: string; conversationId: string; title: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const { items, uploading, addFiles, cancel, resume, retry } = useClipUploads(conversationId, () => undefined, `/api/u/${token}/uploads`);
+  const done = items.filter((i) => i.status === "done");
+  const allDone = items.length > 0 && !uploading && items.every((i) => i.status === "done" || i.status === "cancelled");
+
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-5 pb-10 pt-8">
+      <header>
+        <p className="text-sm font-medium text-muted-foreground">Nekter</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
+        <p className="mt-1 text-muted-foreground">Pick the clips from your camera roll. They upload at full quality.</p>
+      </header>
+
+      <input
+        ref={input}
+        type="file"
+        accept="video/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          addFiles(Array.from(e.target.files ?? []));
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => input.current?.click()}
+        className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-lg font-semibold text-white shadow-md active:scale-[0.99]"
+      >
+        <Plus className="h-6 w-6" aria-hidden="true" />
+        {items.length ? "Add more clips" : "Add clips"}
+      </button>
+
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {items.map((i) => (
+            <li key={i.id} className="rounded-xl border bg-background p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{i.file.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {i.status === "done"
+                      ? `Uploaded · ${formatBytes(i.file.size)}`
+                      : i.status === "failed"
+                        ? i.error ?? "Didn't upload."
+                        : i.status === "cancelled"
+                          ? "Cancelled"
+                          : i.status === "resumable"
+                            ? "Paused, tap resume"
+                            : `${pct(i)}% of ${formatBytes(i.file.size)}`}
+                  </p>
+                </div>
+                {i.status === "done" && <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" aria-label="Uploaded" />}
+                {(i.status === "uploading" || i.status === "queued") && (
+                  <button type="button" onClick={() => cancel(i.id)} className="shrink-0 rounded-full p-2 text-muted-foreground" aria-label="Cancel">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+                {i.status === "resumable" && (
+                  <button type="button" onClick={() => resume(i.id)} className="shrink-0 rounded-md border px-3 py-1.5 text-sm">
+                    Resume
+                  </button>
+                )}
+                {i.status === "failed" && (
+                  <button type="button" onClick={() => retry(i.id)} className="shrink-0 rounded-full p-2" aria-label="Try again">
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {(i.status === "uploading" || i.status === "queued") && (
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-orange-500 transition-[width]" style={{ width: `${pct(i)}%` }} />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {uploading && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Keep this page open until they finish.
+        </p>
+      )}
+      {allDone && done.length > 0 && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-100">
+          <p className="font-semibold">
+            {done.length} {done.length === 1 ? "clip" : "clips"} sent to the editor.
+          </p>
+          <p className="mt-1 text-sm">We&apos;ll text you when the first cut is ready. You can close this page.</p>
+        </div>
+      )}
+    </main>
+  );
+}

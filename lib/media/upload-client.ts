@@ -126,8 +126,13 @@ const sleep = (ms: number, signal: AbortSignal) =>
 /** The server refused (gone, not uploading, closed, not set up): retrying a part will not help. */
 const isFinal = (err: unknown) => err instanceof UploadError && [400, 404, 409, 413, 415, 422, 503].includes(err.status ?? 0);
 
+/** The signed-in upload routes for a thread; an upload link uses /api/u/<token>/uploads instead. */
+export const uploadsBase = (conversationId: string) => `/api/conversations/${conversationId}/uploads`;
+
 export interface UploadOptions {
   conversationId: string;
+  /** Where the upload routes live (default: the signed-in ones for the thread). */
+  base?: string;
   file: File;
   resume?: ResumeEntry | null;
   signal: AbortSignal;
@@ -152,7 +157,7 @@ export async function uploadClip(o: UploadOptions): Promise<string> {
 
 async function run(o: UploadOptions, resume: ResumeEntry | null): Promise<string> {
   const { conversationId, file } = o;
-  const base = `/api/conversations/${conversationId}/uploads`;
+  const base = o.base ?? uploadsBase(conversationId);
   const ctrl = new AbortController();
   const signal = ctrl.signal;
   if (o.signal.aborted) throw new UploadCancelled();
@@ -234,11 +239,11 @@ async function run(o: UploadOptions, resume: ResumeEntry | null): Promise<string
 }
 
 /** Cancels a clip on the server (best effort). */
-export async function abortClip(conversationId: string, mediaId: string): Promise<void> {
-  await fetch(`/api/conversations/${conversationId}/uploads/${mediaId}/abort`, { method: "POST" }).catch(() => undefined);
+export async function abortClip(conversationId: string, mediaId: string, base = uploadsBase(conversationId)): Promise<void> {
+  await fetch(`${base}/${mediaId}/abort`, { method: "POST" }).catch(() => undefined);
 }
 
 /** After a batch: one message in the thread, and the hand-off to the editor. */
-export async function reportBatchDone(conversationId: string, mediaIds: string[]): Promise<void> {
-  await api(`/api/conversations/${conversationId}/uploads/done`, { mediaIds });
+export async function reportBatchDone(conversationId: string, mediaIds: string[], base = uploadsBase(conversationId)): Promise<void> {
+  await api(`${base}/done`, { mediaIds });
 }

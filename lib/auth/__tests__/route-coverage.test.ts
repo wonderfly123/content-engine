@@ -19,6 +19,9 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  *  - Salesmsg's webhook: Salesmsg calls it with a shared secret in ?token=. The handler is wrapped in
  *    `withSalesmsgToken` (lib/conversations/texting.ts), which refuses with 403, before any database
  *    work, unless the token matches SALESMSG_WEBHOOK_SECRET (and refuses everything when it is not set).
+ *  - Upload links (app/api/u/[token]/uploads/...): the signed token in the path is the key. Each
+ *    handler is wrapped in `withUploadLink` (lib/conversations/upload-link.ts), which refuses with
+ *    403, before any other work, unless the token verifies, then opens only the thread it names.
  *  - The optimizer worker's callback (workers/optimize on Modal): the worker signs the raw body
  *    with an HMAC-SHA256 of MODAL_OPTIMIZE_SECRET. The handler is wrapped in `withWorkerSignature`
  *    (lib/media/worker-signature.ts), which refuses with 403, before any database work, unless the
@@ -31,6 +34,11 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  */
 const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; verifier: string }> = {
   "app/api/salesmsg/sms/route.ts": { wrapper: "withSalesmsgToken", module: "lib/conversations/texting.ts", verifier: "isValidWebhookToken" },
+  "app/api/u/[token]/uploads/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
+  "app/api/u/[token]/uploads/[mediaId]/parts/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
+  "app/api/u/[token]/uploads/[mediaId]/complete/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
+  "app/api/u/[token]/uploads/[mediaId]/abort/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
+  "app/api/u/[token]/uploads/done/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
   "app/api/media/optimized/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
   "app/api/editor/uploads/route.ts": { wrapper: "withEditorBearer", module: "lib/editor/worker-auth.ts", verifier: "isValidEditorBearer" },
   "app/api/editor/callback/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },
