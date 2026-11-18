@@ -50,11 +50,31 @@ export function trackTitle(path: string): string {
   return folder ? `${folder.replace(/ (\d\d) (\d\d) (\d\d)$/, " $1-$2-$3")} · ${name}` : name;
 }
 
+export const MAX_TRACK_BYTES = 50 * 1024 * 1024;
+export const AUDIO_TYPES: Record<string, string> = { mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav" };
+export const audioExtension = (filename: string) => {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ext in AUDIO_TYPES ? ext : null;
+};
+
+/** Where an uploaded track goes: music/library/uploads/<id>-<name>. */
+export const uploadKey = (id: string, filename: string) => musicKey(`uploads/${id}-${filename.replace(/\//g, "-").replace(/\.{2,}/g, ".")}`);
+
 export type MusicTrack = typeof musicTracks.$inferSelect;
 
 export async function listTracks(o: { activeOnly?: boolean } = {}): Promise<MusicTrack[]> {
   const q = db.select().from(musicTracks);
   return (o.activeOnly ? q.where(eq(musicTracks.active, true)) : q).orderBy(asc(musicTracks.r2Key));
+}
+
+/** Records an uploaded track (its file is already on R2 under an uploads/ key). */
+export async function addUploadedTrack(t: { key: string; title: string; seconds: number }): Promise<MusicTrack> {
+  const [row] = await db
+    .insert(musicTracks)
+    .values({ title: t.title, r2Key: t.key, seconds: t.seconds, source: "upload" })
+    .onConflictDoUpdate({ target: musicTracks.r2Key, set: { title: t.title, seconds: t.seconds } })
+    .returning();
+  return row;
 }
 
 export async function setTrackActive(id: string, active: boolean): Promise<boolean> {

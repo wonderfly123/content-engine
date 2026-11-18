@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { musicKey, parseMusicIndex, trackTitle } from "../library";
+import { audioExtension, musicKey, parseMusicIndex, trackTitle, uploadKey } from "../library";
 
 describe("music index", () => {
   const tsv = [
@@ -22,5 +22,11 @@ describe("music index", () => {
     expect(musicKey("Trending 11/My Song!.mp3")).toBe("music/library/trending-11/my-song-.mp3");
     expect(trackTitle("trending-11-10-26/07.mp3")).toBe("Trending 11-10-26 · 07");
     expect(trackTitle("from-clips/micro-2.mp3")).toBe("From clips · micro-2");
+  });
+
+  it("accepts only audio uploads and keys them under uploads/", () => {
+    expect(audioExtension("Song.MP3")).toBe("mp3");
+    expect(audioExtension("clip.mov")).toBeNull();
+    expect(uploadKey("abc", "../My Song.m4a")).toBe("music/library/uploads/abc-.-my-song.m4a");
   });
 });
