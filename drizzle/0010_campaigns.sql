@@ -39,3 +39,6 @@ CREATE INDEX IF NOT EXISTS "campaign_items_campaign_idx" ON "campaign_items" ("c
 ALTER TABLE "editor_jobs" ADD COLUMN "campaign_item_id" uuid REFERENCES "campaign_items"("id") ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE "editor_jobs" ADD COLUMN "clip_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "editor_jobs_campaign_item_idx" ON "editor_jobs" ("campaign_item_id","created_at");
+--> statement-breakpoint
+ALTER TABLE "campaigns" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "campaign_items" ENABLE ROW LEVEL SECURITY;
