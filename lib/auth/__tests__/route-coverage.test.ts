@@ -34,6 +34,7 @@ const CHECKS = /\b(requireUser|requireWorkspace|requireBrand|requireBrandBySlug|
  */
 const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; verifier: string }> = {
   "app/api/salesmsg/sms/route.ts": { wrapper: "withSalesmsgToken", module: "lib/conversations/texting.ts", verifier: "isValidWebhookToken" },
+  "app/api/w/[token]/route.ts": { wrapper: "withWatchLink", module: "lib/conversations/upload-link.ts", verifier: "verifyWatchToken" },
   "app/api/u/[token]/uploads/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
   "app/api/u/[token]/uploads/[mediaId]/parts/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },
   "app/api/u/[token]/uploads/[mediaId]/complete/route.ts": { wrapper: "withUploadLink", module: "lib/conversations/upload-link.ts", verifier: "verifyUploadToken" },

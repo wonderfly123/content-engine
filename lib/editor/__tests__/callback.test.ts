@@ -135,7 +135,7 @@ describe("POST /api/editor/callback", () => {
     expect(out[0]).toMatchObject({ editorJobId: id, channel: "sms", body: "Here's a 15-second cut.\n\nWant a 30-second one too?" });
   });
 
-  it("texts the reply with a link when the thread's last message came by text", async () => {
+  it("texts the cut with its watch link and what to do next, when the thread's last message came by text", async () => {
     process.env.SALESMSG_API_TOKEN = "t";
     process.env.SALESMSG_TEAM_ID = "4242";
     const id = await runningJob();
@@ -145,7 +145,9 @@ describe("POST /api/editor/callback", () => {
     const body = new URL(String(salesmsg![0])).searchParams;
     expect(body.get("number")).toBe(a.phone);
     expect(body.get("team_id")).toBe("4242");
-    expect(body.get("message")).toBe(`Here's a 15-second cut.\nhttps://app.test/conversations/${a.conversationId}`);
+    expect(body.get("message")).toMatch(
+      /^Here's a 15-second cut\.\n\nWatch it and approve: https:\/\/app\.test\/w\/[A-Za-z0-9_-]{43}\nOr reply YES to approve, or tell me what to change\.$/,
+    );
   });
 
   it("applies a job once: a repeated callback is acknowledged and ignored", async () => {

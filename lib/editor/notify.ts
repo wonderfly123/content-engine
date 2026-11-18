@@ -6,6 +6,7 @@
  * message is stored as a text and also sent by text (best effort: a failed text never loses the
  * message, which is in the thread either way). Never logs message bodies or phone numbers.
  */
+import { watchLinkPath } from "@/lib/conversations/upload-link";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { addMessage, type ConversationRow, type MessageRow } from "@/lib/conversations/store";
 import { appUrl, isTextingConfigured, sendSms } from "@/lib/conversations/texting";
@@ -27,6 +28,8 @@ export async function lastInbound(conversationId: string): Promise<{ channel: Me
 }
 
 export const threadLink = (conversationId: string): string => `${appUrl()}/conversations/${conversationId}`;
+/** The phone page (no sign-in) where a texted cut is watched, approved and scheduled. */
+export const watchLink = (conversationId: string): string => `${appUrl()}${watchLinkPath(conversationId)}`;
 
 export interface PostOptions {
   editorJobId?: string | null;
@@ -42,7 +45,7 @@ export async function postEditorMessage(thread: ConversationRow, body: string, o
   const message = await addMessage({ conversationId: thread.id, direction: "out", channel, body, editorJobId: opts.editorJobId ?? null });
   if (channel === "sms") {
     const named = thread.title ? `[${thread.title}] ${body}` : body;
-    const text = opts.linkInText ? `${named}\n${threadLink(thread.id)}` : named;
+    const text = opts.linkInText ? `${named}\n${watchLink(thread.id)}` : named;
     await textMember(last.authorUserId ?? thread.startedBy, text, thread.brandId);
   }
   return message;

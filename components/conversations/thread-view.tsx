@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import type { Clip } from "./clip-list";
 import { UploadProgress } from "./clip-uploader";
 import { EditingBubble, EditorCuts, type EditorJobView } from "./editor-cuts";
+import { SchedulePanel } from "./schedule-panel";
 import { kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
 import { useClipUploads } from "./use-clip-uploads";
 
@@ -253,6 +254,9 @@ export function ThreadView({
           })}
         </div>
       )}
+
+      {/* After approval: when it posts (the same step as the watch page and texts) */}
+      {!closed && <SchedulePanel conversationId={id} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
 
       {/* Uploads in progress */}
       <UploadProgress up={up} />

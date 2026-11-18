@@ -138,3 +138,26 @@ describe("the editor's texts", () => {
     }
   });
 });
+
+describe("it's live", () => {
+  it("adds the link to the thread and texts it, named", async () => {
+    const { tellThreadsItsLive } = await import("../posted");
+    process.env.SALESMSG_API_TOKEN = "t";
+    process.env.SALESMSG_TEAM_ID = "1";
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      sent.push(new URL(url).searchParams.get("message") ?? "");
+      return Response.json({ id: 1 });
+    });
+    try {
+      await db.update(schema.conversations).set({ title: "Cider Stand Opening" }).where(eq(schema.conversations.id, a.conversationId));
+      await db.insert(schema.conversationMessages).values({ conversationId: a.conversationId, direction: "in", channel: "sms", body: "tonight", authorUserId: a.user.userId });
+      await tellThreadsItsLive({ postId: "p", brandId: a.brandId, externalUrl: "https://instagram.com/reel/x", conversationIds: [a.conversationId] });
+      expect(sent).toEqual(["[Cider Stand Opening] It's live: https://instagram.com/reel/x"]);
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.SALESMSG_API_TOKEN;
+      delete process.env.SALESMSG_TEAM_ID;
+    }
+  });
+});

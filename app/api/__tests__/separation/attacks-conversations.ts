@@ -25,6 +25,14 @@ const LINK_KEY = "the upload link is the only key (no session works); valid link
 
 /** Conversations with the editor: threads reach their workspace directly (requireConversation). */
 export const routes: RouteAttack[] = [
+  { route: "app/api/w/[token]/route.ts", method: "POST", name: "forged watch link", build: (v) => ({ params: { token: forged(v) }, body: { action: "approve" } }), skipOwnerControl: LINK_KEY },
+  {
+    route: "app/api/w/[token]/route.ts",
+    method: "POST",
+    name: "their upload link used as a watch link",
+    build: (v) => ({ params: { token: createUploadToken(v.conversationId) }, body: { action: "approve" } }),
+    skipOwnerControl: LINK_KEY,
+  },
   { route: `${LINK}/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v) }, body: { filename: "clip.mov", size: 1000, contentType: "video/quicktime" } }), skipOwnerControl: LINK_KEY },
   { route: `${LINK}/[mediaId]/parts/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId }, body: { partNumbers: [1] } }), skipOwnerControl: LINK_KEY },
   {
@@ -37,6 +45,9 @@ export const routes: RouteAttack[] = [
   { route: `${LINK}/[mediaId]/complete/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId }, body: { parts: [{ partNumber: 1, etag: '"e"' }] } }), skipOwnerControl: LINK_KEY },
   { route: `${LINK}/[mediaId]/abort/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v), mediaId: v.uploadingMediaId } }), skipOwnerControl: LINK_KEY },
   { route: `${LINK}/done/route.ts`, method: "POST", name: "forged link", build: (v) => ({ params: { token: forged(v) }, body: { mediaIds: [v.mediaId] } }), skipOwnerControl: LINK_KEY },
+  { route: "app/api/conversations/[id]/schedule/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },
+  { route: "app/api/conversations/[id]/schedule/route.ts", method: "POST", build: (v) => ({ params: { id: v.conversationId }, body: { when: "tonight" } }) },
+  { route: "app/api/conversations/[id]/schedule/route.ts", method: "DELETE", build: (v) => ({ params: { id: v.conversationId } }) },
   { route: "app/api/conversations/route.ts", method: "GET", build: (v) => ({ query: { brandId: v.brandId } }) },
   { route: "app/api/conversations/route.ts", method: "POST", build: (v) => ({ body: { brandId: v.brandId, kind: "reel" } }) },
   { route: "app/api/conversations/[id]/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },
