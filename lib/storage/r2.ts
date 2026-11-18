@@ -199,10 +199,15 @@ export function presignUploadPart(key: string, uploadId: string, partNumber: num
   return presignUrl({ method: "PUT", host, path, query: { partNumber: String(partNumber), uploadId }, date: new Date(), creds, expiresIn });
 }
 
-/** A short-lived link to read a private object (default 10 minutes). */
-export function presignGet(key: string, expiresIn = 600): string {
+/**
+ * A short-lived link to read a private object (default 10 minutes). With `downloadAs`, opening it
+ * saves the file under that name instead of playing it in the browser.
+ */
+export function presignGet(key: string, expiresIn = 600, opts: { downloadAs?: string } = {}): string {
   const { creds, host, path } = target(key);
-  return presignUrl({ method: "GET", host, path, date: new Date(), creds, expiresIn });
+  const name = opts.downloadAs?.replace(/[^\w .-]+/g, "").trim();
+  const query = name ? { "response-content-disposition": `attachment; filename="${name}"` } : undefined;
+  return presignUrl({ method: "GET", host, path, query, date: new Date(), creds, expiresIn });
 }
 
 /** How an asset stored on our private R2 bucket is recorded in `assets.storage_url`: r2://<key>. */
