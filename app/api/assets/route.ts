@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { and, eq, desc, sql, ilike, inArray } from "drizzle-orm";
+import { and, eq, desc, sql, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   assets,
@@ -11,6 +11,7 @@ import {
   listAssetsQuerySchema,
 } from "@/lib/assets/types";
 import { probeUrl } from "@/lib/assets/probe";
+import { viewable } from "@/lib/assets/viewable";
 import { storageFullBody, storageRoom } from "@/lib/limits/storage";
 import { validateAsset } from "@/lib/assets/validate";
 import { generateThumbnail } from "@/lib/assets/thumbnail";
@@ -38,7 +39,11 @@ export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
   else if (archived === "true") conds.push(eq(assets.archived, true));
   if (kind) conds.push(eq(assets.kind, kind));
   if (tag) conds.push(sql`${assets.tags} && ARRAY[${tag}]::text[]`);
-  if (search) conds.push(ilike(assets.label, `%${search}%`));
+  if (search) {
+    // The label, the AI's description, or any tag (e.g. "crowd", "truck loading").
+    const like = `%${search}%`;
+    conds.push(sql`(${assets.label} ILIKE ${like} OR ${assets.description} ILIKE ${like} OR EXISTS (SELECT 1 FROM unnest(${assets.tags}) t WHERE t ILIKE ${like}))`);
+  }
   if (pending === "true") {
     conds.push(
       sql`${assets.id} NOT IN (SELECT ${draftAssets.assetId} FROM ${draftAssets})`,
@@ -66,7 +71,7 @@ export const GET = guard(async (req: NextRequest): Promise<NextResponse> => {
     usage = Object.fromEntries(counts.map((c) => [c.assetId, Number(c.count)]));
   }
 
-  const enriched = rows.map((r) => ({ ...r, usageCount: usage[r.id] ?? 0 }));
+  const enriched = rows.map((r) => ({ ...viewable(r), usageCount: usage[r.id] ?? 0 }));
   return NextResponse.json({ assets: enriched });
 });
 

@@ -21,6 +21,9 @@ export interface AssetRow {
   height: number | null;
   archived: boolean;
   usageCount?: number;
+  /** The AI's one-sentence description of what the clip shows. */
+  description?: string | null;
+  describeStatus?: string | null;
 }
 
 interface Props {
@@ -74,6 +77,11 @@ export function AssetCard({ asset }: Props) {
             {KIND_LABEL[asset.kind]}
           </span>
         </div>
+        {asset.description ? (
+          <p className="line-clamp-2 text-xs text-muted-foreground">{asset.description}</p>
+        ) : asset.describeStatus === "pending" ? (
+          <p className="text-xs text-muted-foreground">Describing…</p>
+        ) : null}
         {(asset.width || asset.height) && (
           <p className="text-xs text-muted-foreground">
             {asset.width}×{asset.height}
@@ -81,14 +89,14 @@ export function AssetCard({ asset }: Props) {
         )}
         {asset.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {asset.tags.slice(0, 3).map((t) => (
+            {asset.tags.slice(0, 5).map((t) => (
               <Badge key={t} variant="outline" className="text-xs">
                 {t}
               </Badge>
             ))}
-            {asset.tags.length > 3 && (
+            {asset.tags.length > 5 && (
               <span className="text-xs text-muted-foreground">
-                +{asset.tags.length - 3}
+                +{asset.tags.length - 5}
               </span>
             )}
           </div>
