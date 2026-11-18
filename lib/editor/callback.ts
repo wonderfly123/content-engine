@@ -13,7 +13,7 @@ import { isJobPreviewKey } from "@/lib/storage/keys";
 import { headObject } from "@/lib/storage/r2";
 import { getJob, type EditorJobRow } from "./jobs";
 import { callbackSchema, type EditorCallback, type EditorManifest, type EditorUsage, type WorkerManifest } from "./manifest";
-import { lastInbound, postEditorMessage, textMember, threadLink } from "./notify";
+import { lastInbound, postEditorMessage, textMember, watchLink } from "./notify";
 
 const { conversations, editorJobs, mediaObjects } = schema;
 
@@ -203,6 +203,15 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
     throw err;
   }
 
-  if (last.channel === "sms") await textMember(last.authorUserId ?? thread.startedBy, `${thread.title ? `[${thread.title}] ` : ""}${body}\n${threadLink(thread.id)}`, thread.brandId);
+  if (last.channel === "sms" && r.manifest?.cuts.length) {
+    // The cut is ready: what it is, then exactly what to do next.
+    const text =
+      `${thread.title ? `[${thread.title}] ` : ""}${body}\n\n` +
+      `Watch it and approve: ${watchLink(thread.id)}\n` +
+      `Or reply YES to approve, or tell me what to change.`;
+    await textMember(last.authorUserId ?? thread.startedBy, text, thread.brandId);
+  } else if (last.channel === "sms") {
+    await textMember(last.authorUserId ?? thread.startedBy, `${thread.title ? `[${thread.title}] ` : ""}${body}`, thread.brandId);
+  }
   return { status: 200, body: { applied: true, cuts: r.manifest?.cuts.length ?? 0 } };
 }

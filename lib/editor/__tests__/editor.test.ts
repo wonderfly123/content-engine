@@ -232,7 +232,7 @@ describe("approving", () => {
     const [job] = await jobs();
     expect(job).toMatchObject({ id: editorJobId, status: "approved" });
     expect(job.approvedAt).toBeInstanceOf(Date);
-    const approved = await db.select().from(schema.conversationMessages).where(eq(schema.conversationMessages.body, "Approved."));
+    const approved = await db.select().from(schema.conversationMessages).where(eq(schema.conversationMessages.body, "Approved. Pick when it posts below."));
     expect(approved).toHaveLength(1);
     expect(approved[0].channel).toBe("app");
     expect((await approveRoute(new NextRequest("http://localhost/x", { method: "POST" }), ctx({ id: a.conversationId }))).status).toBe(409);
@@ -248,8 +248,18 @@ describe("approving", () => {
   it('"yes" by text approves it too', async () => {
     await seedEditorJob(db, a, "Alpha");
     const result = await handleInbound({ workspaceId: a.workspaceId, userId: a.user.userId, channel: "sms", body: "yes", providerMessageId: "SMyes1" });
-    expect(result.reply).toBe("Approved.");
+    expect(result.reply).toBe('Approved. When should it post? Reply NOW, TONIGHT, or a time like "tomorrow 9am".');
     expect((await jobs())[0].status).toBe("approved");
+  });
+
+  it("a time by text schedules an approved cut, and the same words are just a message before approval", async () => {
+    await seedEditorJob(db, a, "Alpha");
+    const before = await handleInbound({ workspaceId: a.workspaceId, userId: a.user.userId, channel: "sms", body: "tonight", providerMessageId: "SMt0" });
+    expect(before.reply ?? "").not.toMatch(/^(Scheduled|Couldn't schedule)/);
+    await handleInbound({ workspaceId: a.workspaceId, userId: a.user.userId, channel: "sms", body: "yes", providerMessageId: "SMt1" });
+    const after = await handleInbound({ workspaceId: a.workspaceId, userId: a.user.userId, channel: "sms", body: "tonight", providerMessageId: "SMt2" });
+    // Instagram isn't connected in tests, so scheduling is refused, but the time was understood as one.
+    expect(after.reply).toMatch(/^(Scheduled for .+\. Reply UNDO to unschedule\.|Couldn't schedule it: .+)$/);
   });
 });
 

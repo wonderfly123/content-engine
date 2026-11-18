@@ -17,6 +17,6 @@ export const POST = guard(async (_req: NextRequest, ctx: { params: Promise<{ id:
   if (conversation.status !== "open") return NextResponse.json({ error: "This conversation is closed." }, { status: 409 });
   const result = await approvePendingPreview(conversation.id);
   if (!result.approved) return NextResponse.json({ error: NOTHING_TO_APPROVE }, { status: 409 });
-  await postEditorMessage(conversation, "Approved.", { channel: "app" });
+  await postEditorMessage(conversation, "Approved. Pick when it posts below.", { channel: "app" });
   return NextResponse.json({ approved: true });
 });

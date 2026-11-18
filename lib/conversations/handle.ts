@@ -16,7 +16,10 @@ import { AccessError, listMemberships } from "@/lib/auth/workspace";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import type { ConversationKind, MessageChannel } from "@/lib/db/enums";
+import { ASK_WHEN, currentCut, scheduleCurrentCut, UNDO_WORDS, unscheduleCurrentCut } from "@/lib/editor/approval";
+import type { ConversationAccess } from "./access";
 import { approvePendingPreview, handOffToEditor, type EditorHandoff } from "./editor";
+import { parsePostTime } from "./post-time";
 import { normalizePhone } from "./phone";
 import { findVerifiedUserByPhone, phoneBrandIds } from "./phones";
 import { carrierKeyword, decide, isApproval, normalize, NO_BRAND_REPLY, NOTHING_TO_APPROVE, replyFor, UNKNOWN_NUMBER_REPLY, type Decision } from "./router";
@@ -108,6 +111,45 @@ async function awaitingApproval(threadIds: string[]): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * A time ("tonight", "tomorrow 9am", "now") for a thread whose cut is approved, or UNDO for one
+ * that's scheduled. Stores the exchange in the thread and returns the reply; null when the message
+ * is something else.
+ */
+async function afterApproval(input: InboundInput, thread: ConversationRow, body: string): Promise<InboundResult | null> {
+  const undo = UNDO_WORDS.has(normalize(body));
+  const time = undo ? null : parsePostTime(body);
+  if (!undo && !time) return null;
+  const current = await currentCut(thread.id);
+  if (!current) return null;
+  if (time && current.stage !== "approved") return null;
+  if (undo && current.stage !== "scheduled") return null;
+
+  const memberships = await listMemberships(input.userId);
+  const membership = memberships.find((m) => m.workspaceId === thread.workspaceId);
+  if (!membership) return null;
+  const access: ConversationAccess = {
+    user: { userId: input.userId, email: "", role: "user", status: "active" },
+    workspaceId: thread.workspaceId,
+    role: membership.role,
+    conversation: thread,
+  };
+  await addMessage({ conversationId: thread.id, direction: "in", channel: input.channel, body, authorUserId: input.userId, providerMessageId: input.providerMessageId });
+  let reply: string;
+  if (undo) {
+    reply = (await unscheduleCurrentCut(access)) ? `Unscheduled. ${ASK_WHEN}` : "It's already posting, so it can't be stopped now.";
+  } else {
+    try {
+      const done = await scheduleCurrentCut(access, time!.when, time!.now);
+      reply = done ? `${done.line}${time!.now ? "" : " Reply UNDO to unschedule."}` : NOTHING_TO_APPROVE;
+    } catch (err) {
+      reply = `Couldn't schedule it: ${(err as Error).message}`;
+    }
+  }
+  await addMessage({ conversationId: thread.id, direction: "out", channel: input.channel, body: reply });
+  return { conversationId: thread.id, reply: input.channel === "sms" ? withName(thread, reply) : reply };
+}
+
 export async function handleInbound(input: InboundInput): Promise<InboundResult> {
   let body = input.body.trim().slice(0, MAX_BODY_CHARS);
   const seen = await duplicateOf(input.providerMessageId);
@@ -142,6 +184,12 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
       }
     }
   }
+  // After approval: a time schedules it, UNDO takes it off the calendar (texts and app alike).
+  if (target && target.status === "open") {
+    const after = await afterApproval(input, target, body);
+    if (after) return after;
+  }
+
   const state = target ? { kind: target.kind, brandId: target.brandId } : { kind: null, brandId: single };
   const decided = decide({ body, channel: input.channel, thread: state, brands });
   const decision: Decision =
@@ -191,7 +239,7 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
   if (decision.type === "message") editor = await handOffToEditor(thread.id, inboundId, input.origin);
   if (decision.type === "approve") {
     const approval = await approvePendingPreview(thread.id);
-    reply = approval.approved ? "Approved." : NOTHING_TO_APPROVE;
+    reply = approval.approved ? (input.channel === "sms" ? `Approved. ${ASK_WHEN}` : "Approved. Pick when it posts below the cut.") : NOTHING_TO_APPROVE;
   } else {
     reply = replyFor(
       decision,

@@ -20,13 +20,17 @@ const TOKEN_BYTES = 16 + 4 + SIG_BYTES;
 
 type Env = Record<string, string | undefined>;
 
-function key(env: Env = process.env): Buffer {
+/** What a link opens: adding clips ("upload"), or watching and approving its cuts ("watch"). Each has its own key. */
+export type LinkPurpose = "upload" | "watch";
+
+function key(purpose: LinkPurpose, env: Env = process.env): Buffer {
   const secret = env.TOKEN_ENCRYPTION_KEY?.trim();
-  if (!secret) throw new Error("TOKEN_ENCRYPTION_KEY is not set: upload links are off.");
-  return createHmac("sha256", secret).update("nekter-upload-link-v1").digest();
+  if (!secret) throw new Error("TOKEN_ENCRYPTION_KEY is not set: links are off.");
+  return createHmac("sha256", secret).update(`nekter-${purpose}-link-v1`).digest();
 }
 
-const sign = (payload: Buffer, env?: Env) => createHmac("sha256", key(env)).update(payload).digest().subarray(0, SIG_BYTES);
+const sign = (payload: Buffer, env?: Env, purpose: LinkPurpose = "upload") =>
+  createHmac("sha256", key(purpose, env)).update(payload).digest().subarray(0, SIG_BYTES);
 
 const uuidToBytes = (id: string) => Buffer.from(id.replace(/-/g, ""), "hex");
 const bytesToUuid = (b: Buffer) => {
@@ -34,24 +38,28 @@ const bytesToUuid = (b: Buffer) => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 };
 
-export function createUploadToken(conversationId: string, now: number = Date.now(), env?: Env): string {
+export function createUploadToken(conversationId: string, now: number = Date.now(), env?: Env, purpose: LinkPurpose = "upload"): string {
   const payload = Buffer.alloc(20);
   uuidToBytes(conversationId).copy(payload, 0);
-  payload.writeUInt32BE(Math.floor((now + UPLOAD_LINK_TTL_MS) / 1000), 16);
-  return Buffer.concat([payload, sign(payload, env)]).toString("base64url");
+  payload.writeUInt32BE(Math.floor((now + (purpose === "watch" ? WATCH_LINK_TTL_MS : UPLOAD_LINK_TTL_MS)) / 1000), 16);
+  return Buffer.concat([payload, sign(payload, env, purpose)]).toString("base64url");
 }
+
+/** Watch links last longer: a cut can sit a while before it's approved and scheduled. */
+export const WATCH_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const createWatchToken = (conversationId: string, now?: number, env?: Env) => createUploadToken(conversationId, now, env, "watch");
 
 export type TokenCheck = { ok: true; conversationId: string; expiresAt: Date } | { ok: false; reason: "invalid" | "expired" };
 
 /** Checks a token's signature and expiry (not the thread: see requireUploadLink). */
-export function verifyUploadToken(token: unknown, now: number = Date.now(), env?: Env): TokenCheck {
+export function verifyUploadToken(token: unknown, now: number = Date.now(), env?: Env, purpose: LinkPurpose = "upload"): TokenCheck {
   if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) return { ok: false, reason: "invalid" };
   const raw = Buffer.from(token, "base64url");
   if (raw.length !== TOKEN_BYTES) return { ok: false, reason: "invalid" };
   const payload = raw.subarray(0, 20);
   let expected: Buffer;
   try {
-    expected = sign(payload, env);
+    expected = sign(payload, env, purpose);
   } catch {
     return { ok: false, reason: "invalid" };
   }
@@ -63,14 +71,19 @@ export function verifyUploadToken(token: unknown, now: number = Date.now(), env?
 
 /** The public page a text links to. */
 export const uploadLinkPath = (conversationId: string, now?: number) => `/u/${createUploadToken(conversationId, now)}`;
+/** The phone page where a cut is watched, approved and scheduled. */
+export const watchLinkPath = (conversationId: string, now?: number) => `/w/${createWatchToken(conversationId, now)}`;
 
 /**
  * The thread a valid token opens, as if its starter were acting: the token must verify, the thread
  * must exist, and its starter must still be an active member of its workspace. Throws AccessError
  * (404 for anything unknown, 403 for an expired link).
  */
-export async function requireUploadLink(token: unknown): Promise<ConversationAccess & { expiresAt: Date; brandName: string | null }> {
-  const check = verifyUploadToken(token);
+export async function requireUploadLink(
+  token: unknown,
+  purpose: LinkPurpose = "upload",
+): Promise<ConversationAccess & { expiresAt: Date; brandName: string | null }> {
+  const check = verifyUploadToken(token, Date.now(), undefined, purpose);
   if (!check.ok) throw new AccessError(check.reason === "expired" ? 403 : 404, check.reason === "expired" ? "This link has expired." : "Not found.");
   const [conversation] = await db.select().from(schema.conversations).where(eq(schema.conversations.id, check.conversationId)).limit(1);
   if (!conversation) throw new AccessError(404, "Not found.");
@@ -103,6 +116,28 @@ export function withUploadLink(handler: UploadLinkHandler): (req: NextRequest, c
     if (!verifyUploadToken(params.token).ok) return NextResponse.json({ error: "This link is invalid or has expired." }, { status: 403 });
     try {
       const access = await requireUploadLink(params.token);
+      return await handler(req, access, params);
+    } catch (err) {
+      if (err instanceof AccessError) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
+    }
+  };
+}
+
+/** A watch link's thread (requireUploadLink with the watch key). */
+export const requireWatchLink = (token: unknown) => requireUploadLink(token, "watch");
+export const verifyWatchToken = (token: unknown) => verifyUploadToken(token, Date.now(), undefined, "watch");
+
+/**
+ * The watch-link route's gate, used instead of `guard` (there is no session). Refuses before any
+ * other work unless the token verifies with the watch key (verifyWatchToken).
+ */
+export function withWatchLink(handler: UploadLinkHandler): (req: NextRequest, ctx: { params: Promise<UploadLinkParams> }) => Promise<Response> {
+  return async (req, ctx) => {
+    const params = await ctx.params;
+    if (!verifyWatchToken(params.token).ok) return NextResponse.json({ error: "This link is invalid or has expired." }, { status: 403 });
+    try {
+      const access = await requireWatchLink(params.token);
       return await handler(req, access, params);
     } catch (err) {
       if (err instanceof AccessError) return NextResponse.json({ error: err.message }, { status: err.status });
