@@ -10,6 +10,7 @@ import { Monitor, Smartphone } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrandStore } from "@/lib/stores/brand-store";
 import { cn } from "@/lib/utils";
+import { ConversationListToggle } from "./conversations-shell";
 import { kindLabel, NewThreadButtons, type Channel, type Kind } from "./shared";
 
 interface ThreadRow {
@@ -105,11 +106,14 @@ export function ConversationSidebar({ className }: { className?: string }) {
 
   const rows = data ? shown(data.threads, filter) : [];
   return (
-    <aside className={cn("h-full w-full shrink-0 flex-col border-r bg-muted/30 md:w-72", className)} aria-label="Conversations">
+    <aside className={cn("h-full w-full shrink-0 flex-col border-r bg-muted/30 md:w-72", className)} aria-label="Chats">
       <div className="space-y-3 p-3">
-        <NewThreadButtons brandId={brandId} />
+        <div className="flex items-center justify-between gap-2">
+          <NewThreadButtons brandId={brandId} />
+          <ConversationListToggle />
+        </div>
         {data && data.threads.length > 0 && (
-          <div role="tablist" aria-label="Show conversations" className="flex gap-1">
+          <div role="tablist" aria-label="Filter chats" className="flex gap-1">
             {FILTERS.map((f) => (
               <button
                 key={f.value}
@@ -130,10 +134,10 @@ export function ConversationSidebar({ className }: { className?: string }) {
       </div>
 
       <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-        {!brandId && <p className="px-3 py-2 text-sm text-muted-foreground">Pick a brand to see its conversations.</p>}
+        {!brandId && <p className="px-3 py-2 text-sm text-muted-foreground">Pick a brand to see its chats.</p>}
         {isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
-        {isError && <p className="px-3 py-2 text-sm text-destructive">Could not load conversations.</p>}
-        {data && data.threads.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No conversations yet.</p>}
+        {isError && <p className="px-3 py-2 text-sm text-destructive">Could not load chats.</p>}
+        {data && data.threads.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No chats yet.</p>}
         {data && data.threads.length > 0 && rows.length === 0 && (
           <p className="px-3 py-2 text-sm text-muted-foreground">None {filter === "sms" ? "started by text" : "started in the app"} yet.</p>
         )}

@@ -18,6 +18,7 @@ import { EditingBubble, EditorAvatar, EditorCuts, type EditorJobView } from "./e
 import { SchedulePanel } from "./schedule-panel";
 import { kindLabel, type Channel, type Kind } from "./shared";
 import { useClipUploads } from "./use-clip-uploads";
+import { ConversationListToggle, useConversationListHidden } from "./conversations-shell";
 
 interface Message {
   id: string;
@@ -49,8 +50,8 @@ interface ThreadData {
 }
 
 const CLOSED_BECAUSE: Record<string, string> = {
-  published: "This conversation closed when the post was published.",
-  new_thread: "This conversation closed when a new reel or story was started.",
+  published: "This chat closed when the post was published.",
+  new_thread: "This chat closed when a new reel or story was started.",
 };
 
 const CLIP_STATUS: Record<Clip["status"], string> = { ready: "", processing: "Optimizing", uploading: "Not finished", failed: "Failed" };
@@ -107,6 +108,7 @@ export function ThreadView({
   const picker = useRef<HTMLInputElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const [approving, setApproving] = useState(false);
+  const hidden = useConversationListHidden();
   const { data, isLoading, error } = useQuery({
     queryKey: ["conversation", id],
     queryFn: () => fetchThread(id),
@@ -198,7 +200,7 @@ export function ThreadView({
     return (
       <div className="space-y-4">
         {!compact && <BackLink />}
-        <p className="text-sm text-muted-foreground">{(error as Error)?.message === "not_found" ? "This conversation doesn't exist or isn't yours." : "Could not load this conversation."}</p>
+        <p className="text-sm text-muted-foreground">{(error as Error)?.message === "not_found" ? "This chat doesn't exist or isn't yours." : "Could not load this chat."}</p>
       </div>
     );
   }
@@ -229,8 +231,9 @@ export function ThreadView({
       {/* Header: a slim bar, like a chat app's */}
       <div className={cn("flex shrink-0 items-center justify-between gap-2 border-b py-2", compact ? "px-3" : "px-4 sm:px-6")}>
         <div className="flex min-w-0 items-center gap-2">
+          {!compact && hidden && <ConversationListToggle />}
           {!compact && (
-            <Link href="/conversations" aria-label="Back to conversations" className="rounded-md p-1 md:hidden text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Link href="/conversations" aria-label="Back to chats" className="rounded-md p-1 md:hidden text-muted-foreground hover:bg-muted hover:text-foreground">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             </Link>
           )}
@@ -277,7 +280,7 @@ export function ThreadView({
         <UploadProgress up={up} />
         {closed ? (
           <div className="rounded-3xl border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
-            {CLOSED_BECAUSE[c.closedReason ?? ""] ?? "This conversation is closed."} Start a new reel or story to keep going.
+            {CLOSED_BECAUSE[c.closedReason ?? ""] ?? "This chat is closed."} Start a new reel or story to keep going.
           </div>
         ) : (
           <>
@@ -429,7 +432,7 @@ function BackLink() {
   return (
     <Link href="/conversations" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
       <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-      Conversations
+      Chats
     </Link>
   );
 }
