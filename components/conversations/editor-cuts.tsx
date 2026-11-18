@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronDown, Copy, PenLine } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Copy, Loader2, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,11 +15,57 @@ export interface CutView {
   caption: string;
 }
 
+export interface Step {
+  label: string;
+  at: string;
+}
+
 export interface EditorJobView {
   status: "queued" | "running" | "done" | "failed" | "approved";
   costUsd: number | null;
   cuts: CutView[];
   approvable: boolean;
+  steps?: Step[];
+  seconds?: number | null;
+}
+
+/** "45s", "6m", "6m 20s". */
+const took = (seconds: number) => {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  return s % 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 60)}m`;
+};
+
+/** The step list, like Claude's: one line per step, the current one spinning. */
+function StepList({ steps, live }: { steps: Step[]; live: boolean }) {
+  return (
+    <ol className="mt-2 space-y-1.5 border-l pl-4">
+      {steps.map((st, i) => {
+        const current = live && i === steps.length - 1;
+        return (
+          <li key={`${i}-${st.label}`} className="flex items-center gap-2 text-sm text-muted-foreground">
+            {current ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" /> : <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+            <span className={cn(current && "text-foreground")}>{st.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** "Worked for 6m · 9 steps", collapsed under a finished edit; tap to see what it did. */
+export function WorkedFor({ steps, seconds }: { steps: Step[]; seconds: number | null }) {
+  const [open, setOpen] = useState(false);
+  if (steps.length === 0) return null;
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+        {seconds ? `Worked for ${took(seconds)}` : "Worked"} · {steps.length} {steps.length === 1 ? "step" : "steps"}
+      </button>
+      {open && <StepList steps={steps} live={false} />}
+    </div>
+  );
 }
 
 /** "0:15", "1:02". */
@@ -39,18 +85,35 @@ export function EditorAvatar() {
   );
 }
 
-/** Shown while the editor is working on a job. */
-export function EditingBubble() {
+/** Shown while the editor works: the step it is on, the time so far, and every step when opened. */
+export function EditingBubble({ steps = [], startedAt = null }: { steps?: Step[]; startedAt?: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const current = steps[steps.length - 1]?.label ?? "Getting started";
+  const elapsed = startedAt ? took((now - Date.parse(startedAt)) / 1000) : null;
   return (
     <div className="flex gap-3" role="status">
       <EditorAvatar />
-      <div className="flex items-center gap-2 pt-0.5 text-[15px] text-muted-foreground">
-        <span className="flex gap-1" aria-hidden="true">
-          {[0, 150, 300].map((delay) => (
-            <span key={delay} className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: `${delay}ms` }} />
-          ))}
-        </span>
-        Editing…
+      <div className="min-w-0 flex-1 pt-0.5">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          disabled={steps.length === 0}
+          className="flex items-center gap-2 text-left text-[15px] text-muted-foreground enabled:hover:text-foreground"
+        >
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          <span>
+            <span className="text-foreground">{current}…</span>
+            {elapsed && <span> · {elapsed}</span>}
+          </span>
+          {steps.length > 0 && (open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />)}
+        </button>
+        {open && <StepList steps={steps} live />}
       </div>
     </div>
   );
@@ -139,9 +202,17 @@ export function EditorCuts({
   onApprove: () => void;
   approving: boolean;
 }) {
-  if (job.cuts.length === 0) return job.costUsd !== null ? <p className="px-1 text-[11px] text-muted-foreground">AI cost {money(job.costUsd)}</p> : null;
+  const worked = job.steps?.length ? <WorkedFor steps={job.steps} seconds={job.seconds ?? null} /> : null;
+  if (job.cuts.length === 0)
+    return (
+      <>
+        {worked}
+        {job.costUsd !== null && <p className="px-1 text-[11px] text-muted-foreground">AI cost {money(job.costUsd)}</p>}
+      </>
+    );
   return (
     <div className="w-full space-y-3">
+      {worked}
       <div className={cn("grid gap-4", !compact && job.cuts.length > 1 && "sm:grid-cols-2")}>
         {job.cuts.map((cut) => (
           <Cut key={cut.key} cut={cut} compact={compact} story={story} />

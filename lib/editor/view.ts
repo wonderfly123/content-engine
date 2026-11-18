@@ -23,11 +23,17 @@ export interface EditorJobView {
   cuts: CutView[];
   /** Only the thread's latest finished job can be approved. */
   approvable: boolean;
+  /** What the editor did, step by step, and how long it took (seconds; null while running). */
+  steps: Array<{ label: string; at: string }>;
+  seconds: number | null;
 }
 
 export interface ThreadEditorView {
   jobs: Map<string, EditorJobView>;
   running: boolean;
+  /** The running job's steps so far (empty when nothing is running). */
+  steps: Array<{ label: string; at: string }>;
+  startedAt: string | null;
 }
 
 /** Call before reading the thread's messages: a job found stuck is stopped here, with its message. */
@@ -53,7 +59,10 @@ export async function threadEditorView(thread: ConversationRow, now: Date = new 
         caption: c.caption,
       })),
       approvable: j.status === "done" && latestDone?.id === j.id,
+      steps: j.progress ?? [],
+      seconds: j.startedAt && j.finishedAt ? Math.round((j.finishedAt.getTime() - j.startedAt.getTime()) / 1000) : null,
     });
   }
-  return { jobs: views, running: jobs.some((j) => j.status === "queued" || j.status === "running") };
+  const live = jobs.find((j) => j.status === "queued" || j.status === "running");
+  return { jobs: views, running: Boolean(live), steps: live?.progress ?? [], startedAt: (live?.startedAt ?? live?.createdAt)?.toISOString() ?? null };
 }

@@ -21,7 +21,7 @@ sys.path.insert(0, HERE)
 from contract import (  # noqa: E402
     ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial, preview_path,
     previous_for_agent, previous_keys, safe_filename, sign, valid_job, validate_manifest,
-    SKILL_FILES, MAX_SKILL_BYTES, valid_skill_files, write_skill_files,
+    SKILL_FILES, MAX_SKILL_BYTES, valid_skill_files, write_skill_files, progress_url, step_label,
 )
 
 SCRIPTS = os.path.join(HERE, "skill", "scripts")
@@ -305,6 +305,23 @@ class RenderTests(unittest.TestCase):
             self.assertEqual([e["file"] for e in edl], ["tall.mp4", "wide.mp4", "tall.mp4"])
             self.assertEqual(edl[1]["cropX"], 0.5)
             self.assertIsNone(edl[0]["cropX"])
+
+
+class TestProgress(unittest.TestCase):
+    def test_step_labels(self):
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/scan.py footage work/scan"}), "Looking through the clips")
+        self.assertEqual(step_label("Bash", {"command": "bash $SK/render.sh footage work/edl/story-15.tsv out/previews/story-15.mp4"}), "Rendering the 15s story")
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/fit.py footage work/edl/reel-30.draft.tsv 30 work/edl/reel-30.tsv"}), "Fitting the 30s reel to length")
+        self.assertEqual(step_label("Read", {"file_path": "/x/job/out/previews/reel-15.check.jpg"}), "Checking the 15s reel")
+        self.assertEqual(step_label("Write", {"file_path": "/x/job/out/manifest.json"}), "Writing hooks and caption")
+        self.assertIsNone(step_label("Bash", {"command": "ls footage"}))
+        self.assertIsNone(step_label("Glob", {"pattern": "*"}))
+        # Never a file name or a command.
+        self.assertNotIn("IMG", step_label("Bash", {"command": "printf 'IMG_1.mov' | bash $SK/sample.sh footage work/samples/a"}) or "")
+
+    def test_progress_url(self):
+        self.assertEqual(progress_url("https://app.nekter.io/api/editor/callback"), "https://app.nekter.io/api/editor/progress")
+        self.assertIsNone(progress_url("https://evil.test/other"))
 
 
 if __name__ == "__main__":

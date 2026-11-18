@@ -164,4 +164,12 @@ export const routes: RouteAttack[] = [
     build: () => ({ body: { jobId: "00000000-0000-4000-8000-0000000000ab", assetId: "00000000-0000-4000-8000-0000000000ac", ok: true } }),
     skipOwnerControl: "the frames worker signs every callback; a signed-in user is not a way in (signed callbacks are tested in lib/media/__tests__/describe.test.ts)",
   },
+  {
+    route: "app/api/editor/progress/route.ts",
+    method: "POST",
+    name: "unsigned editor progress on their job",
+    // No session can open this route: without the worker's HMAC signature it is refused for everyone.
+    build: () => ({ body: { jobId: "00000000-0000-4000-8000-0000000000ad", steps: [{ label: "Planted", at: "2026-11-18T10:00:00.000Z" }] } }),
+    skipOwnerControl: "the editor worker signs every update; a signed-in user is not a way in (signed updates are tested in lib/editor/__tests__/progress.test.ts)",
+  },
 ];

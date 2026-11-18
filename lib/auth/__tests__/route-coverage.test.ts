@@ -44,6 +44,7 @@ const SIGNED_BY_PROVIDER: Record<string, { wrapper: string; module: string; veri
   "app/api/media/frames/route.ts": { wrapper: "withWorkerSignature", module: "lib/media/worker-signature.ts", verifier: "isValidWorkerSignature" },
   "app/api/editor/uploads/route.ts": { wrapper: "withEditorBearer", module: "lib/editor/worker-auth.ts", verifier: "isValidEditorBearer" },
   "app/api/editor/callback/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },
+  "app/api/editor/progress/route.ts": { wrapper: "withEditorSignature", module: "lib/editor/worker-auth.ts", verifier: "isValidWorkerSignature" },
 };
 
 function routes(dir: string): string[] {

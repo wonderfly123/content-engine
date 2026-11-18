@@ -48,6 +48,6 @@ export const GET = guard(async (_req: NextRequest, ctx: { params: Promise<{ id: 
       editor: m.editorJobId ? (editor.jobs.get(m.editorJobId) ?? null) : null,
     })),
     clips,
-    editor: { running: editor.running },
+    editor: { running: editor.running, steps: editor.steps, startedAt: editor.startedAt },
   });
 });

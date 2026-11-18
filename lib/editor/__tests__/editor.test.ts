@@ -273,12 +273,15 @@ describe("GET /api/conversations/[id]", () => {
       costUsd: 1.42,
       approvable: true,
       cuts: [{ key: "cut-1", title: "Alpha cut", seconds: 15, previewId: previewMediaId, hookOptions: ["Alpha hook option"], caption: "Alpha cut caption" }],
+      steps: [],
+      seconds: 300,
     });
     expect(JSON.stringify(reply)).not.toContain("ws/"); // never a storage key
-    expect(json.editor).toEqual({ running: false });
+    expect(json.editor).toEqual({ running: false, steps: [], startedAt: null });
 
     await runningJob();
     json = await (await threadRoute(new NextRequest("http://localhost/x"), ctx({ id: a.conversationId }))).json();
-    expect(json.editor).toEqual({ running: true });
+    expect(json.editor).toMatchObject({ running: true, steps: [] });
+    expect(json.editor.startedAt).toEqual(expect.any(String));
   });
 });

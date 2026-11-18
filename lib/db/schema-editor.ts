@@ -35,6 +35,8 @@ export const editorJobs = pgTable(
     /** The worker's manifest, with each cut's preview media id added; null until done. */
     manifest: jsonb("manifest").$type<EditorManifest>(),
     usage: jsonb("usage").$type<EditorUsage>(),
+    /** The worker's steps so far ("Looking through the clips", "Rendering story-15"), newest last. */
+    progress: jsonb("progress").$type<Array<{ label: string; at: string }>>().notNull().default([]),
     /** The job's real AI cost in US dollars, as the worker measured it. */
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     error: text("error"),

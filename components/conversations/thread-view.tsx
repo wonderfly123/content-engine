@@ -45,8 +45,8 @@ interface ThreadData {
   };
   messages: Message[];
   clips?: Clip[];
-  /** Whether the editor is working on a job for this thread. */
-  editor?: { running: boolean };
+  /** Whether the editor is working on a job for this thread, and its steps so far. */
+  editor?: { running: boolean; steps?: Array<{ label: string; at: string }>; startedAt?: string | null };
 }
 
 const CLOSED_BECAUSE: Record<string, string> = {
@@ -166,6 +166,14 @@ export function ThreadView({
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
+    // Show it straight away, like a chat app; the server's copy replaces it when the thread reloads.
+    setDraft("");
+    const key = ["conversation", id];
+    const before = qc.getQueryData<ThreadData>(key);
+    if (before) {
+      const pending: Message = { id: `pending-${Date.now()}`, direction: "in", channel: "app", body, createdAt: new Date().toISOString() };
+      qc.setQueryData<ThreadData>(key, { ...before, messages: [...before.messages, pending] });
+    }
     try {
       const res = await fetch(`/api/conversations/${id}/messages`, {
         method: "POST",
@@ -174,13 +182,15 @@ export function ThreadView({
       });
       const json = (await res.json().catch(() => ({}))) as { conversationId?: string | null; error?: string };
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setDraft("");
       qc.invalidateQueries({ queryKey: ["conversations"] });
       if (json.conversationId && json.conversationId !== id) {
         if (onSwitch) onSwitch(json.conversationId);
         else router.push(`/conversations/${json.conversationId}`);
       } else await qc.invalidateQueries({ queryKey: ["conversation", id] });
     } catch (e) {
+      // Not sent: take it back out and give the text back to edit.
+      if (before) qc.setQueryData(key, before);
+      setDraft(body);
       toast.error((e as Error).message);
     } finally {
       setSending(false);
@@ -279,7 +289,7 @@ export function ThreadView({
               <ClipChips clips={rest} />
             </div>
           )}
-          {running && <EditingBubble />}
+          {running && <EditingBubble steps={data.editor?.steps} startedAt={data.editor?.startedAt} />}
           {/* After approval: when it posts (the same step as the watch page and texts) */}
           {!closed && <SchedulePanel conversationId={id} onChange={() => void qc.invalidateQueries({ queryKey: ["conversation", id] })} />}
           {data.messages.length === 0 && <p className="text-center text-sm text-muted-foreground">No messages yet.</p>}
@@ -332,7 +342,6 @@ export function ThreadView({
                     void send();
                   }
                 }}
-                disabled={sending}
                 className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-base outline-none placeholder:text-muted-foreground"
               />
               <Button type="button" size="icon" className="shrink-0 rounded-full" onClick={() => void send()} disabled={sending || !draft.trim()} aria-label="Send">

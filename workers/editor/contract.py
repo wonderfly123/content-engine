@@ -333,6 +333,61 @@ def extract_usage(result: Any, seconds: float, fallback_tokens: Optional[Dict[st
     return usage
 
 
+# ---- progress ------------------------------------------------------------------------------------
+
+_CUT_ID = re.compile(r"\b(reel|story)-(\d{1,3})\b")
+
+
+def _cut_name(text: str) -> Optional[str]:
+    m = _CUT_ID.search(text or "")
+    return f"the {m.group(2)}s {m.group(1)}" if m else None
+
+
+def progress_url(callback_url: str) -> Optional[str]:
+    """The app's progress endpoint, next to its result callback."""
+    suffix = "/api/editor/callback"
+    return callback_url[: -len(suffix)] + "/api/editor/progress" if isinstance(callback_url, str) and callback_url.endswith(suffix) else None
+
+
+def step_label(tool: Optional[str], tool_input: Dict[str, Any]) -> Optional[str]:
+    """A plain-English step for one of the agent's tool calls, or None for the ones not worth showing.
+    Labels never carry file names or commands: only what kind of work is happening."""
+    if tool == "Bash":
+        cmd = str(tool_input.get("command") or "")
+        if "scan.py" in cmd:
+            return "Looking through the clips"
+        if "sample.sh" in cmd:
+            return "Picking the best moments"
+        if "fit.py" in cmd:
+            cut = _cut_name(cmd)
+            return f"Fitting {cut} to length" if cut else "Fitting the cut to length"
+        if "render.sh" in cmd:
+            cut = _cut_name(cmd)
+            return f"Rendering {cut}" if cut else "Rendering a preview"
+        return None
+    path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+    if tool == "Read":
+        if path.endswith("job.json"):
+            return "Reading your request"
+        if path.endswith("previous.json"):
+            return "Looking at the last version"
+        if ".check.jpg" in path:
+            cut = _cut_name(path)
+            return f"Checking {cut}" if cut else "Checking the cut"
+        if "/scan/" in path:
+            return "Looking through the clips"
+        if "/samples/" in path:
+            return "Picking the best moments"
+        return None
+    if tool in ("Write", "Edit"):
+        if path.endswith("manifest.json"):
+            return "Writing hooks and caption"
+        if "/edl/" in path:
+            cut = _cut_name(path)
+            return f"Planning the shots for {cut}" if cut else "Planning the shot order"
+    return None
+
+
 def sign(secret: str, body: bytes) -> str:
     return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
