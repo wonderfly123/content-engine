@@ -127,14 +127,15 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
         </TabsList>
 
         <TabsContent value="app" className="space-y-4 pt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Appearance</CardTitle>
-              <CardDescription>
-                Use the toggle in the top bar to switch between light, dark, and system themes.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          {phone && activeBrand && (
+            <PhoneCard
+              brandId={activeBrand.id}
+              brandName={activeBrand.name}
+              status={phone.status}
+              textingEnabled={phone.textingEnabled}
+              onForBrand={phone.onForBrand}
+            />
+          )}
 
 
           {isPlatformAdmin && (
@@ -207,15 +208,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
             <TabsContent value="channels" className="space-y-4 pt-4">
 <Step6Channels brand={activeBrand} />
-              {phone && (
-                <PhoneCard
-                  brandId={activeBrand.id}
-                  brandName={activeBrand.name}
-                  status={phone.status}
-                  textingEnabled={phone.textingEnabled}
-                  onForBrand={phone.onForBrand}
-                />
-              )}
               <AnalyticsVisibilityCard
                 brandId={activeBrand.id}
                 initialEnabled={resolveEnabledChannels(

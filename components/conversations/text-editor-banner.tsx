@@ -11,7 +11,7 @@ export interface TextingInfo {
 }
 
 /** This brand's texting card in Settings. */
-export const brandTextingHref = (brandId: string) => `/settings?${new URLSearchParams({ brandId, tab: "channels" })}`;
+export const brandTextingHref = (brandId: string) => `/settings?${new URLSearchParams({ brandId, tab: "app" })}`;
 
 /**
  * "Prefer to text the editor?" — shown on the dashboard and Conversations only while texting is on
