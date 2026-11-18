@@ -7,7 +7,6 @@
  * a thread by id goes through `requireConversation` (lib/conversations/access.ts).
  * `member_phones` belongs to a user, not a workspace: a phone number identifies one person.
  */
-import { sql } from "drizzle-orm";
 import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   conversationKindEnum,
@@ -38,18 +37,19 @@ export const conversations = pgTable(
     startedBy: uuid("started_by").notNull(),
     /** Set when the editor schedules a post; publishing that post closes the thread. */
     postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
-    /** Why it closed: "new_thread" (a new reel/story was started) or "published". */
+    /** Why it closed: "published", "cancelled", "brand_texting_off" (or "new_thread", from before several could run at once). */
     closedReason: text("closed_reason"),
+    /** A short name the editor gives it from the person's description ("Cider stand opening"); texts start with it. */
+    title: text(),
+    /** What the person said the video is about, from the upload page. */
+    description: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   (t) => [
+    // A person can have several videos going at once; texts reach them by name or by most recent activity.
     index("conversations_workspace_user_status_idx").on(t.workspaceId, t.startedBy, t.status),
-    // At most one open thread per person per workspace.
-    uniqueIndex("conversations_one_open_per_user")
-      .on(t.workspaceId, t.startedBy)
-      .where(sql`status = 'open'`),
     index("conversations_brand_idx").on(t.brandId, t.createdAt),
     index("conversations_post_idx").on(t.postId),
   ],

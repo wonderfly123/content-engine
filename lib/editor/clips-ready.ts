@@ -5,7 +5,7 @@
  * cut, once. Two callbacks landing together both reach the insert; the one-active-job unique index
  * lets one through and the other is treated as "already started" (nothing is posted for it).
  */
-import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, like, type SQL } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { hasAnyJob } from "./jobs";
 import { postEditorMessage } from "./notify";
@@ -34,7 +34,7 @@ export async function startFirstCutIfClipsReady(conversationId: string | null): 
     // The clips' own message ("Added N clips") when there is one; else the thread's latest message.
     const latest = (where: SQL | undefined) =>
       db.select({ id: conversationMessages.id }).from(conversationMessages).where(where).orderBy(desc(conversationMessages.createdAt)).limit(1);
-    const [trigger] = await latest(and(eq(conversationMessages.conversationId, thread.id), eq(conversationMessages.direction, "out")));
+    const [trigger] = await latest(and(eq(conversationMessages.conversationId, thread.id), like(conversationMessages.body, "Added %")));
     const [fallback] = trigger ? [trigger] : await latest(eq(conversationMessages.conversationId, thread.id));
     if (!fallback) return false;
     const handoff = await startEditorJob(thread.id, fallback.id);

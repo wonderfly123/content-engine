@@ -15,7 +15,10 @@ import { z } from "zod";
 import { AccessError } from "@/lib/auth/workspace";
 import type { ConversationAccess } from "@/lib/conversations/access";
 import { handOffToEditor } from "@/lib/conversations/editor";
-import { addMessage } from "@/lib/conversations/store";
+import { nameThread } from "@/lib/conversations/naming";
+import { addMessage, updateThread } from "@/lib/conversations/store";
+import type { MessageChannel } from "@/lib/db/enums";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { postEditorMessage } from "@/lib/editor/notify";
 import { storageFullBody, storageRoom } from "@/lib/limits/storage";
@@ -176,14 +179,23 @@ export async function abortUpload(access: ConversationAccess, mediaId: string): 
   });
 }
 
-const doneSchema = z.object({ mediaIds: z.array(z.string().uuid()).min(1).max(MAX_DONE_IDS) });
+const doneSchema = z.object({
+  mediaIds: z.array(z.string().uuid()).min(1).max(MAX_DONE_IDS),
+  /** What the video is about (the upload page asks). */
+  description: z.string().trim().max(1500).optional(),
+  /** The length the person wants, when they picked one. */
+  seconds: z.union([z.literal(15), z.literal(30), z.literal(60)]).optional(),
+});
 
 /**
- * After a batch: one message in the thread ("Added 3 clips (1.2 GB)"), handed to the editor; its
- * answer, if any, is posted after it (and texted, when the thread is running by text). Every id must
- * be a clip of this thread (else 404); only finished ones count, at their uploaded size.
+ * After a batch: one message from the person in the thread ("Added 3 clips (1.2 GB)", then what
+ * they said it's about and the length they want), handed to the editor. The first time, the video
+ * is named from that description and the reply says so ("Got your 3 clips. Making a 15s reel:
+ * \"Cider stand opening\" …"); the reply is texted when the thread runs by text. Every id must be a
+ * clip of this thread (else 404); only finished ones count, at their uploaded size.
+ * `channel`: "sms" from an upload link (it came from a text), "app" from the app.
  */
-export async function uploadsDone(req: NextRequest, access: ConversationAccess): Promise<Response> {
+export async function uploadsDone(req: NextRequest, access: ConversationAccess, channel: MessageChannel = "app"): Promise<Response> {
   if (access.conversation.status !== "open") return threadClosed();
   const parsed = doneSchema.safeParse(await jsonBody(req));
   if (!parsed.success) return fail(400, "invalid", "Send the ids of the clips that finished.");
@@ -194,13 +206,25 @@ export async function uploadsDone(req: NextRequest, access: ConversationAccess):
   if (clips.length === 0) return fail(400, "no_clips", "None of those clips finished uploading.");
 
   const total = clips.reduce((sum, c) => sum + (c.originalSizeBytes ?? c.sizeBytes), 0);
-  const message = await addMessage({
-    conversationId: access.conversation.id,
-    direction: "out",
-    channel: "app",
-    body: clipsAddedMessage(clips.length, total),
-  });
+  const { description, seconds } = parsed.data;
+  const body = [clipsAddedMessage(clips.length, total), description, seconds ? `Length: ${seconds} seconds` : null].filter(Boolean).join("\n\n");
+  const message = await addMessage({ conversationId: access.conversation.id, direction: "in", channel, body, authorUserId: access.user.userId });
+
+  // Name it once, from what they said it's about.
+  let thread = access.conversation;
+  let namedReply: string | null = null;
+  if (!thread.title && description) {
+    const [brand] = thread.brandId ? await db.select({ name: schema.brands.name }).from(schema.brands).where(eq(schema.brands.id, thread.brandId)).limit(1) : [];
+    const name = await nameThread({ workspaceId: access.workspaceId, kind: thread.kind, brandName: brand?.name ?? null, description });
+    thread = await updateThread(thread.id, { title: name.title, description });
+    const what = `${seconds ? `${seconds}s ` : ""}${thread.kind ?? "video"}`;
+    namedReply =
+      `Got your ${clips.length} ${clips.length === 1 ? "clip" : "clips"}. Making a ${what}: "${name.title}". ${name.summary}` +
+      (channel === "sms" ? " I'll text you when the first cut is ready." : " The first cut will show up here.");
+  }
   const { queued, reply } = await handOffToEditor(access.conversation.id, message.id, req.nextUrl.origin);
-  if (reply) await postEditorMessage(access.conversation, reply);
+  // The naming reply already says what's next; any other answer (a problem, a question) still goes out.
+  if (namedReply) await postEditorMessage(thread, namedReply);
+  if (reply && !(namedReply && queued)) await postEditorMessage(thread, reply);
   return NextResponse.json({ messageId: message.id, count: clips.length, totalBytes: total, editor: { queued } });
 }

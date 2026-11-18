@@ -29,6 +29,8 @@ export const GET = guard(async (_req: NextRequest, ctx: { params: Promise<{ id: 
     conversation: {
       id: c.id,
       kind: c.kind,
+      title: c.title,
+      description: c.description,
       status: c.status,
       startedVia: c.startedVia,
       closedReason: c.closedReason,

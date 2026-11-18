@@ -37,5 +37,5 @@ export default async function UploadLinkPage({ params }: { params: Promise<{ tok
     return <Message title="This one is finished" body={'Text "new reel" or "new story" to start another.'} />;
   }
   const kind = access.conversation.kind === "story" ? "story" : access.conversation.kind === "reel" ? "reel" : "video";
-  return <UploadLinkClient token={token} conversationId={access.conversation.id} title={`New ${kind}${access.brandName ? ` for ${access.brandName}` : ""}`} />;
+  return <UploadLinkClient token={token} conversationId={access.conversation.id} title={access.conversation.title ?? `New ${kind}${access.brandName ? ` for ${access.brandName}` : ""}`} named={Boolean(access.conversation.title)} />;
 }

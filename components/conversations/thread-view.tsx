@@ -33,6 +33,8 @@ interface ThreadData {
   conversation: {
     id: string;
     kind: Kind;
+    title: string | null;
+    description: string | null;
     status: "open" | "closed";
     startedVia: Channel;
     closedReason: string | null;
@@ -196,8 +198,11 @@ export function ThreadView({
             </Link>
           )}
           <h2 className={cn("truncate font-semibold tracking-tight", compact ? "text-base" : "text-lg")}>
-            {kindLabel(c.kind)}
-            {c.brand && <span className="font-normal text-muted-foreground"> · {c.brand.name}</span>}
+            {c.title ?? kindLabel(c.kind)}
+            <span className="font-normal text-muted-foreground">
+              {c.title ? ` · ${kindLabel(c.kind)}` : ""}
+              {c.brand ? ` · ${c.brand.name}` : ""}
+            </span>
           </h2>
           {closed ? <Badge variant="outline">Closed</Badge> : <Badge>Open</Badge>}
         </div>

@@ -129,6 +129,9 @@ function mentionedBrand(normalized: string, brands: BrandRef[]): BrandRef | null
 
 const isYes = (raw: string, normalized: string) => YES.has(normalized) || /^\s*(👍|✅|👌)+\s*$/u.test(raw);
 
+/** A text that approves ("yes", "looks good", 👍). */
+export const isApproval = (raw: string) => isYes(raw, normalize(raw));
+
 /** STOP / START / HELP (and their variants), which carriers require and Salesmsg answers itself. */
 export function carrierKeyword(body: string): "stop" | "start" | "help" | null {
   const text = normalize(body);

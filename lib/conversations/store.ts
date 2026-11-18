@@ -16,7 +16,7 @@ export type Exec = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[
 export type ConversationRow = typeof conversations.$inferSelect;
 export type MessageRow = typeof conversationMessages.$inferSelect;
 
-export type CloseReason = "new_thread" | "published" | "brand_texting_off";
+export type CloseReason = "new_thread" | "published" | "brand_texting_off" | "cancelled";
 
 /** The workspace's active brands, for "use the only one" and "Which brand?". */
 export async function activeBrands(workspaceId: string, exec: Exec = db): Promise<BrandRef[]> {
@@ -25,6 +25,31 @@ export async function activeBrands(workspaceId: string, exec: Exec = db): Promis
     .from(brands)
     .where(and(eq(brands.workspaceId, workspaceId), eq(brands.status, "active")))
     .orderBy(asc(brands.name));
+}
+
+/**
+ * The person's open threads in this workspace, the one they last heard about first: ordered by
+ * the newest message in each (the editor's replies count), then by when the thread started.
+ */
+export async function findOpenThreads(workspaceId: string, userId: string, exec: Exec = db): Promise<ConversationRow[]> {
+  const rows = await exec
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.workspaceId, workspaceId), eq(conversations.startedBy, userId), eq(conversations.status, "open")));
+  if (rows.length <= 1) return rows;
+  const latest = await exec
+    .select({ conversationId: conversationMessages.conversationId, at: sql<Date>`max(${conversationMessages.createdAt})` })
+    .from(conversationMessages)
+    .where(inArray(conversationMessages.conversationId, rows.map((r) => r.id)))
+    .groupBy(conversationMessages.conversationId);
+  const at = new Map(latest.map((l) => [l.conversationId, new Date(l.at).getTime()]));
+  return rows.sort((a, b) => (at.get(b.id) ?? b.createdAt.getTime()) - (at.get(a.id) ?? a.createdAt.getTime()));
+}
+
+/** Closes one thread. */
+export async function closeThread(id: string, reason: CloseReason, exec: Exec = db): Promise<void> {
+  const now = new Date();
+  await exec.update(conversations).set({ status: "closed", closedReason: reason, closedAt: now, updatedAt: now }).where(and(eq(conversations.id, id), eq(conversations.status, "open")));
 }
 
 export async function findOpenThread(workspaceId: string, userId: string, exec: Exec = db): Promise<ConversationRow | null> {
@@ -89,7 +114,11 @@ export async function closeThreadsForPost(postId: string, exec: Pick<typeof db, 
     .where(and(eq(conversations.postId, postId), eq(conversations.status, "open")));
 }
 
-export async function updateThread(id: string, patch: { kind?: ConversationKind; brandId?: string }, exec: Exec = db): Promise<ConversationRow> {
+export async function updateThread(
+  id: string,
+  patch: { kind?: ConversationKind; brandId?: string; title?: string; description?: string },
+  exec: Exec = db,
+): Promise<ConversationRow> {
   const [row] = await exec
     .update(conversations)
     .set({ ...patch, updatedAt: new Date() })
@@ -178,6 +207,7 @@ export interface ThreadSummary {
   createdAt: Date;
   updatedAt: Date;
   closedReason: string | null;
+  title: string | null;
   lastMessage: { body: string; direction: MessageDirection; channel: MessageChannel; createdAt: Date } | null;
 }
 
@@ -217,6 +247,7 @@ export async function listThreads(workspaceId: string, brandId: string, viewerId
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       closedReason: r.closedReason,
+      title: r.title,
       lastMessage: m ? { body: m.body, direction: m.direction, channel: m.channel, createdAt: m.createdAt } : null,
     };
   });
