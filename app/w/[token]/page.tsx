@@ -34,12 +34,15 @@ export default async function WatchPage({ params }: { params: Promise<{ token: s
   const current = await currentCut(access.conversation.id);
   if (!current) return <Message title="No cut yet" body="The editor is still working on it. We'll text you when it's ready." />;
   const c = access.conversation;
+  const title = c.title ?? current.cut.title;
+  const fileName = `${title.replace(/[^\w -]+/g, "").trim().replace(/\s+/g, "-") || "cut"}.mp4`;
   return (
     <WatchClient
       token={token}
-      title={c.title ?? current.cut.title}
+      title={title}
       subtitle={[c.kind === "story" ? "Story" : "Reel", `${Math.round(current.cut.seconds)}s`, access.brandName].filter(Boolean).join(" · ")}
       videoUrl={presignGet(current.cut.preview.key, 6 * 3600)}
+      downloadUrl={presignGet(current.cut.preview.key, 6 * 3600, { downloadAs: fileName })}
       caption={current.cut.caption}
       initialStage={c.status === "open" ? current.stage : "posted"}
       scheduledFor={current.post?.when?.toISOString() ?? null}

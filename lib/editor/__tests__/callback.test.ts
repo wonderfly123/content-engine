@@ -146,7 +146,7 @@ describe("POST /api/editor/callback", () => {
     expect(body.get("number")).toBe(a.phone);
     expect(body.get("team_id")).toBe("4242");
     expect(body.get("message")).toMatch(
-      /^Here's a 15-second cut\.\n\nWatch it and approve: https:\/\/app\.test\/w\/[A-Za-z0-9_-]{43}\nOr reply YES to approve, or tell me what to change\.$/,
+      /^Here's a 15-second cut\.\n\nWatch, download or approve it: https:\/\/app\.test\/w\/[A-Za-z0-9_-]{43}\nOr reply YES to approve, or tell me what to change\.$/,
     );
   });
 

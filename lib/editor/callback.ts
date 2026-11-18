@@ -207,7 +207,7 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
     // The cut is ready: what it is, then exactly what to do next.
     const text =
       `${thread.title ? `[${thread.title}] ` : ""}${body}\n\n` +
-      `Watch it and approve: ${watchLink(thread.id)}\n` +
+      `Watch, download or approve it: ${watchLink(thread.id)}\n` +
       `Or reply YES to approve, or tell me what to change.`;
     await textMember(last.authorUserId ?? thread.startedBy, text, thread.brandId);
   } else if (last.channel === "sms") {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Copy, Loader2 } from "lucide-react";
+import { CheckCircle2, Copy, Download, Loader2 } from "lucide-react";
 import type { CutStage } from "@/lib/editor/approval";
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   title: string;
   subtitle: string;
   videoUrl: string;
+  /** The same file, served as a download (to post it yourself). */
+  downloadUrl: string;
   caption: string;
   initialStage: CutStage;
   scheduledFor: string | null;
@@ -18,7 +20,7 @@ interface Props {
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Watch, approve, schedule: one step at a time, the same steps a text or the app would take. */
-export function WatchClient({ token, title, subtitle, videoUrl, caption, initialStage, scheduledFor, story }: Props) {
+export function WatchClient({ token, title, subtitle, videoUrl, downloadUrl, caption, initialStage, scheduledFor, story }: Props) {
   const [stage, setStage] = useState<CutStage>(initialStage);
   const [when, setWhen] = useState<string | null>(scheduledFor);
   const [busy, setBusy] = useState(false);
@@ -62,6 +64,10 @@ export function WatchClient({ token, title, subtitle, videoUrl, caption, initial
 
       {/* Capped at about half the screen so the next step (Approve, Now…) stays in view on a phone. */}
       <video src={videoUrl} controls playsInline preload="metadata" className="mx-auto aspect-[9/16] max-h-[52dvh] w-auto max-w-full rounded-2xl bg-black object-contain" />
+
+      <a href={downloadUrl} className="flex items-center justify-center gap-1.5 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline">
+        <Download className="h-4 w-4" aria-hidden="true" /> Download the video to post it yourself
+      </a>
 
       {!story && caption && (
         <section className="rounded-xl border p-3">

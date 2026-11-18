@@ -93,6 +93,9 @@ describe("R2 operations", () => {
     expect(part.searchParams.get("X-Amz-Expires")).toBe("3600");
     expect(part.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
     expect(new URL(presignGet(KEY)).searchParams.get("X-Amz-Expires")).toBe("600");
+    expect(new URL(presignGet(KEY)).searchParams.has("response-content-disposition")).toBe(false);
+    const dl = new URL(presignGet(KEY, 600, { downloadAs: 'Cider "Stand"/Opening.mp4' }));
+    expect(dl.searchParams.get("response-content-disposition")).toBe('attachment; filename="Cider StandOpening.mp4"');
   });
 
   it("creates a multipart upload and reads its id", async () => {
