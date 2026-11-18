@@ -138,9 +138,25 @@ const replyText = (r: EditorCallback, hasCuts: boolean) => {
   return [reply, question].filter(Boolean).join("\n\n");
 };
 
+/**
+ * A result the worker accepted but this schema did not. Logs which fields failed (paths only, no
+ * values) and, when the job is known, fails it now with the reason, so the thread is not left
+ * "editing" until the 35-minute sweep.
+ */
+async function rejectShape(payload: unknown, issues: { path: PropertyKey[]; message: string }[]): Promise<CallbackOutcome> {
+  const where = issues.slice(0, 5).map((i) => `${i.path.map(String).join(".") || "body"}: ${i.message}`).join("; ");
+  console.error(`[editor callback] invalid result: ${where}`);
+  const jobId = (payload as { jobId?: unknown } | null)?.jobId;
+  const job = typeof jobId === "string" && UUID.test(jobId) ? await getJob(jobId.toLowerCase()) : null;
+  if (job?.status === "running") await fail(job, `The editor's result was not in the expected shape (${where}).`, null);
+  return { status: 400, body: { error: "invalid" } };
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function applyEditorResult(payload: unknown): Promise<CallbackOutcome> {
   const parsed = callbackSchema.safeParse(payload);
-  if (!parsed.success) return { status: 400, body: { error: "invalid" } };
+  if (!parsed.success) return rejectShape(payload, parsed.error.issues);
   const r = parsed.data;
   const job = await getJob(r.jobId.toLowerCase());
   if (!job) return { status: 404, body: { error: "unknown_job" } };
