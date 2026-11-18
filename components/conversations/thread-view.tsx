@@ -145,6 +145,15 @@ export function ThreadView({
     };
   }, [isLoading]);
 
+  // Once a batch is done and sent to the editor, its clips show on the "Added N clips" message: clear the list.
+  const settled = up.items.length > 0 && up.items.every((i) => i.status === "done" || i.status === "cancelled");
+  const { clearFinished } = up;
+  useEffect(() => {
+    if (!settled) return;
+    const t = setTimeout(clearFinished, 3000);
+    return () => clearTimeout(t);
+  }, [settled, clearFinished]);
+
   // Grow the composer with its text, up to a few lines.
   useEffect(() => {
     const el = composer.current;
@@ -214,7 +223,7 @@ export function ThreadView({
 
   return (
     <div
-      className={cn("relative flex flex-col bg-background", height)}
+      className={cn("relative flex min-h-0 flex-col overflow-hidden bg-background", height)}
       onDragOver={(e) => {
         if (closed || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -281,7 +290,10 @@ export function ThreadView({
       <div className={cn(composerColumn, "relative shrink-0 space-y-2 pb-4 pt-2")}>
         {/* Messages fade out above the message box, like ChatGPT, so the two never feel stuck together. */}
         <div className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
-        <UploadProgress up={up} />
+        {/* Never taller than a third of the screen, so the chat above stays in view. */}
+        <div className="max-h-[33dvh] overflow-y-auto">
+          <UploadProgress up={up} />
+        </div>
         {closed ? (
           <div className="rounded-3xl border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
             {CLOSED_BECAUSE[c.closedReason ?? ""] ?? "This chat is closed."} Start a new reel or story to keep going.

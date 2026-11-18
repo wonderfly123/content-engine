@@ -63,9 +63,9 @@ export function ConversationsShell({ children }: { children: React.ReactNode }) 
 
   return (
     <ListContext.Provider value={{ hidden, toggle }}>
-      <div className="-m-6 flex h-[calc(100%+3rem)] min-h-0">
+      <div className="-m-6 flex h-[calc(100%+3rem)] min-h-0 overflow-hidden">
         <ConversationSidebar className={cn(inThread ? "hidden" : "flex", hidden ? "md:hidden" : "md:flex")} />
-        <section className={cn("relative min-w-0 flex-1", inThread ? "flex" : "hidden md:flex")}>{children}</section>
+        <section className={cn("relative min-h-0 min-w-0 flex-1", inThread ? "flex" : "hidden md:flex")}>{children}</section>
       </div>
     </ListContext.Provider>
   );
