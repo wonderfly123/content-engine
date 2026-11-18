@@ -37,6 +37,8 @@ import {
 } from "./state";
 import { recordEvent } from "./events";
 import { closeThreadsForPost } from "@/lib/conversations/store";
+import { resolveStorageUrl } from "@/lib/storage/r2";
+import { notifyPostPublished } from "./published-hooks";
 
 export type DbOrTx = typeof defaultDb;
 
@@ -194,12 +196,14 @@ async function publishQueuedPost(
     scheduled_for: post.scheduledFor.toISOString(),
     external_container_id: post.externalContainerId,
     trial: draft.trial,
+    thumb_offset_ms: draft.thumbOffsetMs,
   };
   const pubAssets: PubAsset[] = draft.assets.map((a) => ({
     id: a.id,
     brand_id: a.brandId,
     kind: a.kind,
-    storage_url: a.storageUrl,
+    // Cloud-editor cuts live on private R2 (r2://<key>): a fresh presigned link is made here.
+    storage_url: resolveStorageUrl(a.storageUrl),
     thumbnail_url: a.thumbnailUrl,
     mime_type: a.mimeType ?? undefined,
     width: a.width ?? undefined,
@@ -340,8 +344,19 @@ async function markPostPublished(
     },
     db,
   );
+  // Who to tell it's live: the conversations that made this post (read before closing them).
+  const threads = await db
+    .select({ id: schema.conversations.id })
+    .from(schema.conversations)
+    .where(eq(schema.conversations.postId, post.id));
   // The conversation that made this post is finished (closed_reason "published").
   await closeThreadsForPost(post.id, db);
+  await notifyPostPublished({
+    postId: post.id,
+    brandId: post.brandId,
+    externalUrl,
+    conversationIds: threads.map((t) => t.id),
+  });
 }
 
 async function markPostFailed(
@@ -379,6 +394,8 @@ interface DraftWithAssets {
   caption: string;
   /** Instagram trial Reel mode, from `drafts.meta_json.trialReel`. */
   trial: "manual" | "auto" | null;
+  /** Cover frame for a Reel with no cover image, from `drafts.meta_json.coverAtMs`. */
+  thumbOffsetMs: number | null;
   assets: Array<{
     id: string;
     brandId: string;
@@ -439,6 +456,10 @@ async function loadDraftWithAssets(
     trial:
       draft.metaJson?.trialReel === 'manual' || draft.metaJson?.trialReel === 'auto'
         ? draft.metaJson.trialReel
+        : null,
+    thumbOffsetMs:
+      typeof draft.metaJson?.coverAtMs === "number" && Number.isFinite(draft.metaJson.coverAtMs)
+        ? draft.metaJson.coverAtMs
         : null,
     assets: assetRows.map((r) => ({ ...r })),
   };
