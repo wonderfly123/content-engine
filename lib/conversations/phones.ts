@@ -1,8 +1,8 @@
 /**
  * A member's mobile number, confirmed with a 6-digit code sent by text. Only confirmed numbers are
  * recognised when a text comes in. A number belongs to one user across the whole platform, and
- * texts for only the brands it is turned on for (member_phone_brands), each chosen in that brand's
- * Settings > Channels.
+ * texts for only the brands it is turned on for (member_phone_brands), each chosen in Settings > App
+ * while that brand is selected.
  *
  * The code is stored hashed, expires after 10 minutes and allows 5 tries; sending is rate limited
  * (one code per 30 seconds, five per hour).

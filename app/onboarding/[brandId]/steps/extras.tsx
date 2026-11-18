@@ -35,7 +35,7 @@ export function Extras({ brandId, instagramConnected, justConnected, appId, redi
             <CardDescription>Add your mobile number to send clips and get cuts back by text.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href={`/settings?${new URLSearchParams({ brandId: brandId ?? "", tab: "channels" })}`} target="_blank" className="inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline">
+            <Link href={`/settings?${new URLSearchParams({ brandId: brandId ?? "", tab: "app" })}`} target="_blank" className="inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline">
               Set up texting in Settings
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </Link>
