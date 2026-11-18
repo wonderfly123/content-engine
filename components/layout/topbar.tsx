@@ -6,6 +6,7 @@ import { ThemeToggle } from "./theme-toggle";
 
 const TITLE_OVERRIDES: Record<string, string> = {
   analytics: "Organic",
+  conversations: "Chats",
   ads: "Paid",
 };
 
@@ -17,7 +18,7 @@ function titleFromPath(pathname: string): string {
   // A record page (/conversations/<id>, /drafts/<id>, ...): name it after its section, never show the id.
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) && segs.length > 1) {
     const section = segs[segs.length - 2]!;
-    const singular: Record<string, string> = { conversations: "Conversation", drafts: "Draft", briefs: "Brief", posts: "Post", assets: "Asset" };
+    const singular: Record<string, string> = { conversations: "Chat", drafts: "Draft", briefs: "Brief", posts: "Post", assets: "Asset" };
     if (singular[section]) return singular[section];
     last = section;
   }

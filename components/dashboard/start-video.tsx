@@ -113,7 +113,7 @@ export function StartVideo({ brandId }: { brandId: string }) {
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Talk to the editor</SheetTitle>
-            <SheetDescription>Same conversation as texting. It is saved under Conversations.</SheetDescription>
+            <SheetDescription>Same chat as texting. It is saved under Chats.</SheetDescription>
           </SheetHeader>
           <div className="px-4 pb-6">{openId && <ThreadView id={openId} compact onSwitch={setOpenId} />}</div>
         </SheetContent>
