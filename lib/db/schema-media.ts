@@ -7,7 +7,7 @@
  * through `requireMedia` (lib/media/access.ts); uploads into a thread go through
  * `requireConversation` and must name a media object of that same thread.
  */
-import { bigint, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { mediaKindEnum, mediaStatusEnum } from "./enums";
 import { brands, workspaces } from "./schema";
 import { conversations } from "./schema-conversations";
@@ -60,3 +60,28 @@ export const platformSettings = pgTable("platform_settings", {
   updatedBy: uuid("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * The editor's built-in music: tracks on R2 under `music/library/`, imported from the owner's
+ * music folder (scripts/import-music.ts) with the beat data the skill's music index has. Platform
+ * level, not per workspace; the admin turns tracks on or off in Admin > Music.
+ */
+export const musicTracks = pgTable(
+  "music_tracks",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    title: text().notNull(),
+    r2Key: text("r2_key").notNull(),
+    seconds: real().notNull(),
+    bpm: real(),
+    firstBeat: real("first_beat"),
+    beatStrength: real("beat_strength"),
+    /** Where the loudest 15 seconds start, for short cuts. */
+    loudestFrom: real("loudest_from"),
+    /** Where the track came from (folder or service), kept for the record. */
+    source: text().notNull(),
+    active: boolean().notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("music_tracks_r2_key_unique").on(t.r2Key)],
+);

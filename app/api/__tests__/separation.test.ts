@@ -152,6 +152,8 @@ describe("coverage", () => {
       "editor_skill_versions",
       // Platform-wide settings (raw clip retention): platform admin only (app/api/admin/storage).
       "platform_settings",
+      // The editor's built-in music library: platform level, admin only (app/api/admin/music).
+      "music_tracks",
     ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))
