@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EditorAvatar } from "./editor-cuts";
 
 interface View {
   stage: "ready" | "approved" | "scheduled" | "posted" | null;
@@ -48,28 +49,33 @@ export function SchedulePanel({ conversationId, onChange }: { conversationId: st
 
   if (data?.stage === "approved") {
     return (
-      <div className="flex flex-col gap-2 rounded-xl border p-3">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <CalendarClock className="h-4 w-4" aria-hidden="true" /> Approved. When should it post?
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" disabled={busy} onClick={() => void call("POST", "now")}>Now</Button>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void call("POST", "tonight")}>Tonight at 7 PM</Button>
-          <input type="datetime-local" value={pick} onChange={(e) => setPick(e.target.value)} className="h-8 rounded-md border bg-background px-2 text-sm" />
-          <Button size="sm" variant="outline" disabled={busy || !pick} onClick={() => void call("POST", new Date(pick).toISOString())}>Schedule</Button>
+      <div className="flex gap-3">
+        <EditorAvatar />
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <p className="flex items-center gap-2 pt-0.5 text-[15px]">
+            <CalendarClock className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> When should it post?
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" className="rounded-full" disabled={busy} onClick={() => void call("POST", "now")}>Now</Button>
+            <Button size="sm" variant="outline" className="rounded-full" disabled={busy} onClick={() => void call("POST", "tonight")}>Tonight at 7 PM</Button>
+            <span className="flex items-center gap-1 rounded-full border pl-3">
+              <input type="datetime-local" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Pick a time" className="h-8 bg-transparent text-sm outline-none" />
+              <Button size="sm" variant="ghost" className="rounded-full" disabled={busy || !pick} onClick={() => void call("POST", new Date(pick).toISOString())}>Schedule</Button>
+            </span>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
     );
   }
   if (data?.stage === "scheduled") {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+      <div className="ml-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
         <span className="flex items-center gap-2 font-medium">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           Scheduled{data.when ? ` for ${new Date(data.when).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}
         </span>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void call("DELETE")}>Unschedule</Button>
+        <Button size="sm" variant="outline" className="rounded-full" disabled={busy} onClick={() => void call("DELETE")}>Unschedule</Button>
         {error && <p className="w-full text-sm text-destructive">{error}</p>}
       </div>
     );
