@@ -255,7 +255,7 @@ export function ThreadView({
 
       {/* Messages */}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
-        <div ref={content} className={cn(column, "space-y-6 py-6")}>
+        <div ref={content} className={cn(column, "space-y-8 pb-16 pt-8")}>
           <p className="text-center text-xs text-muted-foreground">
             Started {format(new Date(c.createdAt), "MMM d, h:mm a")}
             {c.startedVia === "sms" ? " by text" : ""}
@@ -276,7 +276,9 @@ export function ThreadView({
       </div>
 
       {/* Composer, pinned to the bottom */}
-      <div className={cn(column, "shrink-0 space-y-2 pb-3 pt-1")}>
+      <div className={cn(column, "relative shrink-0 space-y-2 pb-4 pt-2")}>
+        {/* Messages fade out above the message box, like ChatGPT, so the two never feel stuck together. */}
+        <div className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
         <UploadProgress up={up} />
         {closed ? (
           <div className="rounded-3xl border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
