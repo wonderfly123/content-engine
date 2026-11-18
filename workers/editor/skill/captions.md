@@ -8,7 +8,7 @@ left out, never guessed.
   and not cheesy, in the brand's voice.
 - A few relevant emojis, then 3 hand-picked hashtags on their own line at the end.
 - One story per job: the longest cut gets the fuller caption (2 to 3 sentences); shorter cuts get a shorter version
-  with the same hashtags. A story (`videoKind` story) gets one short line and no hashtags.
+  with the same hashtags. A story (`videoKind` story) gets `"caption": ""`: Instagram stories have no caption.
 - If the request mentions a series or what viewers should do next ("part 1, follow for the setup"), say it once, plainly.
 
 ## Example of the voice (approved, for tone only; do not reuse the wording or facts)

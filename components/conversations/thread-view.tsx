@@ -263,7 +263,7 @@ export function ThreadView({
             {c.startedVia === "sms" ? " by text" : ""}
           </p>
           {data.messages.map((m) => (
-            <Turn key={m.id} message={m} clips={byMessage.get(m.id)} mine={c.mine} compact={compact} onApprove={approve} approving={approving} />
+            <Turn key={m.id} message={m} clips={byMessage.get(m.id)} mine={c.mine} compact={compact} story={c.kind === "story"} onApprove={approve} approving={approving} />
           ))}
           {rest.length > 0 && (
             <div className="flex justify-end">
@@ -400,6 +400,7 @@ function Turn({
   clips,
   mine,
   compact,
+  story,
   onApprove,
   approving,
 }: {
@@ -407,6 +408,7 @@ function Turn({
   clips?: Clip[];
   mine: boolean;
   compact: boolean;
+  story: boolean;
   onApprove: () => void;
   approving: boolean;
 }) {
@@ -426,7 +428,7 @@ function Turn({
       {/* Kept to a readable width on the left, so your messages on the right stand clearly apart. */}
       <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-2">
         <div className="whitespace-pre-wrap break-words pt-0.5 text-[15px] leading-relaxed">{m.body}</div>
-        {m.editor && <EditorCuts job={m.editor} compact={compact} onApprove={onApprove} approving={approving} />}
+        {m.editor && <EditorCuts job={m.editor} compact={compact} story={story} onApprove={onApprove} approving={approving} />}
         <Meta m={m} teammate={false} />
       </div>
     </div>
