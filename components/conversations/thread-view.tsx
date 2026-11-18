@@ -208,7 +208,9 @@ export function ThreadView({
   const c = data.conversation;
   const closed = c.status === "closed";
   const { byMessage, rest } = attachClips(data.messages, data.clips ?? []);
-  const column = cn("mx-auto w-full", compact ? "px-3" : "max-w-5xl px-4 sm:px-10");
+  // Messages use the whole pane (editor on the far left, you on the far right); the message box stays centred.
+  const column = cn("mx-auto w-full", compact ? "px-3" : "px-4 sm:px-12 lg:px-20");
+  const composerColumn = cn("mx-auto w-full", compact ? "px-3" : "max-w-4xl px-4 sm:px-6");
 
   return (
     <div
@@ -276,7 +278,7 @@ export function ThreadView({
       </div>
 
       {/* Composer, pinned to the bottom */}
-      <div className={cn(column, "relative shrink-0 space-y-2 pb-4 pt-2")}>
+      <div className={cn(composerColumn, "relative shrink-0 space-y-2 pb-4 pt-2")}>
         {/* Messages fade out above the message box, like ChatGPT, so the two never feel stuck together. */}
         <div className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
         <UploadProgress up={up} />
@@ -413,7 +415,7 @@ function Turn({
     return (
       <div className="group flex flex-col items-end gap-1.5">
         {clips && <ClipChips clips={clips} />}
-        <div className="max-w-[70%] whitespace-pre-wrap break-words rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed">{m.body}</div>
+        <div className="max-w-[min(60%,32rem)] whitespace-pre-wrap break-words rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed">{m.body}</div>
         <Meta m={m} teammate={!mine} />
       </div>
     );
@@ -422,7 +424,7 @@ function Turn({
     <div className="group flex gap-3">
       <EditorAvatar />
       {/* Kept to a readable width on the left, so your messages on the right stand clearly apart. */}
-      <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-2">
+      <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-2">
         <div className="whitespace-pre-wrap break-words pt-0.5 text-[15px] leading-relaxed">{m.body}</div>
         {m.editor && <EditorCuts job={m.editor} compact={compact} onApprove={onApprove} approving={approving} />}
         <Meta m={m} teammate={false} />
