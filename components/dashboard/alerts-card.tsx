@@ -42,7 +42,7 @@ function iconFor(kind: SystemAlertDTO["kind"]) {
 function hrefFor(kind: SystemAlertDTO["kind"]): string | null {
   switch (kind) {
     case "channel_disconnected":
-      return "/admin";
+      return "/settings?tab=integrations";
     case "post_failed":
       return "/calendar";
     default:
