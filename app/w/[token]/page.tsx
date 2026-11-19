@@ -43,6 +43,10 @@ export default async function WatchPage({ params }: { params: Promise<{ token: s
       subtitle={[c.kind === "story" ? "Story" : "Reel", `${Math.round(current.cut.seconds)}s`, access.brandName].filter(Boolean).join(" · ")}
       videoUrl={presignGet(current.cut.preview.key, 6 * 3600)}
       downloadUrl={presignGet(current.cut.preview.key, 6 * 3600, { downloadAs: fileName })}
+      musicTitle={current.cut.music?.title ?? null}
+      silentDownloadUrl={
+        current.cut.music ? presignGet(current.cut.music.silent.key, 6 * 3600, { downloadAs: fileName.replace(/\.mp4$/, "-no-music.mp4") }) : null
+      }
       caption={current.cut.caption}
       initialStage={c.status === "open" ? current.stage : "posted"}
       scheduledFor={current.post?.when?.toISOString() ?? null}

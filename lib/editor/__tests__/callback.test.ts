@@ -239,6 +239,80 @@ describe("POST /api/editor/callback", () => {
   });
 });
 
+describe("music on a cut", () => {
+  const addTrack = async (title: string, workspaceId: string | null = null) =>
+    (await db.insert(schema.musicTracks).values({ title, r2Key: `music/library/${title}.mp3`, seconds: 120, source: "test", workspaceId }).returning())[0].id;
+  const withMusic = (jobId: string, trackId: string, over: Record<string, unknown> = {}) =>
+    cut(jobId, { music: { trackId, start: 41.25, silent: { key: key(jobId, "reel-15-nomusic.mp4") } }, ...over });
+
+  it("stores the track (title, start) and the copy without music as its own preview row", async () => {
+    const trackId = await addTrack("Summer Days");
+    const id = await runningJob();
+    expect((await send(result(id, { manifest: { cuts: [withMusic(id, trackId)] } }))).status).toBe(200);
+    const j = await job(id);
+    expect(j.status).toBe("done");
+    const music = j.manifest?.cuts[0].music;
+    expect(music).toMatchObject({ trackId, title: "Summer Days", start: 41.25, silent: { key: key(id, "reel-15-nomusic.mp4") } });
+    const rows = await previews();
+    expect(rows.map((r) => r.r2Key).sort()).toEqual([key(id), key(id, "reel-15-nomusic.mp4")].sort());
+    expect(rows.find((r) => r.r2Key === key(id, "reel-15-nomusic.mp4"))?.id).toBe(music?.silent.mediaId);
+  });
+
+  it("accepts the workspace's own track, and a silent cut (music null or absent)", async () => {
+    const own = await addTrack("Alpha Song", a.workspaceId);
+    const id = await runningJob();
+    const cuts = [withMusic(id, own), cut(id, { id: "reel-30", preview: { key: key(id, "reel-30.mp4") }, music: null })];
+    expect((await send(result(id, { manifest: { cuts } }))).status).toBe(200);
+    const j = await job(id);
+    expect(j.manifest?.cuts.map((c) => c.music?.title ?? null)).toEqual(["Alpha Song", null]);
+  });
+
+  it("rejects a track from another workspace, changing nothing but failing the job", async () => {
+    const theirs = await addTrack("Bravo Song", b.workspaceId);
+    const id = await runningJob();
+    const res = await send(result(id, { manifest: { cuts: [withMusic(id, theirs)] } }));
+    expect(res.status).toBe(422);
+    const j = await job(id);
+    expect(j.status).toBe("failed");
+    expect(j.error).toContain("music that is not in this workspace's library");
+    expect(await previews()).toHaveLength(0);
+  });
+
+  it("rejects a track that does not exist, and a silent copy outside this job's storage", async () => {
+    const id = await runningJob();
+    expect((await send(result(id, { manifest: { cuts: [withMusic(id, "99999999-9999-4999-8999-999999999999")] } }))).status).toBe(422);
+    const trackId = await addTrack("Summer Days");
+    const id2 = await runningJob();
+    const elsewhere = buildPreviewKey({ workspaceId: b.workspaceId, conversationId: b.conversationId, jobId: id2, filename: "x.mp4" });
+    const bad = withMusic(id2, trackId, { music: { trackId, start: 1, silent: { key: elsewhere } } });
+    expect((await send(result(id2, { manifest: { cuts: [bad] } }))).status).toBe(422);
+    expect((await job(id2)).error).toContain("outside this job's storage");
+  });
+
+  it("refuses music outside the worker's limits (same as contract.py): a start past an hour, a missing silent copy", async () => {
+    const trackId = await addTrack("Summer Days");
+    const id = await runningJob();
+    expect((await send(result(id, { manifest: { cuts: [withMusic(id, trackId, { music: { trackId, start: 3601, silent: { key: key(id, "s.mp4") } } })] } }))).status).toBe(400);
+    const id2 = await runningJob();
+    expect((await send(result(id2, { manifest: { cuts: [withMusic(id2, trackId, { music: { trackId, start: 3 } })] } }))).status).toBe(400);
+  });
+
+  it("a revision keeps an unchanged cut's music and its copy without music, reusing both rows", async () => {
+    const trackId = await addTrack("Summer Days");
+    const first = await runningJob(new Date(Date.now() - 60_000));
+    await db.update(schema.editorJobs).set({ createdAt: new Date(Date.now() - 60_000) }).where(eq(schema.editorJobs.id, first));
+    expect((await send(result(first, { manifest: { cuts: [withMusic(first, trackId)] } }))).status).toBe(200);
+    const kept = (await job(first)).manifest!.cuts[0];
+    const id = await runningJob();
+    const again = cut(id, { preview: { key: kept.preview.key }, music: { trackId, start: 41.25, silent: { key: kept.music!.silent.key } } });
+    expect((await send(result(id, { manifest: { cuts: [again] } }))).status).toBe(200);
+    const j = await job(id);
+    expect(j.status).toBe("done");
+    expect(j.manifest?.cuts[0].music?.silent.mediaId).toBe(kept.music!.silent.mediaId);
+    expect(await previews()).toHaveLength(2);
+  });
+});
+
 describe("stuck jobs", () => {
   it("fails jobs with no result within 35 minutes and says so in their thread", async () => {
     const now = new Date();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy, Loader2, PenLine } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Download, Loader2, Music, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,8 @@ export interface CutView {
   previewId: string;
   hookOptions: string[];
   caption: string;
+  /** The track under the cut and the same cut without it; null (or absent, older cuts) when silent. */
+  music?: { title: string; silentId: string } | null;
 }
 
 export interface Step {
@@ -160,6 +162,28 @@ function Cut({ cut, compact, story }: { cut: CutView; compact: boolean; story: b
           {cut.title}
         </p>
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{length(cut.seconds)}</span>
+      </div>
+      {cut.music && (
+        <p className="flex items-center gap-1.5 px-0.5 text-xs text-muted-foreground" title={cut.music.title}>
+          <Music className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{cut.music.title}</span>
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs">
+        <a href={`/api/media/${cut.previewId}?download=1`} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+          <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          Download
+        </a>
+        {cut.music && (
+          <a
+            href={`/api/media/${cut.music.silentId}?download=1`}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            title="Instagram can mute commercial music; this copy has no sound, to add one in Instagram"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Without music
+          </a>
+        )}
       </div>
       {/* Stories have no caption on Instagram, so none is shown for them. */}
       {cut.caption && !story && (

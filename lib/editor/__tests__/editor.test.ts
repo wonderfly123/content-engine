@@ -97,7 +97,7 @@ describe("handOffToEditor", () => {
     expect((init.headers as Record<string, string>).authorization).toBe(`Bearer ${SECRET}`);
     const sent = sentJob();
     expect(Object.keys(sent).sort()).toEqual(
-      ["anthropicApiKey", "brand", "callbackUrl", "clips", "instructions", "jobId", "kind", "model", "previous", "request", "skillFiles", "uploads", "videoKind"].sort(),
+      ["anthropicApiKey", "brand", "callbackUrl", "clips", "instructions", "jobId", "kind", "model", "music", "previous", "request", "skillFiles", "uploads", "videoKind"].sort(),
     );
     expect(sent).toMatchObject({
       jobId: job.id,
@@ -113,6 +113,32 @@ describe("handOffToEditor", () => {
     });
     expect(sent.brand.voice).toContain("Alpha voice");
     expect(sent.clips).toEqual([{ mediaId: a.mediaId, filename: "Alpha clip.mov", url: expect.stringContaining("exp=7200") }]);
+  });
+
+  it("sends the music the workspace may use: active platform tracks and its own, never another workspace's", async () => {
+    const track = (title: string, over: Partial<typeof schema.musicTracks.$inferInsert> = {}) => ({
+      title,
+      r2Key: `music/library/${title.toLowerCase().replace(/\s+/g, "-")}.mp3`,
+      seconds: 120,
+      source: "test",
+      ...over,
+    });
+    await db.insert(schema.musicTracks).values([
+      track("Platform Song", { bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40 }),
+      track("Switched Off", { active: false }),
+      track("Alpha Own", { workspaceId: a.workspaceId }),
+      track("Bravo Own", { workspaceId: b.workspaceId }),
+      track("Odd Tempo", { bpm: 9000 }),
+      track("Too Long", { seconds: 7200 }),
+    ]);
+    await say("make a reel");
+    const sent = sentJob();
+    expect(sent.music.map((t: { title: string }) => t.title).sort()).toEqual(["Alpha Own", "Odd Tempo", "Platform Song"]);
+    expect(sent.music.find((t: { title: string }) => t.title === "Platform Song")).toMatchObject({
+      seconds: 120, bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40, url: expect.stringContaining("music/library/platform-song.mp3?exp=7200"),
+    });
+    // Outside the worker's limits: sent without the odd value rather than refusing the whole job.
+    expect(sent.music.find((t: { title: string }) => t.title === "Odd Tempo").bpm).toBeNull();
   });
 
   it("sends the current version of every editable skill file: the newest save, else the repo copy", async () => {
@@ -218,7 +244,7 @@ describe("POST /api/editor/uploads", () => {
     const id = await runningJob();
     expect((await uploads(id, { files: [{ name: "../../raw/x.mp4", contentType: "video/mp4" }] })).status).toBe(400);
     expect((await uploads(id, { files: [{ name: "x.mov", contentType: "video/quicktime" }] })).status).toBe(400);
-    expect((await uploads(id, { files: Array.from({ length: 11 }, (_, i) => ({ name: `c${i}.mp4`, contentType: "video/mp4" })) })).status).toBe(400);
+    expect((await uploads(id, { files: Array.from({ length: 21 }, (_, i) => ({ name: `c${i}.mp4`, contentType: "video/mp4" })) })).status).toBe(400);
     expect((await uploads(id, { files: [ok.files[0], ok.files[0]] })).status).toBe(400);
     expect(r2.presignPut).not.toHaveBeenCalled();
   });
@@ -273,7 +299,7 @@ describe("GET /api/conversations/[id]", () => {
       status: "done",
       costUsd: 1.42,
       approvable: true,
-      cuts: [{ key: "cut-1", title: "Alpha cut", seconds: 15, previewId: previewMediaId, hookOptions: ["Alpha hook option"], caption: "Alpha cut caption" }],
+      cuts: [{ key: "cut-1", title: "Alpha cut", seconds: 15, previewId: previewMediaId, hookOptions: ["Alpha hook option"], caption: "Alpha cut caption", music: null }],
       steps: [],
       seconds: 300,
     });

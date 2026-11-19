@@ -15,6 +15,20 @@ export const edlEntrySchema = z.object({
   cropX: z.number().nullable(),
 });
 
+/** Same limits as the worker (MAX_TRACKS, MAX_MUSIC_START in workers/editor/contract.py). */
+export const MAX_MUSIC_TRACKS = 200;
+export const MAX_MUSIC_START = 3600;
+
+/**
+ * The cut's music from the worker: the track (an id from the job's library) and where in it the
+ * preview's sound starts; `silent` is the same cut without music, uploaded beside the preview.
+ */
+export const cutMusicSchema = z.object({
+  trackId: z.string().uuid(),
+  start: z.number().nonnegative().max(MAX_MUSIC_START),
+  silent: z.object({ key: text(1024).min(1) }),
+});
+
 export const cutSchema = z.object({
   id: text(100).min(1),
   title: text(3000),
@@ -26,6 +40,8 @@ export const cutSchema = z.object({
   caption: text(5000),
   script: text(20000).nullable(),
   coverAt: z.number().nonnegative(),
+  // Null (or absent, from a worker before music) for a silent cut.
+  music: cutMusicSchema.nullable().optional(),
 });
 
 export const manifestSchema = z.object({ cuts: z.array(cutSchema).min(1).max(10) });
@@ -49,7 +65,8 @@ export const callbackSchema = z.object({
   usage: usageSchema.nullable().optional(),
 });
 
-export const MAX_UPLOAD_FILES = 10;
+/** Ten cuts, each with a copy without music. */
+export const MAX_UPLOAD_FILES = 20;
 export const UPLOAD_TYPES = ["video/mp4", "image/jpeg"] as const;
 
 export const uploadsRequestSchema = z.object({
@@ -64,8 +81,16 @@ export type EditorUsage = z.infer<typeof usageSchema>;
 export type WorkerCut = z.infer<typeof cutSchema>;
 export type WorkerManifest = z.infer<typeof manifestSchema>;
 
+/** A cut's music as stored: the track's title (when the cut was made) and the silent copy's media row id added. */
+export interface StoredCutMusic {
+  trackId: string;
+  title: string;
+  start: number;
+  silent: { key: string; mediaId: string };
+}
+
 /** A cut as stored: the worker's cut, with the preview's media row id added. */
-export type EditorCut = Omit<WorkerCut, "preview"> & { preview: { key: string; mediaId: string } };
+export type EditorCut = Omit<WorkerCut, "preview" | "music"> & { preview: { key: string; mediaId: string }; music?: StoredCutMusic | null };
 export interface EditorManifest {
   cuts: EditorCut[];
 }
