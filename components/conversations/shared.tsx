@@ -28,10 +28,13 @@ export function ChannelMarker({ channel, className }: { channel: Channel; classN
 export function NewThreadButtons({
   brandId,
   size = "sm",
+  variant = "buttons",
   onStarted,
 }: {
   brandId: string | undefined;
   size?: "sm" | "default";
+  /** "nav": a ChatGPT-style vertical list for the sidebar. */
+  variant?: "buttons" | "nav";
   /** Called with the new thread instead of opening its page (the dashboard opens it in a panel). */
   onStarted?: (conversationId: string) => void;
 }) {
@@ -60,6 +63,30 @@ export function NewThreadButtons({
       setBusy(null);
     }
   };
+
+  if (variant === "nav") {
+    const items = [
+      { kind: "reel" as const, label: "New reel", Icon: Clapperboard },
+      { kind: "story" as const, label: "New story", Icon: Film },
+      { kind: "campaign" as const, label: "New campaign", Icon: Megaphone },
+    ];
+    return (
+      <div className="flex flex-col gap-0.5">
+        {items.map(({ kind, label, Icon }) => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => start(kind)}
+            disabled={!brandId || busy !== null}
+            className="flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-sm text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            {busy === kind ? "Starting..." : label}
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap gap-2">
