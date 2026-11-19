@@ -106,14 +106,19 @@ export function ConversationSidebar({ className }: { className?: string }) {
 
   const rows = data ? shown(data.threads, filter) : [];
   return (
-    <aside className={cn("h-full w-full shrink-0 flex-col border-r bg-muted/30 md:w-72", className)} aria-label="Chats">
-      <div className="space-y-3 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <NewThreadButtons brandId={brandId} />
+    <aside className={cn("h-full w-full shrink-0 flex-col border-r bg-muted/20 md:w-64", className)} aria-label="Chats">
+      <div className="px-2 pt-3">
+        <div className="mb-2 flex h-9 items-center justify-between pl-2.5 pr-0.5">
+          <span className="text-[15px] font-semibold tracking-tight">Chats</span>
           <ConversationListToggle />
         </div>
+        <NewThreadButtons brandId={brandId} variant="nav" />
+      </div>
+
+      <div className="mt-5 flex items-center justify-between px-4 pb-1">
+        <span className="text-xs font-medium text-muted-foreground">Recents</span>
         {data && data.threads.length > 0 && (
-          <div role="tablist" aria-label="Filter chats" className="flex gap-1">
+          <div role="tablist" aria-label="Filter chats" className="flex gap-0.5">
             {FILTERS.map((f) => (
               <button
                 key={f.value}
@@ -122,8 +127,8 @@ export function ConversationSidebar({ className }: { className?: string }) {
                 aria-selected={filter === f.value}
                 onClick={() => choose(f.value)}
                 className={cn(
-                  "rounded-full px-2.5 py-1 text-xs transition-colors",
-                  filter === f.value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "rounded-md px-1.5 py-0.5 text-[11px] transition-colors",
+                  filter === f.value ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {f.label}
@@ -133,7 +138,7 @@ export function ConversationSidebar({ className }: { className?: string }) {
         )}
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+      <nav className="min-h-0 flex-1 space-y-px overflow-y-auto px-2 pb-3">
         {!brandId && <p className="px-3 py-2 text-sm text-muted-foreground">Pick a brand to see its chats.</p>}
         {isLoading && [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
         {isError && <p className="px-3 py-2 text-sm text-destructive">Could not load chats.</p>}
@@ -161,16 +166,16 @@ function ThreadRowLink({ thread: t, active }: { thread: ThreadRow; active: boole
       href={`/conversations/${t.id}`}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "block rounded-lg px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        active ? "bg-muted" : "hover:bg-muted/60",
+        "block rounded-lg px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "bg-muted" : "hover:bg-muted/70",
       )}
     >
       <div className="flex items-center gap-1.5">
-        {t.startedVia === "sms" && <Smartphone className="h-3 w-3 shrink-0 text-sky-600 dark:text-sky-400" aria-label="Started by text" />}
-        <span className={cn("truncate text-sm", closed ? "text-muted-foreground" : "font-medium")}>{t.title ?? kindLabel(t.kind)}</span>
-        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatDistanceToNowStrict(new Date(last?.createdAt ?? t.createdAt))}</span>
+        <span className={cn("truncate text-sm", closed && "text-muted-foreground")}>{t.title ?? kindLabel(t.kind)}</span>
+        {t.startedVia === "sms" && <Smartphone className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Started by text" />}
+        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/80">{formatDistanceToNowStrict(new Date(last?.createdAt ?? t.createdAt))}</span>
       </div>
-      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+      <p className="truncate text-xs text-muted-foreground/80">
         {!t.mine && "Teammate · "}
         {last ? last.body : "No messages yet"}
       </p>
