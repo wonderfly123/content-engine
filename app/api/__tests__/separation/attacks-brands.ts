@@ -50,6 +50,30 @@ export const routes: RouteAttack[] = [
     build: (victim) => ({ ...brandParam(victim), body: { name: "Taken over", description: "taken over", status: "archived" } }),
   },
   { route: "app/api/brands/[id]/research/route.ts", method: "GET", build: brandParam },
+
+  // ---- editor style (Settings > Editor style) ------------------------------
+  { route: "app/api/brands/[id]/editor-style/route.ts", method: "GET", build: brandParam },
+  {
+    route: "app/api/brands/[id]/editor-style/route.ts",
+    method: "POST",
+    name: "save a section",
+    build: (victim) => ({ ...brandParam(victim), body: { action: "save", section: "opener", value: { picks: { maxWords: 4 }, notes: "taken over" } } }),
+  },
+  { route: "app/api/brands/[id]/editor-style/route.ts", method: "POST", name: "reset a section", build: (victim) => ({ ...brandParam(victim), body: { action: "reset", section: "never" } }) },
+  { route: "app/api/brands/[id]/editor-style/history/route.ts", method: "GET", build: (victim) => ({ ...brandParam(victim), query: { section: "never" } }) },
+  {
+    route: "app/api/brands/[id]/editor-style/suggestions/route.ts",
+    method: "POST",
+    name: "accept their suggestion",
+    build: (victim) => ({ ...brandParam(victim), body: { suggestionId: victim.styleSuggestionId, decision: "accept" } }),
+  },
+  {
+    route: "app/api/brands/[id]/editor-style/suggestions/route.ts",
+    method: "POST",
+    name: "own brand, their suggestion",
+    build: (victim, attacker) => ({ params: { id: attacker.brandId }, body: { suggestionId: victim.styleSuggestionId, decision: "dismiss" } }),
+    skipOwnerControl: MIXED,
+  },
   // For the victim this answers 409 (no "About" answers yet), so it never starts a run in tests.
   { route: "app/api/brands/[id]/research/route.ts", method: "POST", build: (victim) => ({ ...brandParam(victim), body: { restart: true } }) },
 

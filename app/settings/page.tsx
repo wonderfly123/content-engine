@@ -27,6 +27,7 @@ import { PhoneCard } from "@/components/settings/phone-card";
 import { phoneForCaller } from "@/lib/conversations/phones";
 import { Suspense } from "react";
 import { SettingsBrandSync } from "./brand-sync";
+import { EditorStyle } from "./editor-style/editor-style";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ function envStatuses(): { key: string; label: string; configured: boolean }[] {
   }));
 }
 
-const SETTINGS_TABS = ["app", "persona", "icps", "cadence", "channels", "connections", "integrations"];
+const SETTINGS_TABS = ["app", "persona", "icps", "cadence", "channels", "editor-style", "connections", "integrations"];
 
 interface SettingsPageProps {
   searchParams?: Promise<{ brandId?: string; tab?: string }>;
@@ -122,6 +123,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           <TabsTrigger value="icps" disabled={!activeBrand}>ICPs</TabsTrigger>
           <TabsTrigger value="cadence" disabled={!activeBrand}>Cadence</TabsTrigger>
           <TabsTrigger value="channels" disabled={!activeBrand}>Channels</TabsTrigger>
+          <TabsTrigger value="editor-style" disabled={!activeBrand}>Editor style</TabsTrigger>
           <TabsTrigger value="connections">Connections</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
@@ -204,6 +206,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
             <TabsContent value="cadence" className="pt-4">
 <Step5Cadence brand={activeBrand} />
+            </TabsContent>
+
+            <TabsContent value="editor-style" className="pt-4">
+              <EditorStyle key={activeBrand.id} brandId={activeBrand.id} brandName={activeBrand.name} />
             </TabsContent>
 
             <TabsContent value="channels" className="space-y-4 pt-4">

@@ -77,6 +77,12 @@ function checkContent(content: unknown): string {
   return content;
 }
 
+/** The pre-save check for SKILL.md: the manifest section (a heading naming out/manifest.json, with its "cuts" format) is still there. */
+export function hasManifestSection(content: string): boolean {
+  const at = content.search(/^#{1,6} .*manifest\.json/m);
+  return at >= 0 && content.slice(at).includes('"cuts"');
+}
+
 /** Adds a version of `path`. Refuses an unknown path, an oversize file, or a set over the job limit. */
 export async function saveSkillVersion(input: { path: unknown; content: unknown; note?: unknown; userId: string }): Promise<Row> {
   if (!isSkillPath(input.path)) throw new SkillError("That is not an editable skill file.");
@@ -84,6 +90,9 @@ export async function saveSkillVersion(input: { path: unknown; content: unknown;
   const content = checkContent(input.content);
   const noteRaw = typeof input.note === "string" ? input.note.trim() : "";
   if (noteRaw.length > MAX_SKILL_NOTE_CHARS) throw new SkillError(`A note can be at most ${MAX_SKILL_NOTE_CHARS} characters.`);
+  if (path === "SKILL.md" && !hasManifestSection(content)) {
+    throw new SkillError("SKILL.md must keep its out/manifest.json section (the heading and the format); the app reads every job's result from it.");
+  }
   const current = await currentSkillFiles();
   const total = EDITABLE_SKILL_PATHS.reduce((n, p) => n + utf8Bytes(p === path ? content : current[p]), 0);
   if (total > MAX_SKILL_TOTAL_BYTES) throw new SkillError(`All the skill files together can be at most ${MAX_SKILL_TOTAL_BYTES / 1024} KB.`);

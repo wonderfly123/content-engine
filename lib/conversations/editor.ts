@@ -12,6 +12,7 @@
  * thread's latest finished cut. Scheduling the post is a later stage; for now it is recorded.
  */
 import { approveLatestDone } from "@/lib/editor/jobs";
+import { learnInBackground } from "@/lib/editor/style-learning";
 import { startEditorJob, type EditorHandoff } from "@/lib/editor/submit";
 
 export type { EditorHandoff };
@@ -27,5 +28,7 @@ export async function handOffToEditor(threadId: string, messageId: string, origi
 
 export async function approvePendingPreview(threadId: string): Promise<ApprovalResult> {
   const job = await approveLatestDone(threadId);
+  // May suggest a tweak to the brand's editor style; never holds up the approval.
+  if (job) learnInBackground({ jobId: job.id, source: "approved" });
   return job ? { approved: true } : { approved: false, reason: "nothing pending" };
 }

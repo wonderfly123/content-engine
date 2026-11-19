@@ -37,6 +37,11 @@ MAX_TRACKS = 200
 MAX_MUSIC_START = 3600
 AUDIO_EXT = (".mp3", ".m4a", ".aac", ".wav")
 
+# The brand's editor style (Settings > Editor style), compiled by the app; job-only, never in the repo
+# folder, and counted on its own (same as STYLE_FILE / MAX_STYLE_BYTES in lib/editor/style-*.ts).
+STYLE_FILE = "style.md"
+MAX_STYLE_BYTES = 64 * 1024
+
 
 class ManifestError(Exception):
     """A problem with the agent's manifest; the message is safe to send back."""
@@ -111,6 +116,10 @@ def valid_skill_files(files: Any) -> bool:
         return False
     total = 0
     for path, text in files.items():
+        if path == STYLE_FILE:
+            if not isinstance(text, str) or "\x00" in text or len(text.encode("utf-8")) > MAX_STYLE_BYTES:
+                return False
+            continue
         if not isinstance(path, str) or path not in SKILL_FILES or not _safe_rel(path):
             return False
         if not isinstance(text, str) or "\x00" in text:

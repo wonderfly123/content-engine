@@ -48,6 +48,8 @@ export interface Seeded {
   editorMessageId?: string;
   /** The member's confirmed mobile number (texts from it land in this workspace). */
   phone: string;
+  /** A pending editor-style suggestion for the brand (section "opener"). */
+  styleSuggestionId: string;
 }
 
 export async function makeTestDb(): Promise<TestDb> {
@@ -136,7 +138,13 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
   const phone = `+1555${String(parseInt(userId.slice(-4), 16)).padStart(7, "0")}`;
   await db.insert(schema.memberPhones).values({ userId, phoneE164: phone, verifiedAt: new Date("2026-01-01T00:00:00Z") });
   await db.insert(schema.memberPhoneBrands).values({ userId, brandId });
+  // A pending editor-style suggestion (Settings > Editor style). No saved style, so jobs run on the defaults.
+  const [styleSuggestion] = await db
+    .insert(schema.editorStyleSuggestions)
+    .values({ workspaceId: ws.id, brandId, section: "opener", change: `${label} keep hooks short`, reason: `${label} asked twice`, source: "changes", conversationId: conversation.id })
+    .returning();
   return {
+    styleSuggestionId: styleSuggestion.id,
     user: { userId, email: `${slug}@example.test`, role: "user", status: "active" },
     workspaceId: ws.id,
     brandId,
