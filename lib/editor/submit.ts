@@ -24,7 +24,11 @@ import { isWorkspaceKey } from "@/lib/storage/keys";
 import { brandVoice } from "./brand-voice";
 import { failJob, hasAnyJob, latestFinishedJob, activeJob, recoverStuckEditorJobs } from "./jobs";
 import type { EditorManifest } from "./manifest";
-import { currentSkillFiles } from "./skill-store";
+import { EDITABLE_SKILL_PATHS, MAX_SKILL_TOTAL_BYTES, utf8Bytes } from "./skill-files";
+import { currentSkillFiles, defaultSkillContent } from "./skill-store";
+import { withBrandStyle } from "./style-compile";
+import { learnInBackground } from "./style-learning";
+import { brandStyleFile } from "./style-store";
 import { editorSecret } from "./worker-auth";
 
 const { conversations, conversationMessages, mediaObjects, brands, editorJobs } = schema;
@@ -74,6 +78,8 @@ export interface EditorJobRequest {
   /**
    * The current version of every editable skill file (Admin > Editor skill), written over the
    * worker's baked copy for this job. Left out if they can't be read; the worker then uses its own.
+   * When the brand has its own editor style (Settings > Editor style), it rides along as `style.md`
+   * and SKILL.md gets a pointer to it; a brand that changed nothing gets exactly the platform files.
    */
   skillFiles?: Record<string, string>;
   /**
@@ -118,13 +124,29 @@ async function musicForJob(workspaceId: string, jobId: string): Promise<EditorJo
   }
 }
 
-async function skillFilesForJob(jobId: string): Promise<Record<string, string> | undefined> {
+async function skillFilesForJob(jobId: string, brand: { id: string; name: string }): Promise<Record<string, string> | undefined> {
+  let files: Record<string, string> | undefined;
   try {
-    return await currentSkillFiles();
+    files = await currentSkillFiles();
   } catch {
     console.warn(`[editor] the skill files could not be read for job ${jobId}; the worker uses its baked copy.`);
-    return undefined;
   }
+  let style: string | null = null;
+  try {
+    style = await brandStyleFile(brand.id, brand.name);
+  } catch {
+    console.warn(`[editor] the brand's editor style could not be read for job ${jobId}; it runs on the defaults.`);
+  }
+  if (!style) return files;
+  // The style needs SKILL.md to point at it; without the platform set, the repo copies carry it.
+  const base = files ?? Object.fromEntries(EDITABLE_SKILL_PATHS.map((p) => [p, defaultSkillContent(p)]));
+  const withStyle = withBrandStyle(base, style);
+  const platformBytes = EDITABLE_SKILL_PATHS.reduce((n, p) => n + utf8Bytes(withStyle[p] ?? ""), 0);
+  if (platformBytes > MAX_SKILL_TOTAL_BYTES) {
+    console.warn(`[editor] job ${jobId}: no room for the brand's style next to the skill files; it runs on the defaults.`);
+    return files;
+  }
+  return withStyle;
 }
 
 export function editorConfig(): { url: string; secret: string } | null {
@@ -296,7 +318,7 @@ export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHan
     callbackUrl: `${base}${CALLBACK_PATH}`,
     music: await musicForJob(thread.workspaceId, jobId),
   };
-  const skillFiles = await skillFilesForJob(jobId);
+  const skillFiles = await skillFilesForJob(jobId, brand);
   if (skillFiles) job.skillFiles = skillFiles;
 
   try {
@@ -316,5 +338,7 @@ export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHan
     await failJob(jobId, "The editor worker could not be reached.", ["running"]);
     return { queued: false, reason: "unreachable", reply: REPLIES.refused };
   }
+  // A change request may teach the brand's editor style something; never holds up the edit.
+  if (kind === "revision" && request.trim()) learnInBackground({ jobId, source: "changes", request, manifest: input.previous ?? null });
   return { queued: true, jobId };
 }

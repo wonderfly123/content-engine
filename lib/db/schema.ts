@@ -667,3 +667,5 @@ export const adInsights = pgTable(
     index("ad_insights_account_day_idx").on(t.adAccountId, t.day),
   ],
 );
+// Per-brand editor style and its suggested tweaks (Settings > Editor style, lib/editor/style-*).
+export * from "./schema-style";

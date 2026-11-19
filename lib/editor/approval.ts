@@ -11,6 +11,7 @@ import { describePostTime } from "@/lib/conversations/post-time";
 import type { EditorCut } from "@/lib/editor/manifest";
 import { approveLatestDone, latestFinishedJob } from "@/lib/editor/jobs";
 import { cancelScheduledPost, scheduledPostFor, scheduleEditorCut } from "@/lib/editor/schedule";
+import { learnInBackground } from "@/lib/editor/style-learning";
 
 export const ASK_WHEN = 'When should it post? Reply NOW, TONIGHT, or a time like "tomorrow 9am".';
 export const UNDO_WORDS = new Set(["undo", "unschedule", "dont post", "don't post", "hold", "wait"]);
@@ -36,7 +37,10 @@ export async function currentCut(threadId: string): Promise<CurrentCut | null> {
 }
 
 export async function approveCut(threadId: string): Promise<boolean> {
-  return (await approveLatestDone(threadId)) !== null;
+  const job = await approveLatestDone(threadId);
+  // May suggest a tweak to the brand's editor style; never holds up the approval.
+  if (job) learnInBackground({ jobId: job.id, source: "approved" });
+  return job !== null;
 }
 
 export interface Scheduled {
