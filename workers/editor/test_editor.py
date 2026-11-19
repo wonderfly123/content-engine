@@ -321,6 +321,8 @@ class TestProgress(unittest.TestCase):
         self.assertEqual(step_label("Write", {"file_path": "/x/job/out/manifest.json"}), "Writing hooks and caption")
         self.assertIsNone(step_label("Bash", {"command": "ls footage"}))
         self.assertIsNone(step_label("Glob", {"pattern": "*"}))
+        self.assertEqual(step_label("Agent", {"subagent_type": "reviewer", "prompt": "check reel-15"}), "Reviewing the cut")
+        self.assertEqual(step_label("Task", {"subagent_type": "reviewer"}), "Reviewing the cut")
         # Never a file name or a command.
         self.assertNotIn("IMG", step_label("Bash", {"command": "printf 'IMG_1.mov' | bash $SK/sample.sh footage work/samples/a"}) or "")
 

@@ -25,7 +25,7 @@ import { UserMenu, useCurrentUser } from "./user-menu";
 const mainLinks = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/calendar", icon: Calendar, label: "Calendar" },
-  { href: "/conversations", icon: MessagesSquare, label: "Chats" },
+  { href: "/chats", icon: MessagesSquare, label: "Chats" },
 ];
 
 // Review Pipeline: each group is one pipeline, its links are the stages in order.

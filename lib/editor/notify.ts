@@ -27,7 +27,7 @@ export async function lastInbound(conversationId: string): Promise<{ channel: Me
   return row ?? { channel: "app", authorUserId: null };
 }
 
-export const threadLink = (conversationId: string): string => `${appUrl()}/conversations/${conversationId}`;
+export const threadLink = (conversationId: string): string => `${appUrl()}/chats/${conversationId}`;
 /** The phone page (no sign-in) where a texted cut is watched, approved and scheduled. */
 export const watchLink = (conversationId: string): string => `${appUrl()}${watchLinkPath(conversationId)}`;
 

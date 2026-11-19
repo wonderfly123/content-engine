@@ -45,7 +45,7 @@ const FAQS = [
 function ProductPreview() {
   const thread = [
     { me: true, text: "new reel" },
-    { me: false, text: "On it. Upload the clips here: app.nekter.io/conversations/…" },
+    { me: false, text: "On it. Upload the clips here: app.nekter.io/chats/…" },
     { me: true, text: "make it shorter and open on the pour" },
     { me: false, text: "Done. New 15s cut is ready to review." },
     { me: true, text: "yes" },

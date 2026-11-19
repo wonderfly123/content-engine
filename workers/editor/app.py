@@ -37,13 +37,13 @@ SKILL_NAME = "cutting-montage-videos"
 SKILL_DIR = "/opt/nekter/skill"
 TIMEOUT_SEC = 30 * 60
 AGENT_MAX_SEC = 25 * 60
-MAX_TURNS = 80
+MAX_TURNS = 100
 MAX_FOOTAGE_BYTES = 40 * 1024**3
 MAX_PUT_BYTES = 5 * 1024**3
 MAX_TRACK_BYTES = 60 * 1024**2
 MAX_MUSIC_BYTES = 2 * 1024**3
 CHUNK = 8 * 1024 * 1024
-TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"]
+TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill", "Agent", "Task"]  # Agent/Task: the reviewer subagent
 FILE_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
 
 image = (
@@ -302,7 +302,20 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
                      progress: Optional["Progress"] = None) -> Optional[str]:
     """Runs the agent. Fills state["result"] (the ResultMessage) and state["tokens"] as it goes, so they survive
     an exception; returns a safe error message or None."""
-    from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage
+    from claude_agent_sdk import AgentDefinition, AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage
+
+    # A second pair of eyes: the editor calls it once per cut (SKILL.md step 8). It only reads; its tool calls go
+    # through the same guard. Its instructions are review.md, so Admin > Editor steps can change them per job.
+    reviewer = AgentDefinition(
+        description="Reviews one finished cut (frames, shots, hooks and caption) against the brief and answers pass or a short list of fixes.",
+        prompt=(
+            f"You review one cut for a video editor. Read .claude/skills/{SKILL_NAME}/review.md first and follow it exactly. "
+            "Never write, edit or run anything; only read files in this folder and answer in the format review.md gives."
+        ),
+        tools=["Read", "Glob", "Grep"],
+        model="inherit",
+        maxTurns=15,
+    )
 
     async def guard(input_data: Dict[str, Any], tool_use_id: Optional[str], context: Any) -> Dict[str, Any]:
         name = input_data.get("tool_name")
@@ -330,6 +343,7 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
         cwd=ws,
         setting_sources=["project"],       # only <ws>/.claude (the skill); no user settings
         skills=[SKILL_NAME],
+        agents={"reviewer": reviewer},
         model=model,
         max_turns=MAX_TURNS,
         env=_agent_env(api_key, tmp),

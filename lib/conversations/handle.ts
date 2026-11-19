@@ -251,7 +251,7 @@ export async function handleInbound(input: InboundInput): Promise<InboundResult>
         thread: { kind: thread.kind, brandId: thread.brandId },
         brands,
         askedBrand: await hasAskedBrand(thread.id),
-        link: input.channel === "sms" ? `${appUrl(input.origin)}${uploadLinkPath(thread.id)}` : `${appUrl(input.origin)}/conversations/${thread.id}`,
+        link: input.channel === "sms" ? `${appUrl(input.origin)}${uploadLinkPath(thread.id)}` : `${appUrl(input.origin)}/chats/${thread.id}`,
       },
       editor,
     );

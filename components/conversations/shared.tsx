@@ -55,7 +55,7 @@ export function NewThreadButtons({
       if (onStarted) {
         onStarted(json.conversationId);
         setBusy(null);
-      } else router.push(`/conversations/${json.conversationId}`);
+      } else router.push(`/chats/${json.conversationId}`);
       // The chats column stays on screen now, so the button must come back from "Starting...".
       setBusy(null);
     } catch (e) {

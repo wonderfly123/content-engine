@@ -38,11 +38,11 @@ export const useConversationListHidden = () => useContext(ListContext)?.hidden ?
 
 /**
  * The conversations column beside the open chat, edge to edge under the top bar (cancelling the
- * page padding). On a phone it is one or the other: the list at /conversations, the chat in a thread.
+ * page padding). On a phone it is one or the other: the list at /chats, the chat in a thread.
  * On a laptop the column can be hidden; the choice is remembered on this device.
  */
 export function ConversationsShell({ children }: { children: React.ReactNode }) {
-  const inThread = /^\/conversations\/[^/]+/.test(usePathname());
+  const inThread = /^\/chats\/[^/]+/.test(usePathname());
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
     try {

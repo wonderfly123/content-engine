@@ -86,16 +86,15 @@ afterEach(() => {
 });
 
 describe("defaults", () => {
-  const allSkill = Object.values(SKILL_DEFAULTS).join("\n");
-
-  it("prefill every text box from today's skill markdown, word for word", () => {
+  it("prefill every text box in plain words, with no markdown symbols", () => {
     const style = defaultStyle();
+    const plain = (text: string, label: string) => expect(text, label).not.toMatch(/\*\*|`|^#|^\s*[-*] |^\s*\d+\. |\|/m);
     for (const id of STYLE_SECTION_IDS) {
-      // Some boxes join two passages; each paragraph is verbatim.
-      for (const para of style[id].notes.split("\n\n").filter(Boolean)) expect(allSkill, id).toContain(para);
+      plain(style[id].notes, id);
+      if (id !== "never") expect(style[id].notes.trim(), id).not.toBe("");
     }
     for (const t of style.footage.picks.types as FootageType[]) {
-      for (const text of [t.when, t.pacing, ...t.notes.split("\n\n")]) expect(allSkill, t.name).toContain(text);
+      for (const text of [t.when, t.pacing, t.notes]) plain(text, t.name);
       expect(t.ranked.length).toBeGreaterThan(3);
       for (const r of t.ranked) expect(SKILL_DEFAULTS[`profiles/${t.id}.md`]).toContain(`**${r}**`);
     }

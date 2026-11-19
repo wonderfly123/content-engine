@@ -57,7 +57,11 @@ Clips are only ever read; never modify or delete anything in `footage/`.
    clip under the profile. Fix the EDL and render again if not. Do 15s first, then 30s.
 7. **Words**: for each cut, ~10 `hookOptions` per `hooks.md` and a `caption` per `captions.md`. Suggest `coverAt`:
    seconds into the cut of the best cover frame (the finished result, no motion blur).
-8. **Manifest**: write `out/manifest.json` (below). `python3 $SK/edl2json.py json work/edl/<id>.tsv` prints each
+8. **Review**: for each cut, ask the `reviewer` subagent to check it (one call per cut). Tell it the cut's `id`
+   and paste the cut's `hookOptions` and `caption` into the message. It answers `VERDICT: pass` or a short list of
+   fixes. Apply every fix you agree with (re-fit, re-render, re-mix, re-check, or rewrite the words), once. Do not
+   ask for a second review. If the reviewer cannot be reached, carry on without it.
+9. **Manifest**: write `out/manifest.json` (below). `python3 $SK/edl2json.py json work/edl/<id>.tsv` prints each
    cut's `edl` array exactly as rendered; paste it in unchanged. Then finish with one short line.
 
 ## Revisions
@@ -66,7 +70,7 @@ Read `previous.json` and the request. Change only what was asked; everything els
 - A cut that does not change: copy its manifest entry unchanged, including `preview` `{"key": ...}`.
 - A cut that changes: `python3 $SK/edl2json.py tsv previous.json <id> work/edl/<id>.prev.tsv`, edit that EDL as
   asked (keep every shot the request does not touch), then fit (only if the length must change), render, check
-  as above, and give the cut `preview` `{"path": ...}`. Keep its `id`. New words only if the request is about words.
+  and review as above, and give the cut `preview` `{"path": ...}`. Keep its `id`. New words only if the request is about words.
 - A new cut asked for: make it as in a first cut, with a new `id`.
 - "Change the song": start from the previous EDL, pick a different track, beatfit, render, mix. "No music":
   render the previous EDL as is, no mix, `music` null. Both count as a cut that changes.
