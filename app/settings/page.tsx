@@ -21,10 +21,12 @@ import { phoneForCaller } from "@/lib/conversations/phones";
 import { Suspense } from "react";
 import { SettingsBrandSync } from "./brand-sync";
 import { EditorStyle } from "./editor-style/editor-style";
+import { MusicLibrary } from "./music/music-library";
+import { StorageSettings } from "./storage/storage-settings";
 
 export const dynamic = "force-dynamic";
 
-const SETTINGS_TABS = ["persona", "icps", "editor-style", "integrations"];
+const SETTINGS_TABS = ["persona", "icps", "editor-style", "music", "storage", "integrations"];
 /** Tabs that were folded into Integrations; old links to them still land there. */
 const MOVED_TO_INTEGRATIONS = ["app", "connections", "channels"];
 
@@ -110,6 +112,8 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
           </TabsTrigger>
           <TabsTrigger value="icps" disabled={!activeBrand}>ICPs</TabsTrigger>
           <TabsTrigger value="editor-style" disabled={!activeBrand}>Editor style</TabsTrigger>
+          <TabsTrigger value="music" disabled={!activeBrand}>Music</TabsTrigger>
+          <TabsTrigger value="storage" disabled={!activeBrand}>Storage</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
@@ -125,6 +129,14 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
             <TabsContent value="editor-style" className="pt-4">
               <EditorStyle key={activeBrand.id} brandId={activeBrand.id} brandName={activeBrand.name} />
+            </TabsContent>
+
+            <TabsContent value="music" className="pt-4">
+              <MusicLibrary key={activeBrand.id} brandId={activeBrand.id} />
+            </TabsContent>
+
+            <TabsContent value="storage" className="pt-4">
+              <StorageSettings key={activeBrand.id} brandId={activeBrand.id} />
             </TabsContent>
 
           </>
