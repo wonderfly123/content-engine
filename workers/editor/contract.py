@@ -30,7 +30,7 @@ MAX_TEXT = 20_000
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
 MODEL_RE = re.compile(r"^claude-[a-z0-9.\-]{1,60}$")
 # The skill's editable markdown files (same list as EDITABLE_SKILL_PATHS in lib/editor/skill-files.ts).
-SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md")
+SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md", "review.md")
 MAX_SKILL_BYTES = 200 * 1024
 # Music: same limits as lib/editor/manifest.ts (MAX_MUSIC_TRACKS, MAX_MUSIC_START).
 MAX_TRACKS = 200
@@ -445,9 +445,15 @@ def progress_url(callback_url: str) -> Optional[str]:
     return callback_url[: -len(suffix)] + "/api/editor/progress" if isinstance(callback_url, str) and callback_url.endswith(suffix) else None
 
 
+# The tool the editor uses to call its reviewer subagent (Claude Code has named it both ways).
+SUBAGENT_TOOLS = ("Agent", "Task")
+
+
 def step_label(tool: Optional[str], tool_input: Dict[str, Any]) -> Optional[str]:
     """A plain-English step for one of the agent's tool calls, or None for the ones not worth showing.
     Labels never carry file names or commands: only what kind of work is happening."""
+    if tool in SUBAGENT_TOOLS:
+        return "Reviewing the cut"
     if tool == "Bash":
         cmd = str(tool_input.get("command") or "")
         if "scan.py" in cmd:
