@@ -153,9 +153,6 @@ describe("coverage", () => {
       // Platform-wide settings (the fallback raw clip retention); no route writes them today, and each
       // brand's own choice lives on brands.settings_json (app/api/brands/[id]/storage).
       "platform_settings",
-      // The editor's music library: platform tracks (admin only, app/api/admin/music) or one workspace's own
-      // (workspace_id); an editor job only gets, and its callback only accepts, the platform's or its own.
-      "music_tracks",
     ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))

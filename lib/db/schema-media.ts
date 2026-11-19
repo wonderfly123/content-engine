@@ -7,6 +7,7 @@
  * through `requireMedia` (lib/media/access.ts); uploads into a thread go through
  * `requireConversation` and must name a media object of that same thread.
  */
+import { sql } from "drizzle-orm";
 import { bigint, boolean, index, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { mediaKindEnum, mediaStatusEnum } from "./enums";
 import { brands, workspaces } from "./schema";
@@ -63,16 +64,20 @@ export const platformSettings = pgTable("platform_settings", {
 
 /**
  * The editor's built-in music: tracks on R2 under `music/library/`, imported from the owner's
- * music folder (scripts/import-music.ts) with the beat data the skill's music index has. Platform
- * level (workspaceId null) unless a workspace owns the track; the admin turns tracks on or off in
- * Admin > Music. The cloud editor gets the platform's tracks plus the job's own workspace's.
+ * music folder (scripts/import-music.ts) with the beat data the skill's music index has.
+ * Each brand has its own library (brandId set, workspaceId = the brand's workspace), managed in
+ * Settings > Music; a new brand starts with a copy of the platform library (brandId and workspaceId
+ * null). Rows with no brand are the platform library and older workspace tracks, kept so cuts made
+ * before libraries were per brand still validate. The cloud editor gets only the job's brand's tracks.
  */
 export const musicTracks = pgTable(
   "music_tracks",
   {
     id: uuid().primaryKey().defaultRandom(),
-    /** Null: the platform library, for every workspace. Set: only that workspace's editor jobs. */
+    /** Null: the platform library. Set: the brand's workspace (brand tracks) or a legacy workspace track. */
     workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Set: the track is in that brand's library (Settings > Music). Null: platform or legacy workspace track. */
+    brandId: uuid("brand_id").references(() => brands.id, { onDelete: "cascade" }),
     title: text().notNull(),
     r2Key: text("r2_key").notNull(),
     seconds: real().notNull(),
@@ -86,5 +91,11 @@ export const musicTracks = pgTable(
     active: boolean().notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("music_tracks_r2_key_unique").on(t.r2Key), index("music_tracks_workspace_idx").on(t.workspaceId)],
+  (t) => [
+    uniqueIndex("music_tracks_brand_r2_key_unique").on(t.brandId, t.r2Key),
+    // NULL brand ids are distinct to the index above, so rows without a brand keep their own unique key.
+    uniqueIndex("music_tracks_platform_r2_key_unique").on(t.r2Key).where(sql`brand_id IS NULL`),
+    index("music_tracks_workspace_idx").on(t.workspaceId),
+    index("music_tracks_brand_idx").on(t.brandId),
+  ],
 );

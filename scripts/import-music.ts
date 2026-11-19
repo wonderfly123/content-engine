@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { musicKey, parseMusicIndex, trackTitle } from "@/lib/music/library";
 import { headObject, presignPut } from "@/lib/storage/r2";
@@ -43,7 +44,8 @@ async function main() {
       loudestFrom: row.loudestFrom,
       source: `ai-video-editing/music/${row.path.split("/")[0]}`,
     };
-    await db.insert(schema.musicTracks).values(values).onConflictDoUpdate({ target: schema.musicTracks.r2Key, set: values });
+    // The platform library (no brand): new brands start with a copy of it (lib/music/library.ts ensureBrandTracks).
+    await db.insert(schema.musicTracks).values(values).onConflictDoUpdate({ target: schema.musicTracks.r2Key, targetWhere: sql`brand_id IS NULL`, set: values });
   }
   console.log(`${rows.length} tracks in the library (${uploaded} uploaded, ${rows.length - uploaded} already on R2).`);
   process.exit(0);
