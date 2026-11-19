@@ -60,6 +60,8 @@ export interface BrandSettings {
     overrides?: Record<string, string>;
   };
   patterns?: unknown; // computed nightly; loose shape for now
+  /** How long raw clips are kept after their video is finished (lib/media/retention.ts). Absent = platform value. */
+  rawClipRetention?: "after_post" | "1d" | "7d" | "30d" | "forever";
   [key: string]: unknown;
 }
 

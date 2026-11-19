@@ -150,7 +150,8 @@ describe("coverage", () => {
       // The editor skill's versions belong to the platform, not to any workspace: platform admin only
       // (app/api/admin/skill), and every workspace's jobs run on the current set.
       "editor_skill_versions",
-      // Platform-wide settings (raw clip retention): platform admin only (app/api/admin/storage).
+      // Platform-wide settings (the fallback raw clip retention); no route writes them today, and each
+      // brand's own choice lives on brands.settings_json (app/api/brands/[id]/storage).
       "platform_settings",
       // The editor's music library: platform tracks (admin only, app/api/admin/music) or one workspace's own
       // (workspace_id); an editor job only gets, and its callback only accepts, the platform's or its own.
