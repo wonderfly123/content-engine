@@ -171,12 +171,11 @@ export function SkillEditor() {
           <div className="min-w-0">
             <h3 className="text-lg font-semibold tracking-tight">{meta.title}</h3>
             <p className="text-sm text-muted-foreground">{meta.blurb}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {file.updatedAt
-                ? `Last changed by ${file.updatedBy} ${formatDistanceToNowStrict(new Date(file.updatedAt))} ago`
-                : "Original version, never changed"}
-              <span className="font-mono"> · {file.path}</span>
-            </p>
+            {file.updatedAt && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Last changed by {file.updatedBy} {formatDistanceToNowStrict(new Date(file.updatedAt))} ago
+              </p>
+            )}
           </div>
           <div role="tablist" aria-label="View" className="flex rounded-lg border p-0.5">
             {MODES.map(({ value, label, Icon }) => (
