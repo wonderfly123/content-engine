@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { SECTIONS, type SectionValue, type StyleSectionId } from "@/lib/editor/style-schema";
 import type { EditorStyleResponse } from "@/lib/editor/style-view";
 import { decideRequest, styleRequest, type StyleChange } from "./api";
-import { AdvancedSteps } from "./advanced";
 import { SectionCard } from "./section-card";
 
 /** Settings > Editor style: how the cloud editor cuts this brand's videos. */
@@ -97,7 +96,6 @@ export function EditorStyle({ brandId, brandName }: { brandId: string; brandName
         );
       })}
 
-      <AdvancedSteps canEdit={data.canEditAdvanced} />
     </div>
   );
 }
