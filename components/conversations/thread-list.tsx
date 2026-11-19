@@ -163,7 +163,7 @@ function ThreadRowLink({ thread: t, active }: { thread: ThreadRow; active: boole
   const closed = t.status === "closed";
   return (
     <Link
-      href={`/conversations/${t.id}`}
+      href={`/chats/${t.id}`}
       aria-current={active ? "page" : undefined}
       className={cn(
         "block rounded-lg px-2.5 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",

@@ -186,7 +186,7 @@ export function ThreadView({
       qc.invalidateQueries({ queryKey: ["conversations"] });
       if (json.conversationId && json.conversationId !== id) {
         if (onSwitch) onSwitch(json.conversationId);
-        else router.push(`/conversations/${json.conversationId}`);
+        else router.push(`/chats/${json.conversationId}`);
       } else {
         void qc.invalidateQueries({ queryKey: campaignKey(id) });
         await qc.invalidateQueries({ queryKey: ["conversation", id] });
@@ -265,7 +265,7 @@ export function ThreadView({
         <div className="flex min-w-0 items-center gap-2">
           {!compact && hidden && <ConversationListToggle />}
           {!compact && (
-            <Link href="/conversations" aria-label="Back to chats" className="rounded-md p-1 md:hidden text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Link href="/chats" aria-label="Back to chats" className="rounded-md p-1 md:hidden text-muted-foreground hover:bg-muted hover:text-foreground">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             </Link>
           )}
@@ -279,7 +279,7 @@ export function ThreadView({
           {closed && <Badge variant="outline">Closed</Badge>}
         </div>
         {compact ? (
-          <Link href={`/conversations/${id}`} className="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          <Link href={`/chats/${id}`} className="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             Open full page
           </Link>
         ) : null}
@@ -478,7 +478,7 @@ function Turn({
 
 function BackLink() {
   return (
-    <Link href="/conversations" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <Link href="/chats" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
       <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
       Chats
     </Link>
