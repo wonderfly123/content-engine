@@ -71,16 +71,32 @@ export interface StyleSectionView {
   updatedBy: string | null;
 }
 
-export async function styleOverview(brandId: string, nameOf: (userId: string | null) => string = (id) => id ?? "the app"): Promise<StyleSectionView[]> {
+/** Starting text for "How you sound" and "Facts it may use", from the brand's Persona & Voice. */
+export interface BrandPrefill {
+  voice: string;
+  facts: string;
+}
+
+/**
+ * Every section with its current value. A brand section never saved shows the brand's own voice and
+ * facts (`prefill`) instead of empty boxes; that is display only, so its jobs still run as before.
+ */
+export async function styleOverview(
+  brandId: string,
+  nameOf: (userId: string | null) => string = (id) => id ?? "the app",
+  prefill?: BrandPrefill,
+): Promise<StyleSectionView[]> {
   const newest = await newestRows(brandId);
   const defaults = defaultStyle();
   return STYLE_SECTION_IDS.map((id) => {
     const row = newest.get(id);
-    const value = valueOf(id, row);
+    let value = valueOf(id, row);
+    const changed = !sameValue(value, defaults[id]);
+    if (id === "brand" && !row && prefill) value = { ...value, picks: { ...value.picks, voice: prefill.voice, facts: prefill.facts } };
     return {
       id,
       value,
-      changed: !sameValue(value, defaults[id]),
+      changed,
       updatedAt: row ? row.createdAt.toISOString() : null,
       updatedBy: row ? nameOf(row.createdBy) : null,
     };
