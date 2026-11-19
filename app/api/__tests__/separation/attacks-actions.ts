@@ -1,6 +1,5 @@
 import type { ActionAttack } from "./attacks";
 
-const SETTINGS = "app/settings/actions.ts";
 const ONBOARDING = "app/onboarding/[brandId]/actions.ts";
 const PHONE = "app/settings/phone-actions.ts";
 const FLOW = "app/onboarding/flow-actions.ts";
@@ -25,10 +24,7 @@ const profile = {
 };
 
 export const actions: ActionAttack[] = [
-  // ---- app/settings/actions.ts ----
-  { file: SETTINGS, action: "setEnabledChannels", args: (victim) => [{ brandId: victim.brandId, channels: ["instagram"] }] },
-
-  // ---- app/onboarding/[brandId]/actions.ts (the Settings persona, ICP and cadence tabs) ----
+  // ---- app/onboarding/[brandId]/actions.ts (the Settings persona and ICP tabs) ----
   { file: ONBOARDING, action: "saveProfile", args: (victim) => [victim.brandId, profile] },
   {
     file: ONBOARDING,
@@ -43,7 +39,6 @@ export const actions: ActionAttack[] = [
     args: (victim, attacker) => [attacker.brandId, { icps: [{ id: victim.icpId, name: "Renamed icp", isDefault: true }] }],
     skipOwnerControl: "aims at the attacker's brand; the victim cannot reach it",
   },
-  { file: ONBOARDING, action: "saveCadence", args: (victim) => [victim.brandId, { preset: "sustainable", rows: [] }] },
 
   // ---- app/onboarding/flow-actions.ts (the onboarding flow) ----
   // Names no brand: it creates one in the caller's own workspace and then redirects (which throws),

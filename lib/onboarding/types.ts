@@ -139,42 +139,6 @@ export const icpsSchema = z
 export type IcpInput = z.infer<typeof icpSchema>;
 export type IcpsInput = z.infer<typeof icpsSchema>;
 
-// ---- Step 5: cadence ------------------------------------------------------
-
-export const cadenceRowSchema = z.object({
-  channel: z.enum(channelValues),
-  format: z.enum(formatValues),
-  perWeek: z.number().int().min(0).max(50),
-  enabled: z.boolean().default(true),
-});
-
-export const cadenceSchema = z.object({
-  preset: z.enum(["sustainable", "growth", "aggressive", "custom"]),
-  rows: z.array(cadenceRowSchema).default([]),
-});
-
-export type CadenceRowInput = z.infer<typeof cadenceRowSchema>;
-export type CadenceInput = z.infer<typeof cadenceSchema>;
-
-export const CADENCE_PRESETS: Record<
-  "sustainable" | "growth" | "aggressive",
-  CadenceRowInput[]
-> = {
-  sustainable: [
-    { channel: "instagram", format: "reel", perWeek: 2, enabled: true },
-    { channel: "instagram", format: "carousel", perWeek: 1, enabled: true },
-  ],
-  growth: [
-    { channel: "instagram", format: "reel", perWeek: 5, enabled: true },
-    { channel: "instagram", format: "carousel", perWeek: 2, enabled: true },
-  ],
-  aggressive: [
-    { channel: "instagram", format: "reel", perWeek: 7, enabled: true },
-    { channel: "instagram", format: "carousel", perWeek: 3, enabled: true },
-    { channel: "instagram", format: "image", perWeek: 2, enabled: true },
-  ],
-};
-
 // ---- shared ---------------------------------------------------------------
 
 export const brandStatusSchema = z.enum(brandStatusValues);
@@ -185,7 +149,6 @@ export interface OnboardingState {
   /** Set once a step from the 7-step wizard has been saved; absent on drafts from the 8-step one. */
   stepsVersion?: number;
   draftProfile?: unknown;
-  preset?: "sustainable" | "growth" | "aggressive" | "custom";
 }
 
 /** Tell us, Analyzing, Profile, ICPs, Cadence, Channels, Done. */

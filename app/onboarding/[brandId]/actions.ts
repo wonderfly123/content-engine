@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Brand profile, ICP and cadence actions, used by Settings (persona, ICPs and cadence tabs).
+ * Brand profile and ICP actions, used by Settings (persona and ICPs tabs).
  * The onboarding flow itself has its own actions in app/onboarding/flow-actions.ts.
  *
  * Every action:
@@ -21,17 +21,13 @@ import { tryBrand } from "@/lib/auth/workspace";
 import { db } from "@/lib/db";
 import {
   brands,
-  cadenceSettings,
   events,
   icps as icpsTable,
 } from "@/lib/db/schema";
 import {
-  CADENCE_PRESETS,
   ONBOARDING_STEPS_VERSION,
-  cadenceSchema,
   icpsSchema,
   profileSchema,
-  type CadenceInput,
   type IcpsInput,
   type ProfileInput,
 } from "@/lib/onboarding/types";
@@ -238,55 +234,6 @@ export async function saveICPs(
   });
 
   redirect(`/onboarding/${idParse.data}?step=5`);
-}
-
-// ---- Step 5: cadence ------------------------------------------------------
-
-export async function saveCadence(
-  brandId: string,
-  input: CadenceInput,
-): Promise<ActionResult<undefined>> {
-  const idParse = brandIdSchema.safeParse(brandId);
-  if (!idParse.success) return { ok: false, error: "Invalid brand id" };
-  const parsed = cadenceSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "Validation failed", issues: flatten(parsed.error) };
-  }
-
-  const access = await tryBrand(idParse.data);
-  if (!access) return { ok: false, error: "Brand not found" };
-
-  const rows =
-    parsed.data.preset === "custom"
-      ? parsed.data.rows
-      : CADENCE_PRESETS[parsed.data.preset];
-
-  await db
-    .delete(cadenceSettings)
-    .where(eq(cadenceSettings.brandId, idParse.data));
-
-  if (rows.length > 0) {
-    await db.insert(cadenceSettings).values(
-      rows.map((r) => ({
-        brandId: idParse.data,
-        channel: r.channel,
-        format: r.format,
-        perWeek: r.perWeek,
-        enabled: r.enabled,
-      })),
-    );
-  }
-
-  await markStep(idParse.data, 6, { preset: parsed.data.preset });
-  await db.insert(events).values({
-    entityType: "brand",
-    entityId: idParse.data,
-    brandId: idParse.data,
-    actor: "user",
-    note: `Onboarding step 5: cadence preset=${parsed.data.preset}`,
-  });
-
-  redirect(`/onboarding/${idParse.data}?step=6`);
 }
 
 // ---- helpers --------------------------------------------------------------

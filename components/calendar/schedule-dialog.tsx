@@ -15,8 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 /**
- * Generic schedule dialog. Callers pass `draftId` + a pre-filled `defaultDate`
- * (typically `nextOpenSlot()` from lib/calendar/slots) and we POST to
+ * Generic schedule dialog. Callers pass `draftId` + a pre-filled `defaultDate` and we POST to
  * /api/posts/[id]/schedule on confirm.
  */
 export function ScheduleDialog({
@@ -76,7 +75,7 @@ export function ScheduleDialog({
         <DialogHeader>
           <DialogTitle>Schedule post</DialogTitle>
           <DialogDescription>
-            Default time is the next open slot in your cadence. Adjust if needed.
+            Pick a date and time.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

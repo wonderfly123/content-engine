@@ -14,7 +14,7 @@ export async function ConnectionsBanner() {
       <span>
         {missing.length > 0 && <>{missing.join(", ")} is not connected, so brand analysis, briefs and drafts are switched off. </>}
         {failing.length > 0 && <>{failing.join(", ")} stopped working. </>}
-        <Link href="/settings?tab=connections" className="font-medium underline underline-offset-4">
+        <Link href="/settings?tab=integrations" className="font-medium underline underline-offset-4">
           {view.canEdit ? "Connect in Settings" : "Ask the workspace owner to connect it"}
         </Link>
       </span>
