@@ -19,8 +19,10 @@ interface Track {
   url: string | null;
 }
 
-async function load(): Promise<Track[]> {
-  const res = await fetch("/api/admin/music", { cache: "no-store" });
+const endpoint = (brandId: string) => `/api/brands/${encodeURIComponent(brandId)}/music`;
+
+async function load(brandId: string): Promise<Track[]> {
+  const res = await fetch(endpoint(brandId), { cache: "no-store" });
   const json = (await res.json().catch(() => ({}))) as { tracks?: Track[]; error?: string };
   if (!res.ok || !json.tracks) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json.tracks;
@@ -44,34 +46,38 @@ function durationOf(file: File): Promise<number> {
   });
 }
 
-async function post<T>(body: unknown): Promise<T> {
-  const res = await fetch("/api/admin/music", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+async function post<T>(brandId: string, body: unknown): Promise<T> {
+  const res = await fetch(endpoint(brandId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json;
 }
 
-async function uploadTrack(file: File): Promise<void> {
+async function uploadTrack(brandId: string, file: File): Promise<void> {
   const seconds = await durationOf(file);
-  const { key, url } = await post<{ key: string; url: string }>({ action: "start", filename: file.name, size: file.size });
+  const { key, url } = await post<{ key: string; url: string }>(brandId, { action: "start", filename: file.name, size: file.size });
   const put = await fetch(url, { method: "PUT", body: file, headers: { "Content-Type": file.type || "audio/mpeg" } });
   if (!put.ok) throw new Error(`${file.name} didn't upload (HTTP ${put.status}).`);
-  await post({ action: "finish", key, title: file.name.replace(/\.[a-z0-9]+$/i, ""), seconds });
+  await post(brandId, { action: "finish", key, title: file.name.replace(/\.[a-z0-9]+$/i, ""), seconds });
 }
 
 const length = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-/** Admin > Music: the tracks the editor can choose from, and the Epidemic Sound connection to come. */
-export default function AdminMusicPage() {
+/**
+ * Settings > Music: one brand's tracks the editor can choose from (a new brand starts with the
+ * platform library), its own uploads, and the Epidemic Sound connection to come.
+ */
+export function MusicLibrary({ brandId }: { brandId: string }) {
   const qc = useQueryClient();
-  const { data, isLoading, isError } = useQuery({ queryKey: ["admin-music"], queryFn: load });
+  const queryKey = ["brand-music", brandId];
+  const { data, isLoading, isError } = useQuery({ queryKey, queryFn: () => load(brandId) });
   const toggle = useMutation({
     mutationFn: async (v: { id: string; active: boolean }) => {
-      const res = await fetch("/api/admin/music", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
+      const res = await fetch(endpoint(brandId), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return v;
     },
-    onSuccess: (v) => qc.setQueryData<Track[]>(["admin-music"], (old) => old?.map((t) => (t.id === v.id ? { ...t, active: v.active } : t))),
+    onSuccess: (v) => qc.setQueryData<Track[]>(queryKey, (old) => old?.map((t) => (t.id === v.id ? { ...t, active: v.active } : t))),
     onError: (e) => toast.error((e as Error).message),
   });
   const on = data?.filter((t) => t.active).length ?? 0;
@@ -81,14 +87,14 @@ export default function AdminMusicPage() {
     for (const file of files) {
       setUploading(file.name);
       try {
-        await uploadTrack(file);
+        await uploadTrack(brandId, file);
         toast.success(`Added ${file.name}`);
       } catch (e) {
         toast.error((e as Error).message);
       }
     }
     setUploading(null);
-    await qc.invalidateQueries({ queryKey: ["admin-music"] });
+    await qc.invalidateQueries({ queryKey });
   };
 
   return (
@@ -135,16 +141,16 @@ export default function AdminMusicPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Built-in tracks</CardTitle>
+          <CardTitle className="text-base">Tracks</CardTitle>
           <p className="text-sm text-muted-foreground">
-            The music the editor can choose from today. Turn a track off to keep it out of new cuts.
+            The music the editor can choose from for this brand. Turn a track off to keep it out of new cuts.
             {data ? ` ${on} of ${data.length} on.` : ""}
           </p>
         </CardHeader>
         <CardContent className="flex flex-col divide-y">
           {isLoading && <p className="py-3 text-sm text-muted-foreground">Loading…</p>}
-          {isError && <p className="py-3 text-sm text-muted-foreground">Sign in as the admin to see the music.</p>}
-          {data && data.length === 0 && <p className="py-3 text-sm text-muted-foreground">No tracks yet. Run scripts/import-music.ts to add the music folder.</p>}
+          {isError && <p className="py-3 text-sm text-muted-foreground">The music couldn&apos;t be loaded. Try again in a moment.</p>}
+          {data && data.length === 0 && <p className="py-3 text-sm text-muted-foreground">No tracks yet. Upload some above.</p>}
           {data?.map((t) => (
             <div key={t.id} className={cn("flex flex-wrap items-center gap-3 py-3", !t.active && "opacity-50")}>
               <Music className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />

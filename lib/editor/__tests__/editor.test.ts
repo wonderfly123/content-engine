@@ -115,30 +115,46 @@ describe("handOffToEditor", () => {
     expect(sent.clips).toEqual([{ mediaId: a.mediaId, filename: "Alpha clip.mov", url: expect.stringContaining("exp=7200") }]);
   });
 
-  it("sends the music the workspace may use: active platform tracks and its own, never another workspace's", async () => {
-    const track = (title: string, over: Partial<typeof schema.musicTracks.$inferInsert> = {}) => ({
-      title,
-      r2Key: `music/library/${title.toLowerCase().replace(/\s+/g, "-")}.mp3`,
-      seconds: 120,
-      source: "test",
-      ...over,
-    });
+  const track = (title: string, over: Partial<typeof schema.musicTracks.$inferInsert> = {}) => ({
+    title,
+    r2Key: `music/library/${title.toLowerCase().replace(/\s+/g, "-")}.mp3`,
+    seconds: 120,
+    source: "test",
+    ...over,
+  });
+
+  it("sends only the brand's own active tracks: never the platform's, a legacy workspace track or another brand's", async () => {
+    const own = { workspaceId: a.workspaceId, brandId: a.brandId };
+    const [sibling] = await db.insert(schema.brands).values({ workspaceId: a.workspaceId, name: "Alpha sibling", slug: "alpha-sibling", status: "active" }).returning();
     await db.insert(schema.musicTracks).values([
-      track("Platform Song", { bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40 }),
-      track("Switched Off", { active: false }),
-      track("Alpha Own", { workspaceId: a.workspaceId }),
-      track("Bravo Own", { workspaceId: b.workspaceId }),
-      track("Odd Tempo", { bpm: 9000 }),
-      track("Too Long", { seconds: 7200 }),
+      track("Brand Song", { ...own, bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40 }),
+      track("Switched Off", { ...own, active: false }),
+      track("Odd Tempo", { ...own, bpm: 9000 }),
+      track("Too Long", { ...own, seconds: 7200 }),
+      track("Platform Song"),
+      track("Alpha Legacy", { workspaceId: a.workspaceId }),
+      track("Sibling Song", { workspaceId: a.workspaceId, brandId: sibling.id }),
+      track("Bravo Song", { workspaceId: b.workspaceId, brandId: b.brandId }),
     ]);
     await say("make a reel");
     const sent = sentJob();
-    expect(sent.music.map((t: { title: string }) => t.title).sort()).toEqual(["Alpha Own", "Odd Tempo", "Platform Song"]);
-    expect(sent.music.find((t: { title: string }) => t.title === "Platform Song")).toMatchObject({
-      seconds: 120, bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40, url: expect.stringContaining("music/library/platform-song.mp3?exp=7200"),
+    expect(sent.music.map((t: { title: string }) => t.title).sort()).toEqual(["Alpha track", "Brand Song", "Odd Tempo"]);
+    expect(sent.music.find((t: { title: string }) => t.title === "Brand Song")).toMatchObject({
+      seconds: 120, bpm: 124, firstBeat: 0.2, beatStrength: 4, loudestFrom: 40, url: expect.stringContaining("music/library/brand-song.mp3?exp=7200"),
     });
     // Outside the worker's limits: sent without the odd value rather than refusing the whole job.
     expect(sent.music.find((t: { title: string }) => t.title === "Odd Tempo").bpm).toBeNull();
+  });
+
+  it("a brand with no library of its own gets a copy of the platform library on its first job", async () => {
+    await db.delete(schema.musicTracks).where(eq(schema.musicTracks.brandId, a.brandId));
+    await db.insert(schema.musicTracks).values([track("Platform Song", { bpm: 124 }), track("Platform Off", { active: false }), track("Bravo Legacy", { workspaceId: b.workspaceId })]);
+    await say("make a reel");
+    const sent = sentJob();
+    expect(sent.music.map((t: { title: string }) => t.title)).toEqual(["Platform Song"]);
+    const copies = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.brandId, a.brandId));
+    expect(copies.map((t) => [t.title, t.active, t.workspaceId]).sort()).toEqual([["Platform Off", false, a.workspaceId], ["Platform Song", true, a.workspaceId]]);
+    expect(sent.music[0].id).toBe(copies.find((t) => t.title === "Platform Song")?.id);
   });
 
   it("sends the current version of every editable skill file: the newest save, else the repo copy", async () => {

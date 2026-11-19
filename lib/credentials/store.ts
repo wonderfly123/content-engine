@@ -38,7 +38,7 @@ export class MissingCredentialError extends Error {
 
 /** The body of a 409 answer for a feature whose key is missing. */
 export function notConnectedBody(provider: CredentialProvider) {
-  return { error: "not_connected", provider, message: new MissingCredentialError(provider).message, connectUrl: "/settings?tab=connections" };
+  return { error: "not_connected", provider, message: new MissingCredentialError(provider).message, connectUrl: "/settings?tab=integrations" };
 }
 
 export interface CredentialStatus {

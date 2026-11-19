@@ -14,24 +14,12 @@ import {
   drafts,
   posts,
 } from "@/lib/db/schema";
-import type { Channel } from "@/lib/db/enums";
-import type { BrandSettings } from "@/lib/db/types";
+import { channelValues, type Channel } from "@/lib/db/enums";
 import { combineFollowerSeries, type PostAggRow } from "./aggregate";
-import { resolveEnabledChannels } from "./filters";
 
-/**
- * Loads the brand's analytics-enabled channels from settings_json.
- * Absent key = all channels enabled (backward compatible).
- */
-export async function loadEnabledChannels(brandId: string): Promise<Channel[]> {
-  const [row] = await db
-    .select({ settingsJson: brands.settingsJson })
-    .from(brands)
-    .where(eq(brands.id, brandId))
-    .limit(1);
-  return resolveEnabledChannels(
-    (row?.settingsJson ?? null) as BrandSettings | null,
-  );
+/** Every channel counts in analytics (the per-brand "channels to show" setting was removed). */
+export async function loadEnabledChannels(_brandId: string): Promise<Channel[]> {
+  return [...channelValues];
 }
 
 /**

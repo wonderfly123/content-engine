@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveOnboardingStep,
-  cadenceSchema,
   createBrandSchema,
   icpsSchema,
   profileSchema,
@@ -68,41 +67,6 @@ describe("icpsSchema", () => {
       icps: [{ name: "A" }, { name: "B" }],
     });
     expect(r.success).toBe(true);
-  });
-});
-
-describe("cadenceSchema", () => {
-  it("accepts a preset with no rows", () => {
-    const r = cadenceSchema.safeParse({ preset: "growth" });
-    expect(r.success).toBe(true);
-  });
-  it("custom can carry rows", () => {
-    const r = cadenceSchema.safeParse({
-      preset: "custom",
-      rows: [
-        {
-          channel: "instagram",
-          format: "reel",
-          perWeek: 3,
-          enabled: true,
-        },
-      ],
-    });
-    expect(r.success).toBe(true);
-  });
-  it("rejects out-of-range perWeek", () => {
-    const r = cadenceSchema.safeParse({
-      preset: "custom",
-      rows: [
-        {
-          channel: "instagram",
-          format: "reel",
-          perWeek: 999,
-          enabled: true,
-        },
-      ],
-    });
-    expect(r.success).toBe(false);
   });
 });
 

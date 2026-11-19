@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
-import { SkillEditor } from "@/app/admin/skill/skill-editor";
+import { SkillEditor } from "./skill/skill-editor";
 
 /**
  * The technical steps the editor follows (scan, cut, render, check, the result format). Platform-wide

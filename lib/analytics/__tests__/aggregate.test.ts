@@ -7,8 +7,7 @@ import {
   filterRows,
   type PostAggRow,
 } from "../aggregate";
-import { resolveEnabledChannels, type AnalyticsFilters } from "../filters";
-import { channelValues } from "@/lib/db/enums";
+import { type AnalyticsFilters } from "../filters";
 
 const row = (over: Partial<PostAggRow>): PostAggRow => ({
   postId: "p-" + Math.random().toString(36).slice(2, 8),
@@ -57,32 +56,6 @@ describe("filterRows", () => {
     );
     // The base row + the row with icpId=abc both match channel=ig + format=reel.
     expect(out.length).toBe(2);
-  });
-});
-
-describe("resolveEnabledChannels", () => {
-  it("returns all channels when settings are absent or key is missing", () => {
-    expect(resolveEnabledChannels(null)).toEqual([...channelValues]);
-    expect(resolveEnabledChannels(undefined)).toEqual([...channelValues]);
-    expect(resolveEnabledChannels({})).toEqual([...channelValues]);
-  });
-
-  it("returns only the listed channels when present", () => {
-    expect(
-      resolveEnabledChannels({ enabledChannels: ["instagram", "blog"] }),
-    ).toEqual(["instagram", "blog"]);
-  });
-
-  it("returns an empty list when everything is disabled", () => {
-    expect(resolveEnabledChannels({ enabledChannels: [] })).toEqual([]);
-  });
-
-  it("drops unknown channel values defensively", () => {
-    expect(
-      resolveEnabledChannels({
-        enabledChannels: ["instagram", "myspace"] as never,
-      }),
-    ).toEqual(["instagram"]);
   });
 });
 

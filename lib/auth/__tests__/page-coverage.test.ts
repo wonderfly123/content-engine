@@ -21,7 +21,6 @@ const CHECKS = /\b(tryBrand|tryOwned|tryWorkspace|requireBrand|requireOwned|requ
  */
 const RENDERED_BY_A_CHECKED_PAGE = [
   "app/onboarding/[brandId]/steps/4-icps.tsx", // props: { brand }
-  "app/onboarding/[brandId]/steps/5-cadence.tsx", // props: { brand }
   "app/onboarding/[brandId]/steps/6-channels.tsx", // props: { brand }
 ];
 

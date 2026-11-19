@@ -3,7 +3,6 @@
  * Kept narrow; widen as the app evolves.
  */
 
-import type { Channel } from "./enums";
 
 // ---- brands.persona_json --------------------------------------------------
 export interface Persona {
@@ -61,12 +60,8 @@ export interface BrandSettings {
     overrides?: Record<string, string>;
   };
   patterns?: unknown; // computed nightly; loose shape for now
-  /**
-   * Channels shown in analytics. Absent/undefined = all channels enabled
-   * (backward compatible); present = only the listed channels are included
-   * in analytics queries and the analytics channel filter.
-   */
-  enabledChannels?: Channel[];
+  /** How long raw clips are kept after their video is finished (lib/media/retention.ts). Absent = platform value. */
+  rawClipRetention?: "after_post" | "1d" | "7d" | "30d" | "forever";
   [key: string]: unknown;
 }
 

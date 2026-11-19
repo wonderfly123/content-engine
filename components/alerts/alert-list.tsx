@@ -90,7 +90,7 @@ function AlertAction({ alert }: { alert: SystemAlertDTO }) {
     case "channel_disconnected":
       return (
         <Button asChild size="sm" variant="outline">
-          <Link href="/settings?tab=channels" aria-label="Reconnect channel">
+          <Link href="/settings?tab=integrations" aria-label="Reconnect channel">
             Reconnect
           </Link>
         </Button>

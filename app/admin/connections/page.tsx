@@ -66,7 +66,7 @@ export default function AdminConnectionsPage() {
               <div className="flex items-center justify-between gap-4 py-3">
                 <p className="text-sm text-muted-foreground">
                   Nothing connected.{" "}
-                  <Link href={`/settings?tab=channels&brandId=${id}`} className="underline underline-offset-4">Connect in Settings › Channels</Link>
+                  <Link href={`/settings?tab=integrations&brandId=${id}`} className="underline underline-offset-4">Connect in Settings › Integrations</Link>
                   {" "}(works for brands in your own workspace).
                 </p>
                 <Badge variant="outline">Not connected</Badge>

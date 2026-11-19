@@ -10,23 +10,26 @@ interface Loaded {
   options: Array<{ value: string; label: string }>;
 }
 
-async function request(retention?: string): Promise<Loaded> {
-  const res = await fetch("/api/admin/storage", retention
-    ? { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ retention }) }
-    : { cache: "no-store" });
+async function request(brandId: string, retention?: string): Promise<Loaded> {
+  const url = `/api/brands/${encodeURIComponent(brandId)}/storage`;
+  const res = await fetch(
+    url,
+    retention ? { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ retention }) } : { cache: "no-store" },
+  );
   const json = (await res.json().catch(() => ({}))) as Partial<Loaded> & { error?: string };
   if (!res.ok || !json.retention || !json.options) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json as Loaded;
 }
 
-/** Admin > Storage: how long raw clips are kept after their video is finished. */
-export default function AdminStoragePage() {
+/** Settings > Storage: how long this brand's raw clips are kept after their video is finished. */
+export function StorageSettings({ brandId }: { brandId: string }) {
   const qc = useQueryClient();
-  const { data, isLoading, isError } = useQuery({ queryKey: ["admin-storage"], queryFn: () => request() });
+  const key = ["brand-storage", brandId];
+  const { data, isLoading, isError } = useQuery({ queryKey: key, queryFn: () => request(brandId) });
   const save = useMutation({
-    mutationFn: (value: string) => request(value),
+    mutationFn: (value: string) => request(brandId, value),
     onSuccess: (loaded) => {
-      qc.setQueryData(["admin-storage"], loaded);
+      qc.setQueryData(key, loaded);
       toast.success("Saved");
     },
     onError: (e) => toast.error((e as Error).message),
@@ -38,14 +41,14 @@ export default function AdminStoragePage() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Keep raw clips</CardTitle>
         <p className="text-sm text-muted-foreground">
-          How long the footage people upload is kept after its video is finished (posted, or replaced by a new reel or story). Clips
-          for a video still in progress are never deleted, and finished videos are never touched. Checked every hour; deleting
-          can&apos;t be undone.
+          How long the footage you upload is kept after its video is finished (posted, or replaced by a new reel or story). Clips for
+          a video still in progress are never deleted, and finished videos are never touched. Checked every hour; deleting can&apos;t
+          be undone.
         </p>
       </CardHeader>
       <CardContent>
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {isError && <p className="text-sm text-muted-foreground">Sign in as the admin to change this.</p>}
+        {isError && <p className="text-sm text-muted-foreground">Couldn&apos;t load this setting. Try again in a moment.</p>}
         {data && (
           <div role="radiogroup" aria-label="Keep raw clips" className="flex flex-wrap gap-2">
             {data.options.map((o) => (
