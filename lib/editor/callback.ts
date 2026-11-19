@@ -4,13 +4,15 @@
  *
  * Nothing the worker says is taken on trust: every preview key must sit under that job's own
  * prefix and exist in storage, every clip an edit list names must be a raw clip of that thread (or
- * a library clip of the same workspace and brand that the job was sent), and the media rows
+ * a library clip of the same workspace and brand that the job was sent), every track a cut's music
+ * names must be the platform's or that workspace's own, and the media rows
  * (workspace, thread, brand, size) are built here from the job and storage.
  */
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { addMessage } from "@/lib/conversations/store";
 import { db, schema } from "@/lib/db";
 import { isJobPreviewKey } from "@/lib/storage/keys";
+import { usableTracks } from "@/lib/music/library";
 import { headObject } from "@/lib/storage/r2";
 import { getJob, type EditorJobRow } from "./jobs";
 import { callbackSchema, type EditorCallback, type EditorManifest, type EditorUsage, type WorkerManifest } from "./manifest";
@@ -81,7 +83,7 @@ async function reusablePreviews(job: EditorJobRow): Promise<Map<string, string>>
     .from(mediaObjects)
     .where(
       and(
-        inArray(mediaObjects.id, cuts.map((c) => c.preview.mediaId)),
+        inArray(mediaObjects.id, cuts.flatMap((c) => [c.preview.mediaId, ...(c.music?.silent ? [c.music.silent.mediaId] : [])])),
         eq(mediaObjects.conversationId, job.conversationId),
         eq(mediaObjects.workspaceId, job.workspaceId),
         eq(mediaObjects.kind, "preview"),
@@ -92,15 +94,18 @@ async function reusablePreviews(job: EditorJobRow): Promise<Map<string, string>>
 }
 
 interface Checked {
-  /** Size of each new preview (under this job's prefix). */
+  /** Size of each new preview or silent copy (under this job's prefix). */
   sizes: Map<string, number>;
-  /** Media id of each preview reused from the previous job. */
+  /** Media id of each preview (or silent copy) reused from the previous job. */
   reused: Map<string, string>;
+  /** Title of each track the cuts name (the platform's or this workspace's). */
+  tracks: Map<string, string>;
 }
 
-/** Why the manifest cannot be accepted, or what to store when every key and clip checks out. */
+/** Why the manifest cannot be accepted, or what to store when every key, clip and track checks out. */
 async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ error: string } | Checked> {
-  const keys = manifest.cuts.map((c) => c.preview.key);
+  // Every file the result points at: each cut's preview and, for a cut with music, its copy without.
+  const keys = manifest.cuts.flatMap((c) => [c.preview.key, ...(c.music ? [c.music.silent.key] : [])]);
   if (new Set(keys).size !== keys.length) return { error: "Two cuts share one preview." };
   if (new Set(manifest.cuts.map((c) => c.id)).size !== manifest.cuts.length) return { error: "Two cuts share one id." };
   const scope = { workspaceId: job.workspaceId, conversationId: job.conversationId, jobId: job.id };
@@ -129,6 +134,11 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
     if (found.length !== named.length) return { error: "An edit names a clip that is not in this conversation." };
   }
 
+  // Music only from the platform library or this job's own workspace, never another workspace's track.
+  const trackIds = [...new Set(manifest.cuts.flatMap((c) => (c.music ? [c.music.trackId.toLowerCase()] : [])))];
+  const usable = await usableTracks(job.workspaceId, trackIds);
+  if (usable.size !== trackIds.length) return { error: "A cut names music that is not in this workspace's library." };
+
   const sizes = new Map<string, number>();
   const reused = new Map<string, string>();
   for (const key of keys) {
@@ -137,7 +147,7 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
     if (isJobPreviewKey(key, scope)) sizes.set(key, head.size);
     else reused.set(key, previous.get(key)!);
   }
-  return { sizes, reused };
+  return { sizes, reused, tracks: new Map([...usable].map(([id, t]) => [id, t.title])) };
 }
 
 const replyText = (r: EditorCallback, hasCuts: boolean) => {
@@ -177,7 +187,7 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
     return { status: 200, body: { applied } };
   }
 
-  const checked: Checked | { error: string } = r.manifest ? await check(job, r.manifest) : { sizes: new Map(), reused: new Map() };
+  const checked: Checked | { error: string } = r.manifest ? await check(job, r.manifest) : { sizes: new Map(), reused: new Map(), tracks: new Map() };
   if ("error" in checked) {
     const applied = await fail(job, `Rejected result: ${checked.error}`, r.usage);
     return { status: 422, body: { error: "invalid_manifest", message: checked.error, applied } };
@@ -187,22 +197,22 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
   if (!thread) return { status: 404, body: { error: "unknown_job" } };
   const last = await lastInbound(thread.id);
   const body = replyText(r, Boolean(r.manifest));
-  const newCuts = (r.manifest?.cuts ?? []).filter((c) => checked.sizes.has(c.preview.key));
+  const newKeys = [...checked.sizes.keys()];
 
   try {
     await db.transaction(async (tx) => {
-      const rows = newCuts.length === 0 ? [] : await tx
+      const rows = newKeys.length === 0 ? [] : await tx
         .insert(mediaObjects)
         .values(
-          newCuts.map((c) => ({
+          newKeys.map((key) => ({
             workspaceId: job.workspaceId,
             brandId: job.brandId,
             conversationId: job.conversationId,
             kind: "preview" as const,
-            r2Key: c.preview.key,
-            filename: c.preview.key.slice(c.preview.key.lastIndexOf("/") + 1),
+            r2Key: key,
+            filename: key.slice(key.lastIndexOf("/") + 1),
             contentType: "video/mp4",
-            sizeBytes: checked.sizes.get(c.preview.key)!,
+            sizeBytes: checked.sizes.get(key)!,
             status: "ready" as const,
             uploadedBy: thread.startedBy,
           })),
@@ -210,7 +220,20 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
         .returning({ id: mediaObjects.id, r2Key: mediaObjects.r2Key });
       const idOf = new Map([...checked.reused, ...rows.map((m) => [m.r2Key, m.id] as const)]);
       const manifest: EditorManifest | null = r.manifest
-        ? { cuts: r.manifest.cuts.map((c) => ({ ...c, preview: { key: c.preview.key, mediaId: idOf.get(c.preview.key)! } })) }
+        ? {
+            cuts: r.manifest.cuts.map((c) => ({
+              ...c,
+              preview: { key: c.preview.key, mediaId: idOf.get(c.preview.key)! },
+              music: c.music
+                ? {
+                    trackId: c.music.trackId.toLowerCase(),
+                    title: checked.tracks.get(c.music.trackId.toLowerCase())!,
+                    start: c.music.start,
+                    silent: { key: c.music.silent.key, mediaId: idOf.get(c.music.silent.key)! },
+                  }
+                : null,
+            })),
+          }
         : null;
       const now = new Date();
       const [done] = await tx

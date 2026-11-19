@@ -1,13 +1,39 @@
 /**
  * The editor's built-in music library: platform-level tracks on R2 (`music/library/...`), listed and
- * switched on or off in Admin > Music. Imported from the owner's music folder by
+ * switched on or off in Admin > Music (a track may instead belong to one workspace; see usableBy). Imported from the owner's music folder by
  * scripts/import-music.ts, which reads that folder's index.tsv (tempo, first beat, beat strength,
  * loudest 15 s) so the editor can cut on the beat.
  */
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 
 const { musicTracks } = schema;
+
+/** The most tracks one editor job carries (same as MAX_TRACKS in workers/editor/contract.py). */
+export const MAX_JOB_TRACKS = 200;
+
+/** A track the workspace's editor may use: the platform's (no workspace) or the workspace's own. */
+const usableBy = (workspaceId: string) => or(isNull(musicTracks.workspaceId), eq(musicTracks.workspaceId, workspaceId));
+
+/** The active tracks an editor job for this workspace gets (platform library plus its own), at most MAX_JOB_TRACKS. */
+export async function tracksForWorkspace(workspaceId: string): Promise<MusicTrack[]> {
+  return db
+    .select()
+    .from(musicTracks)
+    .where(and(eq(musicTracks.active, true), usableBy(workspaceId)))
+    .orderBy(asc(musicTracks.r2Key))
+    .limit(MAX_JOB_TRACKS);
+}
+
+/**
+ * The named tracks this workspace may use, by id (switched off ones included: a kept cut may still
+ * name one). A track of another workspace is never returned.
+ */
+export async function usableTracks(workspaceId: string, ids: string[]): Promise<Map<string, MusicTrack>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db.select().from(musicTracks).where(and(inArray(musicTracks.id, ids), usableBy(workspaceId)));
+  return new Map(rows.map((t) => [t.id, t]));
+}
 
 export const MUSIC_PREFIX = "music/library/";
 

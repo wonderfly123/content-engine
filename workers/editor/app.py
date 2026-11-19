@@ -4,10 +4,11 @@ owner's editing skill (skill/ next to this file) cuts vertical videos from a job
 
 POST <submit>  Authorization: Bearer <MODAL_EDITOR_SECRET>   (job contract: contract.valid_job)
 answers 202 straight away and spawns `run_job`, which:
-  fresh temp workspace -> streams the clips to footage/ (presigned GETs) -> runs the agent (cwd = workspace,
-  skill in .claude/skills/: the baked copy with the job's `skillFiles`, if any, written over it,
-  allow-listed tools, dontAsk, 80 turns, 25 min) -> validates out/manifest.json ->
-  uploads previews (uploads endpoint + presigned PUTs) -> POSTs the callback signed with
+  fresh temp workspace -> streams the clips to footage/ and the music library to music/ (presigned GETs) ->
+  runs the agent (cwd = workspace, skill in .claude/skills/: the baked copy with the job's `skillFiles`, if any,
+  written over it, allow-listed tools, dontAsk, 80 turns, 25 min) -> validates out/manifest.json ->
+  makes a silent copy of every preview with music -> uploads previews (uploads endpoint + presigned PUTs) ->
+  POSTs the callback signed with
   X-Nekter-Signature = hex HMAC-SHA256(raw body, MODAL_EDITOR_SECRET).
 
 The workspace's Anthropic key lives only in the agent process's environment: never logged, written or sent back.
@@ -39,6 +40,8 @@ AGENT_MAX_SEC = 25 * 60
 MAX_TURNS = 80
 MAX_FOOTAGE_BYTES = 40 * 1024**3
 MAX_PUT_BYTES = 5 * 1024**3
+MAX_TRACK_BYTES = 60 * 1024**2
+MAX_MUSIC_BYTES = 2 * 1024**3
 CHUNK = 8 * 1024 * 1024
 TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"]
 FILE_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
@@ -53,8 +56,9 @@ image = (
         "command -v awk && command -v bash",
     )
     # The SDK wheel bundles the Claude Code binary, so no Node.js is needed.
-    .pip_install("claude-agent-sdk==0.2.182", "fastapi[standard]==0.115.12", "requests==2.32.3")
-    .run_commands("python -c 'import claude_agent_sdk'")
+    # numpy: the skill's beat tracking (scripts/music.py, beatfit.py).
+    .pip_install("claude-agent-sdk==0.2.182", "fastapi[standard]==0.115.12", "requests==2.32.3", "numpy==2.2.6")
+    .run_commands("python -c 'import claude_agent_sdk, numpy'")
     .add_local_python_source("contract")
     .add_local_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "skill"), SKILL_DIR)
 )
@@ -68,8 +72,9 @@ with image.imports():
     from fastapi.responses import JSONResponse
 
     from contract import (
-        ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial,
-        preview_path, previous_for_agent, previous_keys, progress_url, sign, step_label, valid_job, validate_manifest,
+        ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, music_filenames, path_denial,
+        preview_path, previous_for_agent, previous_keys, previous_music, progress_url, sign, silent_name, step_label,
+        valid_job, validate_manifest,
         write_skill_files,
     )
 
@@ -128,35 +133,82 @@ def _download_all(clips: List[Dict[str, Any]], files: List[Tuple[str, str]], foo
             raise JobError(f"A clip could not be downloaded ({type(err).__name__}).") from None
 
 
-def _probe_preview(path: str) -> Tuple[int, int, float]:
-    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
+def _download_music(tracks: List[Dict[str, Any]], names: List[Tuple[str, str]], music: str) -> int:
+    """The job's music library into music/. A track that fails is left out (the agent only sees what arrived)."""
+    total, got = 0, 0
+    for track, (name, _) in zip(tracks, names):
+        dest = os.path.join(music, name)
+        try:
+            with requests.get(track["url"], stream=True, timeout=(15, 60)) as res:
+                if res.status_code != 200:
+                    continue
+                size = 0
+                with open(dest, "wb") as f:
+                    for chunk in res.iter_content(CHUNK):
+                        size += len(chunk)
+                        if size > MAX_TRACK_BYTES or total + size > MAX_MUSIC_BYTES:
+                            break
+                        f.write(chunk)
+                if size > MAX_TRACK_BYTES or total + size > MAX_MUSIC_BYTES:
+                    os.remove(dest)
+                    continue
+                total += size
+                got += 1
+        except (requests.RequestException, OSError):
+            if os.path.exists(dest):
+                os.remove(dest)
+    return got
+
+
+def _probe_preview(path: str) -> Tuple[int, int, float, bool]:
+    """(width, height, seconds, has sound)."""
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
                           "-of", "json", path], capture_output=True, text=True, timeout=60)
     if out.returncode != 0:
         raise ManifestError("A preview could not be read as a video.")
     j = json.loads(out.stdout)
-    s = (j.get("streams") or [{}])[0]
-    return int(s.get("width") or 0), int(s.get("height") or 0), float((j.get("format") or {}).get("duration") or 0)
+    streams = j.get("streams") or []
+    s = next((x for x in streams if x.get("codec_type") == "video"), {})
+    audio = any(x.get("codec_type") == "audio" for x in streams)
+    return int(s.get("width") or 0), int(s.get("height") or 0), float((j.get("format") or {}).get("duration") or 0), audio
+
+
+def _silent_copy(path: str) -> str:
+    """The same picture without its sound, next to the preview (stream copy, so it is the identical cut)."""
+    dest = path[: -len(".mp4")] + ".nomusic.mp4"
+    out = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-map", "0:v:0", "-c", "copy", "-an", "-movflags", "+faststart", dest],
+                         capture_output=True, timeout=300)
+    if out.returncode != 0 or not os.path.isfile(dest):
+        raise ManifestError("A copy without music could not be made.")
+    return dest
 
 
 def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -> None:
-    """Replaces each local preview {path} with the {key} the uploads endpoint returned, after a presigned PUT."""
+    """Replaces each local preview {path} with the {key} the uploads endpoint returned, after a presigned PUT.
+    A cut with music also gets a silent copy, uploaded alongside: its key goes in music.silent."""
     todo = []
     for cut in cuts:
         if "path" not in cut["preview"]:
             continue
         path = preview_path(ws, cut["preview"]["path"])
-        w, h, dur = _probe_preview(path)
+        w, h, dur, audio = _probe_preview(path)
         if (w, h) != (1080, 1920):
             raise ManifestError(f"The preview for {cut['id']} is {w}x{h}, not 1080x1920.")
         if abs(dur - cut["seconds"]) > 1.0:
             raise ManifestError(f"The preview for {cut['id']} is {dur:.1f}s, not {cut['seconds']:.0f}s.")
+        if cut.get("music") and not audio:
+            raise ManifestError(f"The preview for {cut['id']} names a track but has no sound.")
+        if not cut.get("music") and audio:
+            raise ManifestError(f"The preview for {cut['id']} has sound but names no track.")
         if os.path.getsize(path) > MAX_PUT_BYTES:
             raise ManifestError(f"The preview for {cut['id']} is over 5 GB.")
-        todo.append((cut, f"{cut['id']}.mp4", path))
+        todo.append((cut, f"{cut['id']}.mp4", path, False))
+        if cut.get("music"):
+            todo.append((cut, silent_name(cut["id"]), _silent_copy(path), True))
     if not todo:
         return
     try:
-        res = requests.post(job["uploads"]["url"], json={"files": [{"name": n, "contentType": "video/mp4"} for _, n, _ in todo]},
+        res = requests.post(job["uploads"]["url"], json={"files": [{"name": n, "contentType": "video/mp4"} for _, n, _, _ in todo]},
                             headers={"Authorization": f"Bearer {_secret()}"}, timeout=30)
     except requests.RequestException as err:
         raise JobError(f"Upload links could not be fetched ({type(err).__name__}).") from None
@@ -166,7 +218,7 @@ def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -
         given = {f["name"]: f for f in res.json()["files"] if isinstance(f.get("key"), str) and str(f.get("putUrl", "")).startswith("https://")}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise JobError("The upload links came back in an unexpected shape.") from None
-    for cut, name, path in todo:
+    for cut, name, path, silent in todo:
         if name not in given:
             raise JobError("An upload link is missing.")
         size = os.path.getsize(path)
@@ -177,7 +229,10 @@ def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -
             raise JobError(f"A preview upload failed ({type(err).__name__}).") from None
         if put.status_code not in (200, 201):
             raise JobError(f"A preview upload failed (HTTP {put.status_code}).")
-        cut["preview"] = {"key": given[name]["key"]}
+        if silent:
+            cut["music"] = dict(cut["music"], silent={"key": given[name]["key"]})
+        else:
+            cut["preview"] = {"key": given[name]["key"]}
 
 
 def _callback(url: str, payload: Dict[str, Any]) -> None:
@@ -316,21 +371,26 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
 # ---- the job -----------------------------------------------------------------------------------
 
 
-def _workspace(tmp: str, job: Dict[str, Any], files: List[Tuple[str, str]]) -> str:
+def _workspace(tmp: str, job: Dict[str, Any], files: List[Tuple[str, str]], tracks: List[Tuple[str, str]]) -> str:
     ws = os.path.join(tmp, "job")
-    for d in ("footage", "work", "out/previews", ".claude/skills"):
+    for d in ("footage", "music", "work", "out/previews", ".claude/skills"):
         os.makedirs(os.path.join(ws, d), exist_ok=True)
     skill = os.path.join(ws, ".claude", "skills", SKILL_NAME)
     shutil.copytree(SKILL_DIR, skill)
     # The skill as edited in Admin, if the job carries it (validated with the job); else the baked copy stands.
     edited = write_skill_files(skill, job.get("skillFiles"))
     print(f"job {job['jobId']}: skill {'edited copy (' + str(edited) + ' files)' if edited else 'baked copy'}")
-    with open(os.path.join(ws, "job.json"), "w") as f:
-        json.dump(job_brief(job, files), f, indent=2)
     if job.get("previous"):
         with open(os.path.join(ws, "previous.json"), "w") as f:
-            json.dump(previous_for_agent(job["previous"]["manifest"], files), f, indent=2)
+            json.dump(previous_for_agent(job["previous"]["manifest"], files, tracks), f, indent=2)
     return ws
+
+
+def _write_brief(ws: str, job: Dict[str, Any], files: List[Tuple[str, str]]) -> None:
+    """job.json, written once the music is in: it lists only the tracks that arrived."""
+    arrived = set(os.listdir(os.path.join(ws, "music")))
+    with open(os.path.join(ws, "job.json"), "w") as f:
+        json.dump(job_brief(job, files, arrived), f, indent=2)
 
 
 @app.function(secrets=[secret], cpu=8.0, memory=16384, timeout=TIMEOUT_SEC, retries=0)
@@ -345,10 +405,13 @@ def run_job(job: Dict[str, Any]) -> None:
     try:
         with tempfile.TemporaryDirectory(prefix="editor-") as tmp:
             files = clip_filenames(job["clips"])
-            ws = _workspace(tmp, job, files)
+            tracks = music_filenames(job.get("music"))
+            ws = _workspace(tmp, job, files, tracks)
             progress.step(f"Downloading {len(files)} {'clip' if len(files) == 1 else 'clips'}")
             _download_all(job["clips"], files, os.path.join(ws, "footage"))
-            print(f"job {job['jobId']}: {len(files)} clips downloaded in {time.monotonic() - started:.0f}s")
+            got = _download_music(job.get("music") or [], tracks, os.path.join(ws, "music")) if tracks else 0
+            _write_brief(ws, job, files)
+            print(f"job {job['jobId']}: {len(files)} clips and {got}/{len(tracks)} tracks downloaded in {time.monotonic() - started:.0f}s")
 
             budget = min(AGENT_MAX_SEC, TIMEOUT_SEC - (time.monotonic() - started) - 240)
             if budget < 120:
@@ -369,7 +432,7 @@ def run_job(job: Dict[str, Any]) -> None:
                     raw = json.load(f)
             except (ValueError, OSError):
                 raise JobError("The editor's result was not valid JSON.") from None
-            checked = validate_manifest(raw, files, previous_keys(job.get("previous")))
+            checked = validate_manifest(raw, files, previous_keys(job.get("previous")), tracks, previous_music(job.get("previous")))
             if checked["cuts"]:
                 progress.step("Uploading the cut" if len(checked["cuts"]) == 1 else "Uploading the cuts")
             _upload_previews(job, checked["cuts"], ws)

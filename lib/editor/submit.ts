@@ -18,6 +18,7 @@ import { appUrl } from "@/lib/conversations/texting";
 import { getCredential } from "@/lib/credentials/store";
 import { db, schema } from "@/lib/db";
 import type { EditorJobKind } from "@/lib/db/enums";
+import { tracksForWorkspace } from "@/lib/music/library";
 import { presignGet } from "@/lib/storage/r2";
 import { isWorkspaceKey } from "@/lib/storage/keys";
 import { brandVoice } from "./brand-voice";
@@ -75,6 +76,46 @@ export interface EditorJobRequest {
    * worker's baked copy for this job. Left out if they can't be read; the worker then uses its own.
    */
   skillFiles?: Record<string, string>;
+  /**
+   * The music the editor may lay under a cut: the platform library's active tracks plus the
+   * workspace's own (lib/music/library.ts), with presigned links. Empty when there are none or
+   * they can't be read; the cuts are then silent.
+   */
+  music: EditorJobTrack[];
+}
+
+export interface EditorJobTrack {
+  id: string;
+  title: string;
+  seconds: number;
+  bpm: number | null;
+  firstBeat: number | null;
+  beatStrength: number | null;
+  loudestFrom: number | null;
+  url: string;
+}
+
+async function musicForJob(workspaceId: string, jobId: string): Promise<EditorJobTrack[]> {
+  try {
+    // Inside the worker's limits (workers/editor/contract.py valid_tracks), or one odd row would refuse the whole job.
+    const within = (v: number | null, max: number) => (v !== null && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
+    const rows = await tracksForWorkspace(workspaceId);
+    return rows
+      .filter((t) => Number.isFinite(t.seconds) && t.seconds > 0 && t.seconds <= 3600 && t.title.trim())
+      .map((t) => ({
+        id: t.id,
+        title: t.title.trim().slice(0, 200),
+        seconds: t.seconds,
+        bpm: within(t.bpm, 400),
+        firstBeat: within(t.firstBeat, 3600),
+        beatStrength: within(t.beatStrength, 10_000),
+        loudestFrom: within(t.loudestFrom, 3600),
+        url: presignGet(t.r2Key, EDITOR_LINK_SECONDS),
+      }));
+  } catch {
+    console.warn(`[editor] the music library could not be read for job ${jobId}; the cuts will be silent.`);
+    return [];
+  }
 }
 
 async function skillFilesForJob(jobId: string): Promise<Record<string, string> | undefined> {
@@ -253,6 +294,7 @@ export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHan
     anthropicApiKey: apiKey,
     model: EDITOR_MODEL,
     callbackUrl: `${base}${CALLBACK_PATH}`,
+    music: await musicForJob(thread.workspaceId, jobId),
   };
   const skillFiles = await skillFilesForJob(jobId);
   if (skillFiles) job.skillFiles = skillFiles;

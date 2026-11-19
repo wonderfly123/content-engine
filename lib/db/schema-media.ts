@@ -64,12 +64,15 @@ export const platformSettings = pgTable("platform_settings", {
 /**
  * The editor's built-in music: tracks on R2 under `music/library/`, imported from the owner's
  * music folder (scripts/import-music.ts) with the beat data the skill's music index has. Platform
- * level, not per workspace; the admin turns tracks on or off in Admin > Music.
+ * level (workspaceId null) unless a workspace owns the track; the admin turns tracks on or off in
+ * Admin > Music. The cloud editor gets the platform's tracks plus the job's own workspace's.
  */
 export const musicTracks = pgTable(
   "music_tracks",
   {
     id: uuid().primaryKey().defaultRandom(),
+    /** Null: the platform library, for every workspace. Set: only that workspace's editor jobs. */
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
     title: text().notNull(),
     r2Key: text("r2_key").notNull(),
     seconds: real().notNull(),
@@ -83,5 +86,5 @@ export const musicTracks = pgTable(
     active: boolean().notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("music_tracks_r2_key_unique").on(t.r2Key)],
+  (t) => [uniqueIndex("music_tracks_r2_key_unique").on(t.r2Key), index("music_tracks_workspace_idx").on(t.workspaceId)],
 );

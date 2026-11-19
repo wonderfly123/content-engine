@@ -22,9 +22,14 @@ from contract import (  # noqa: E402
     ManifestError, bash_denial, build_prompt, clip_filenames, extract_usage, job_brief, path_denial, preview_path,
     previous_for_agent, previous_keys, safe_filename, sign, valid_job, validate_manifest,
     SKILL_FILES, MAX_SKILL_BYTES, valid_skill_files, write_skill_files, progress_url, step_label,
+    MAX_TRACKS, MAX_MUSIC_START, music_filenames, previous_music, silent_name,
 )
 
 SCRIPTS = os.path.join(HERE, "skill", "scripts")
+sys.path.insert(0, SCRIPTS)
+import numpy as np  # noqa: E402
+import music  # noqa: E402
+from beatfit import allocate_beats, beat_start, retime  # noqa: E402
 FFMPEG = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if os.path.exists("/opt/homebrew/bin/ffmpeg") else None)
 
 CLIPS = [
@@ -322,6 +327,183 @@ class TestProgress(unittest.TestCase):
     def test_progress_url(self):
         self.assertEqual(progress_url("https://app.nekter.io/api/editor/callback"), "https://app.nekter.io/api/editor/progress")
         self.assertIsNone(progress_url("https://evil.test/other"))
+
+    def test_music_step_labels(self):
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/beatfit.py footage work/edl/reel-15.tsv music/01-a.mp3 auto 15 work/edl/reel-15.beat.tsv"}),
+                         "Timing the 15s reel to the beat")
+        self.assertEqual(step_label("Bash", {"command": "bash $SK/mix.sh out/previews/reel-30.mp4 music/01-a.mp3 41.2"}), "Adding the music to the 30s reel")
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/music.py info music/01-a.mp3"}), "Listening for the beat")
+
+
+TRACKS = [
+    {"id": "t1", "title": "Summer Days (Remix)", "seconds": 180.0, "bpm": 120.0, "firstBeat": 0.25, "beatStrength": 4.1, "loudestFrom": 62,
+     "url": "https://r2.example/music/library/a.mp3?sig=1"},
+    {"id": "t2", "title": "Summer Days (Remix)", "seconds": 95.5, "bpm": None, "firstBeat": None, "beatStrength": None, "loudestFrom": None,
+     "url": "https://r2.example/music/library/uploads/b.m4a?sig=2"},
+]
+
+
+def music_job():
+    return dict(copy.deepcopy(JOB), music=copy.deepcopy(TRACKS))
+
+
+class MusicContractTests(unittest.TestCase):
+    def test_job_with_music(self):
+        self.assertIsNotNone(valid_job(music_job()))
+        self.assertIsNotNone(valid_job(dict(copy.deepcopy(JOB), music=None)))
+        self.assertIsNotNone(valid_job(dict(copy.deepcopy(JOB), music=[])))
+
+    def test_bad_music_refused(self):
+        for mutate in (
+            lambda j: j["music"][0].update(url="http://plain.example/a.mp3"),
+            lambda j: j["music"][1].update(id="t1"),
+            lambda j: j["music"][0].update(seconds=0),
+            lambda j: j["music"][0].update(bpm="fast"),
+            lambda j: j["music"][0].update(title=""),
+            lambda j: j.update(music={"t1": "x"}),
+            lambda j: j.update(music=[dict(TRACKS[0], id=f"t{i}") for i in range(MAX_TRACKS + 1)]),
+        ):
+            job = music_job()
+            mutate(job)
+            self.assertIsNone(valid_job(job))
+
+    def test_music_filenames_safe_and_unique(self):
+        names = music_filenames(TRACKS)
+        self.assertEqual(names, [("01-summer-days-remix.mp3", "t1"), ("02-summer-days-remix.m4a", "t2")])
+        self.assertEqual(music_filenames([{"id": "x", "title": "../../etc/passwd", "url": "https://a/b.exe"}]), [("01-etc-passwd.mp3", "x")])
+        self.assertEqual(music_filenames(None), [])
+
+    def test_brief_lists_music_without_links_or_ids(self):
+        job = music_job()
+        brief = job_brief(job, clip_filenames(job["clips"]))
+        self.assertEqual([t["file"] for t in brief["music"]], ["01-summer-days-remix.mp3", "02-summer-days-remix.m4a"])
+        self.assertEqual(brief["music"][0]["bpm"], 120.0)
+        text = json.dumps(brief)
+        self.assertNotIn("https://", text)
+        self.assertNotIn('"t1"', text)
+        only = job_brief(job, clip_filenames(job["clips"]), {"02-summer-days-remix.m4a"})
+        self.assertEqual([t["file"] for t in only["music"]], ["02-summer-days-remix.m4a"])
+        self.assertIn("2 tracks in music/", build_prompt(job, clip_filenames(job["clips"]), "s"))
+
+    def test_manifest_music_maps_to_track_id(self):
+        files, tracks = clip_filenames(CLIPS), music_filenames(TRACKS)
+        raw = good_manifest()
+        raw["cuts"][0]["music"] = {"file": "music/01-summer-days-remix.mp3", "start": 41.2187}
+        out = validate_manifest(raw, files, tracks=tracks)
+        self.assertEqual(out["cuts"][0]["music"], {"trackId": "t1", "start": 41.219})
+        raw["cuts"][0]["music"] = None
+        self.assertIsNone(validate_manifest(raw, files, tracks=tracks)["cuts"][0]["music"])
+        del raw["cuts"][0]["music"]
+        self.assertIsNone(validate_manifest(raw, files, tracks=tracks)["cuts"][0]["music"])
+
+    def test_manifest_music_refused(self):
+        files, tracks = clip_filenames(CLIPS), music_filenames(TRACKS)
+        for music in ({"file": "03-nope.mp3", "start": 1}, {"file": "../music/01-summer-days-remix.mp3", "start": 1},
+                      {"file": "01-summer-days-remix.mp3", "start": -1}, {"file": "01-summer-days-remix.mp3", "start": MAX_MUSIC_START + 1},
+                      {"file": "01-summer-days-remix.mp3"}, "01-summer-days-remix.mp3"):
+            raw = good_manifest()
+            raw["cuts"][0]["music"] = music
+            with self.assertRaises(ManifestError, msg=str(music)):
+                validate_manifest(raw, files, tracks=tracks)
+        # No library at all: any track is refused.
+        raw = good_manifest()
+        raw["cuts"][0]["music"] = {"file": "01-summer-days-remix.mp3", "start": 1}
+        with self.assertRaises(ManifestError):
+            validate_manifest(raw, files)
+
+    def test_kept_cut_keeps_previous_music(self):
+        previous = {"manifest": {"cuts": [{"id": "reel-15", "preview": {"key": "ws/x/preview/j0/reel-15.mp4", "mediaId": "p1"},
+                                           "music": {"trackId": "t2", "title": "Summer Days", "start": 12.5,
+                                                     "silent": {"key": "ws/x/preview/j0/reel-15-nomusic.mp4", "mediaId": "p2"}},
+                                           "edl": [{"mediaId": "m1", "in": 0, "dur": 1, "speed": 1, "cropX": None}]}]}}
+        raw = good_manifest()
+        raw["cuts"][0]["preview"] = {"key": "ws/x/preview/j0/reel-15.mp4"}
+        raw["cuts"][0]["music"] = {"file": "made-up.mp3", "start": 999}  # ignored for a kept cut
+        out = validate_manifest(raw, clip_filenames(CLIPS), previous_keys(previous), music_filenames(TRACKS), previous_music(previous))
+        self.assertEqual(out["cuts"][0]["music"], {"trackId": "t2", "start": 12.5, "silent": {"key": "ws/x/preview/j0/reel-15-nomusic.mp4"}})
+        agent = previous_for_agent(previous["manifest"], clip_filenames(CLIPS), music_filenames(TRACKS))
+        self.assertEqual(agent["cuts"][0]["music"], {"file": "02-summer-days-remix.m4a", "title": "Summer Days", "start": 12.5})
+        self.assertNotIn("silent", json.dumps(agent["cuts"][0]["music"]))
+
+    def test_silent_name(self):
+        self.assertEqual(silent_name("reel-15"), "reel-15-nomusic.mp4")
+
+
+class BeatfitTests(unittest.TestCase):
+    def test_allocate_beats_sums_to_target(self):
+        p = 0.5  # 120 bpm
+        n = allocate_beats([1.2, 0.4, 3.0, 2.1, 1.0], p, 15)
+        self.assertEqual(sum(n), 30)
+        self.assertGreaterEqual(n[0], 2)
+        self.assertTrue(all(x >= 1 for x in n))
+        # Too many shots for the length: every shot keeps its minimum and the total is as close as it can be.
+        self.assertEqual(allocate_beats([0.1] * 10, 0.5, 2), [2] + [1] * 9)
+
+    def test_retime_lands_on_frames_and_beats(self):
+        p = 60 / 128
+        rows = [["a.mov", "1.0", "2.0", "1"], ["b.mov", "0", "8.0", "4", "0.5"], ["a.mov", "5.0", "1.0", "1"]]
+        n = allocate_beats([2.0, 2.0, 1.0], p, 5)
+        out, total, problems = retime(rows, n, p, lambda f: 30.0)
+        self.assertEqual(problems, [])
+        self.assertAlmostEqual(total, sum(n) * p, delta=1 / 30)
+        cut, t = 0.0, 0.0
+        for r, k in zip(out, n):
+            dur = float(r[2]) if float(r[3]) == 1 else float(r[2]) / float(r[3])
+            cut += dur
+            t += k * p
+            self.assertAlmostEqual(cut, t, delta=1 / 30 + 1e-6)          # every cut within a frame of its beat
+            self.assertAlmostEqual(round(cut * 30), cut * 30, delta=0.01)  # on a whole frame
+        self.assertEqual(out[1][2], "8.0")                                # sped-up shot keeps its source range
+        self.assertEqual(out[1][4], "0.5")
+
+    def test_retime_slides_back_at_clip_end(self):
+        out, _, problems = retime([["a.mov", "9.5", "0.5", "1"]], [4], 0.5, lambda f: 10.0)
+        self.assertEqual(problems, [])
+        self.assertAlmostEqual(float(out[0][1]) + float(out[0][2]), 9.95, delta=1e-3)
+        _, _, problems = retime([["a.mov", "0", "0.5", "1"]], [4], 0.5, lambda f: 1.0)
+        self.assertEqual(len(problems), 1)
+
+    def test_beat_start(self):
+        self.assertAlmostEqual(beat_start(40.0, 2.0, 0.3, 0.5), 39.8)  # beats at 39.8 and 40.3: the nearer one
+        self.assertAlmostEqual(beat_start(40.0, 2.0, 0.1, 0.5), 40.1)
+        self.assertEqual(beat_start(0.0, 0.0, 0.1, 0.5), 0.1)
+
+    def test_tempo_of_a_click_track(self):
+        sr, bpm = music.SR, 125.0
+        x = np.zeros(int(sr * 12), dtype=np.float32)
+        click = (np.hanning(200) * np.sin(np.arange(200) * 0.9)).astype(np.float32)
+        for k in range(int(12 / (60 / bpm))):
+            i = int((0.2 + k * 60 / bpm) * sr)
+            x[i:i + 200] += click[: len(x[i:i + 200])]
+        found, first, strength = music.tempo(x)
+        self.assertAlmostEqual(found, bpm, delta=1.0)
+        self.assertGreater(strength, 2)
+        self.assertEqual(music.tempo(np.zeros(sr * 2, dtype=np.float32))[0], 0.0)
+        loud = np.zeros(sr * 40, dtype=np.float32)
+        loud[sr * 20: sr * 35] = 0.5
+        self.assertEqual(music.loudest(loud), 20)
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not installed")
+class MixTests(unittest.TestCase):
+    def test_mix_adds_sound_keeps_picture_and_length(self):
+        env = dict(os.environ, PATH=os.path.dirname(FFMPEG) + os.pathsep + os.environ.get("PATH", ""))
+        ffprobe = os.path.join(os.path.dirname(FFMPEG), "ffprobe")
+        with tempfile.TemporaryDirectory() as ws:
+            video, track = os.path.join(ws, "cut.mp4"), os.path.join(ws, "song.mp3")
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=8", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-preset", "ultrafast", video], check=True, env=env)
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=30", track], check=True, env=env)
+            r = subprocess.run(["bash", os.path.join(SCRIPTS, "mix.sh"), video, track, "12.5"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            probe = json.loads(subprocess.check_output([ffprobe, "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
+                                                        "-of", "json", video]))
+            kinds = sorted(s["codec_type"] for s in probe["streams"])
+            self.assertEqual(kinds, ["audio", "video"])
+            self.assertAlmostEqual(float(probe["format"]["duration"]), 8.0, delta=0.1)
+            self.assertFalse(os.path.exists(os.path.join(ws, "cut.mix.mp4")))
+            bad = subprocess.run(["bash", os.path.join(SCRIPTS, "mix.sh"), video, os.path.join(ws, "missing.mp3"), "0"], capture_output=True, text=True, env=env)
+            self.assertNotEqual(bad.returncode, 0)
 
 
 if __name__ == "__main__":

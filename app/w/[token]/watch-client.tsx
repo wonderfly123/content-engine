@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Copy, Download, Loader2 } from "lucide-react";
+import { CheckCircle2, Copy, Download, Loader2, Music } from "lucide-react";
 import type { CutStage } from "@/lib/editor/approval";
 
 interface Props {
@@ -11,6 +11,10 @@ interface Props {
   videoUrl: string;
   /** The same file, served as a download (to post it yourself). */
   downloadUrl: string;
+  /** The track under the cut, if any. */
+  musicTitle: string | null;
+  /** The same cut without music (Instagram can mute commercial music), when it has music. */
+  silentDownloadUrl: string | null;
   caption: string;
   initialStage: CutStage;
   scheduledFor: string | null;
@@ -20,7 +24,7 @@ interface Props {
 const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Watch, approve, schedule: one step at a time, the same steps a text or the app would take. */
-export function WatchClient({ token, title, subtitle, videoUrl, downloadUrl, caption, initialStage, scheduledFor, story }: Props) {
+export function WatchClient({ token, title, subtitle, videoUrl, downloadUrl, musicTitle, silentDownloadUrl, caption, initialStage, scheduledFor, story }: Props) {
   const [stage, setStage] = useState<CutStage>(initialStage);
   const [when, setWhen] = useState<string | null>(scheduledFor);
   const [busy, setBusy] = useState(false);
@@ -68,6 +72,21 @@ export function WatchClient({ token, title, subtitle, videoUrl, downloadUrl, cap
       <a href={downloadUrl} className="flex items-center justify-center gap-1.5 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline">
         <Download className="h-4 w-4" aria-hidden="true" /> Download the video to post it yourself
       </a>
+
+      {musicTitle && (
+        <p className="-mt-2 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+          <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">{musicTitle}</span>
+          {silentDownloadUrl && (
+            <>
+              <span aria-hidden="true">·</span>
+              <a href={silentDownloadUrl} className="shrink-0 font-medium underline-offset-4 hover:underline">
+                Download without music
+              </a>
+            </>
+          )}
+        </p>
+      )}
 
       {!story && caption && (
         <section className="rounded-xl border p-3">

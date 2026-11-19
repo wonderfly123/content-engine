@@ -7,7 +7,7 @@
 import { buildPreviewKey, InvalidMediaKeyError } from "@/lib/storage/keys";
 import { presignPut } from "@/lib/storage/r2";
 import { getJob } from "./jobs";
-import { uploadsRequestSchema } from "./manifest";
+import { MAX_UPLOAD_FILES, uploadsRequestSchema } from "./manifest";
 import { EDITOR_LINK_SECONDS } from "./submit";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +24,7 @@ export async function issueUploadUrls(jobParam: string | null, payload: unknown)
   if (job.status !== "running") return { status: 409, body: { error: "job_not_running" } };
 
   const parsed = uploadsRequestSchema.safeParse(payload);
-  if (!parsed.success) return { status: 400, body: { error: "invalid", message: "Send 1 to 10 files, each video/mp4 or image/jpeg." } };
+  if (!parsed.success) return { status: 400, body: { error: "invalid", message: `Send 1 to ${MAX_UPLOAD_FILES} files, each video/mp4 or image/jpeg.` } };
 
   const named: Array<{ name: string; key: string }> = [];
   const seen = new Set<string>();

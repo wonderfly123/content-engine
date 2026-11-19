@@ -15,6 +15,8 @@ export interface CutView {
   previewId: string;
   hookOptions: string[];
   caption: string;
+  /** The track under the cut, and the media id of the same cut without it; null for a silent cut. */
+  music: { title: string; silentId: string } | null;
 }
 
 export interface EditorJobView {
@@ -64,6 +66,7 @@ export async function threadEditorView(thread: ConversationRow, now: Date = new 
         previewId: c.preview.mediaId,
         hookOptions: c.hookOptions,
         caption: c.caption,
+        music: c.music ? { title: c.music.title, silentId: c.music.silent.mediaId } : null,
       })),
       approvable: j.status === "done" && (j.campaignItemId ? latestOfItem.get(j.campaignItemId) === j.id : latestDone?.id === j.id),
       steps: j.progress ?? [],

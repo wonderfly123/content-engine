@@ -9,14 +9,16 @@ You are editing one job, unattended, in this folder. Nobody can answer while you
 them, write `out/manifest.json`, and finish. Do not plan at length.
 
 Fixed rules: vertical 1080x1920, 30 fps, clean cuts only (no transitions, no effects, no text burned in).
-No music and no voice-over: the person adds a sound in Instagram. Previews are silent.
+Every cut has music from `music/`, cut on the beat, unless the request or instructions say no music
+(or `job.json` lists no tracks): then it is silent. No voice-over.
 
 ## The folder
 
 ```
-job.json         the brief: kind, videoKind, brand {name, voice}, instructions, request, clips
-previous.json    revisions only: the last manifest; each EDL entry has its footage `file`
+job.json         the brief: kind, videoKind, brand {name, voice}, instructions, request, clips, music
+previous.json    revisions only: the last manifest; each EDL entry has its footage `file`, each cut its `music`
 footage/         the clips (flat; filenames as listed in job.json)
+music/           the music library (filenames as listed in job.json `music`, with title, bpm, loudestFrom)
 work/            yours: scan, samples, EDL drafts
 out/             manifest.json and the preview .mp4 files
 ```
@@ -41,7 +43,16 @@ Clips are only ever read; never modify or delete anything in `footage/`.
    Then `python3 $SK/fit.py footage work/edl/<id>.draft.tsv <seconds> work/edl/<id>.tsv` (exact length,
    bounds, no reused range, pacing). Fix every problem it reports and run it again; a pacing problem means
    more, shorter real-speed shots, not faster ones.
-6. **Render**: `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4`. Read
+   **Music** (unless no music is wanted): pick one track per cut from `job.json` `music` that fits the brief and
+   pace (follow any sound or music instruction in `request` or `instructions`; title and tempo are all you know;
+   prefer `beatStrength` above ~2; a track with null `bpm` can be read with `python3 $SK/music.py info music/<file>`).
+   Then `python3 $SK/beatfit.py footage work/edl/<id>.tsv music/<file> auto <seconds> work/edl/<id>.beat.tsv`
+   re-times the same shots onto the beat and prints `audio_start` and `video_seconds`. From here on use the
+   `.beat.tsv` as the cut's EDL and `video_seconds` as its `seconds`. `auto` starts at the loudest stretch (the
+   chorus or drop); give a number instead to start elsewhere.
+6. **Render**: `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4` (the `.beat.tsv` with music).
+   With music, then `bash $SK/mix.sh out/previews/<id>.mp4 music/<file> <audio_start>` (sets loudness and a short
+   fade out). Read
    `out/previews/<id>.check.jpg`: every shot upright, filling the frame, not black, and the strongest part of its
    clip under the profile. Fix the EDL and render again if not. Do 15s first, then 30s.
 7. **Words**: for each cut, ~10 `hookOptions` per `hooks.md` and a `caption` per `captions.md`. Suggest `coverAt`:
@@ -57,6 +68,8 @@ Read `previous.json` and the request. Change only what was asked; everything els
   asked (keep every shot the request does not touch), then fit (only if the length must change), render, check
   as above, and give the cut `preview` `{"path": ...}`. Keep its `id`. New words only if the request is about words.
 - A new cut asked for: make it as in a first cut, with a new `id`.
+- "Change the song": start from the previous EDL, pick a different track, beatfit, render, mix. "No music":
+  render the previous EDL as is, no mix, `music` null. Both count as a cut that changes.
 If the request is unclear about which cut it means, apply it to the cut it most plausibly means and say so in the reply.
 
 ## out/manifest.json
@@ -70,13 +83,15 @@ If the request is unclear about which cut it means, apply it to the cut it most 
       "id": "reel-15", "title": "Stand 15s", "seconds": 15, "mode": "music",
       "preview": {"path": "out/previews/reel-15.mp4"},
       "edl": [{"file": "IMG_0412.mov", "in": 3.2, "dur": 1.1, "speed": 1, "cropX": null}],
-      "hookOptions": ["...", "..."], "caption": "...", "script": null, "coverAt": 13.5
+      "hookOptions": ["...", "..."], "caption": "...", "script": null, "coverAt": 13.5,
+      "music": {"file": "03-summer-days.mp3", "start": 41.218}
     }
   ]
 }
 ```
 
 - `mode` is always `"music"` and `script` always `null` (no voice-over yet). `seconds` is the cut's length.
+- `music`: the track's `file` and the `audio_start` the preview was mixed from, or `null` for a silent cut.
 - Ids: lowercase with dashes (`reel-15`, `reel-30`, `story-15`). Titles are plain ("Stand 30s").
 - `reply`: what goes back into the conversation, in the owner's plain voice: two or three short sentences on what
   you made and any choice they might want to change (an odd clip left out, a segment with only one angle). No lists
