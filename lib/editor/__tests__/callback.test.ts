@@ -267,6 +267,21 @@ describe("music on a cut", () => {
     expect(j.manifest?.cuts.map((c) => c.music?.title ?? null)).toEqual(["Alpha Song", null]);
   });
 
+  it("accepts the brand's own track, and rejects another brand's, even in the same workspace", async () => {
+    const id = await runningJob();
+    expect((await send(result(id, { manifest: { cuts: [withMusic(id, a.musicTrackId)] } }))).status).toBe(200);
+    expect((await job(id)).manifest?.cuts[0].music?.title).toBe("Alpha track");
+    const [sibling] = await db.insert(schema.brands).values({ workspaceId: a.workspaceId, name: "Alpha sibling", slug: "alpha-sibling", status: "active" }).returning();
+    const [theirs] = await db
+      .insert(schema.musicTracks)
+      .values({ title: "Sibling Song", r2Key: "music/library/sibling.mp3", seconds: 120, source: "test", workspaceId: a.workspaceId, brandId: sibling.id })
+      .returning();
+    const id2 = await runningJob();
+    expect((await send(result(id2, { manifest: { cuts: [withMusic(id2, theirs.id)] } }))).status).toBe(422);
+    const id3 = await runningJob();
+    expect((await send(result(id3, { manifest: { cuts: [withMusic(id3, b.musicTrackId)] } }))).status).toBe(422);
+  });
+
   it("rejects a track from another workspace, changing nothing but failing the job", async () => {
     const theirs = await addTrack("Bravo Song", b.workspaceId);
     const id = await runningJob();

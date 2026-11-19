@@ -74,6 +74,19 @@ export const routes: RouteAttack[] = [
     build: (victim, attacker) => ({ params: { id: attacker.brandId }, body: { suggestionId: victim.styleSuggestionId, decision: "dismiss" } }),
     skipOwnerControl: MIXED,
   },
+
+  // ---- music library (Settings > Music) ------------------------------------
+  { route: "app/api/brands/[id]/music/route.ts", method: "GET", build: brandParam },
+  { route: "app/api/brands/[id]/music/route.ts", method: "PATCH", name: "turn off their track", build: (victim) => ({ ...brandParam(victim), body: { id: victim.musicTrackId, active: false } }) },
+  {
+    route: "app/api/brands/[id]/music/route.ts",
+    method: "PATCH",
+    name: "own brand, their track",
+    build: (victim, attacker) => ({ params: { id: attacker.brandId }, body: { id: victim.musicTrackId, active: false } }),
+    skipOwnerControl: MIXED,
+  },
+  // For the victim this answers 503 in tests (no storage configured): past the brand check, nothing written.
+  { route: "app/api/brands/[id]/music/route.ts", method: "POST", name: "start an upload", build: (victim) => ({ ...brandParam(victim), body: { action: "start", filename: "song.mp3", size: 1000 } }) },
   // For the victim this answers 409 (no "About" answers yet), so it never starts a run in tests.
   { route: "app/api/brands/[id]/research/route.ts", method: "POST", build: (victim) => ({ ...brandParam(victim), body: { restart: true } }) },
 

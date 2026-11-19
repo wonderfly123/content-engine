@@ -32,9 +32,6 @@ export const routes: RouteAttack[] = [
   // Admin
   { route: "app/api/admin/connections/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/storage/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
-  { route: "app/api/admin/music/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
-  { route: "app/api/admin/music/route.ts", method: "POST", build: () => ({ body: { action: "start", filename: "song.mp3", size: 1000 } }), skipOwnerControl: ADMIN_ONLY },
-  { route: "app/api/admin/music/route.ts", method: "PATCH", build: () => ({ body: { id: "00000000-0000-4000-8000-000000000001", active: false } }), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/storage/route.ts", method: "PUT", build: () => ({ body: { retention: "after_post" } }), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/connections/route.ts", method: "POST", build: () => ({}), skipOwnerControl: ADMIN_ONLY },
   { route: "app/api/admin/users/route.ts", method: "GET", build: () => ({}), skipOwnerControl: ADMIN_ONLY },

@@ -50,6 +50,8 @@ export interface Seeded {
   phone: string;
   /** A pending editor-style suggestion for the brand (section "opener"). */
   styleSuggestionId: string;
+  /** A track in the brand's music library (Settings > Music), titled "<label> track". */
+  musicTrackId: string;
 }
 
 export async function makeTestDb(): Promise<TestDb> {
@@ -143,8 +145,14 @@ export async function seedWorkspace(db: TestDb, label: string, userId: string): 
     .insert(schema.editorStyleSuggestions)
     .values({ workspaceId: ws.id, brandId, section: "opener", change: `${label} keep hooks short`, reason: `${label} asked twice`, source: "changes", conversationId: conversation.id })
     .returning();
+  // One track in the brand's music library (so the brand is never seeded from the platform library).
+  const [track] = await db
+    .insert(schema.musicTracks)
+    .values({ workspaceId: ws.id, brandId, title: `${label} track`, r2Key: `music/library/uploads/${brandId}/${slug}-track.mp3`, seconds: 90, source: "upload" })
+    .returning();
   return {
     styleSuggestionId: styleSuggestion.id,
+    musicTrackId: track.id,
     user: { userId, email: `${slug}@example.test`, role: "user", status: "active" },
     workspaceId: ws.id,
     brandId,

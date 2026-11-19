@@ -152,9 +152,6 @@ describe("coverage", () => {
       "editor_skill_versions",
       // Platform-wide settings (raw clip retention): platform admin only (app/api/admin/storage).
       "platform_settings",
-      // The editor's music library: platform tracks (admin only, app/api/admin/music) or one workspace's own
-      // (workspace_id); an editor job only gets, and its callback only accepts, the platform's or its own.
-      "music_tracks",
     ];
     const missing = (Object.values(schema) as unknown[])
       .filter((t): t is PgTable => is(t, PgTable))

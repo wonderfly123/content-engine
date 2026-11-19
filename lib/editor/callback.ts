@@ -134,9 +134,9 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
     if (found.length !== named.length) return { error: "An edit names a clip that is not in this conversation." };
   }
 
-  // Music only from the platform library or this job's own workspace, never another workspace's track.
+  // Music only from this job's brand's library (or a pre-per-brand track of the platform or this workspace), never another brand's.
   const trackIds = [...new Set(manifest.cuts.flatMap((c) => (c.music ? [c.music.trackId.toLowerCase()] : [])))];
-  const usable = await usableTracks(job.workspaceId, trackIds);
+  const usable = await usableTracks({ workspaceId: job.workspaceId, brandId: job.brandId }, trackIds);
   if (usable.size !== trackIds.length) return { error: "A cut names music that is not in this workspace's library." };
 
   const sizes = new Map<string, number>();
