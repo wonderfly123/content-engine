@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { seedWorkspace, tableNames, type Seeded, type TestDb } from "@/app/api/__tests__/separation/world";
 import * as schema from "@/lib/db/schema";
+import type { BrandSettings } from "@/lib/db/types";
 
 vi.hoisted(() => {
   process.env.DATABASE_URL ??= "postgres://test:test@localhost/test";
@@ -14,7 +15,7 @@ vi.mock("@/lib/db", async () => {
   return { ...actual, db: await makeTestDb() };
 });
 
-import { getRawClipRetention, purgeExpiredRawClips, setRawClipRetention } from "../retention";
+import { getBrandRetention, getRawClipRetention, purgeExpiredRawClips, setBrandRetention, setRawClipRetention } from "../retention";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-11-20T12:00:00Z");
@@ -39,7 +40,7 @@ describe("raw clip retention", () => {
   it("defaults to forever and deletes nothing, even for long-finished threads", async () => {
     expect(await getRawClipRetention()).toBe("forever");
     await close(400);
-    expect(await purgeExpiredRawClips(NOW, remove)).toEqual({ retention: "forever", deleted: 0, failed: 0 });
+    expect(await purgeExpiredRawClips(NOW, remove)).toEqual({ platformRetention: "forever", deleted: 0, failed: 0 });
     expect(removed).toEqual([]);
   });
 
@@ -77,5 +78,64 @@ describe("raw clip retention", () => {
     expect(result.deleted).toBe(0);
     expect(result.failed).toBeGreaterThanOrEqual(1);
     expect((await clip()).deletedAt).toBeNull();
+  });
+});
+
+describe("per-brand raw clip retention", () => {
+  const settings = async () => (await db.select().from(schema.brands).where(eq(schema.brands.id, a.brandId)))[0].settingsJson;
+
+  it("falls back to the platform value, then forever", async () => {
+    expect(await getBrandRetention(a.brandId)).toBe("forever");
+    await setRawClipRetention("30d", a.user.userId);
+    expect(await getBrandRetention(a.brandId)).toBe("30d");
+  });
+
+  it("saves the brand's choice without touching its other settings", async () => {
+    await db.update(schema.brands).set({ settingsJson: { enabledChannels: ["instagram"], patterns: { x: 1 } } }).where(eq(schema.brands.id, a.brandId));
+    await setBrandRetention(a.brandId, "7d", a.user.userId);
+    expect(await getBrandRetention(a.brandId)).toBe("7d");
+    expect(await settings()).toEqual({ enabledChannels: ["instagram"], patterns: { x: 1 }, rawClipRetention: "7d" });
+  });
+
+  it("the brand's own choice wins over the platform value when purging", async () => {
+    await setRawClipRetention("after_post", a.user.userId);
+    await setBrandRetention(a.brandId, "forever", a.user.userId);
+    await close(400);
+    expect((await purgeExpiredRawClips(NOW, remove)).deleted).toBe(0);
+    expect((await clip()).deletedAt).toBeNull();
+
+    await setRawClipRetention("forever", a.user.userId);
+    await setBrandRetention(a.brandId, "1d", a.user.userId);
+    expect((await purgeExpiredRawClips(NOW, remove)).deleted).toBeGreaterThanOrEqual(1);
+    expect((await clip()).deletedAt).toEqual(NOW);
+  });
+
+  it("applies each brand's own retention independently", async () => {
+    const b = await seedWorkspace(db, "Beta", "00000000-0000-4000-8000-00000000000b");
+    await setBrandRetention(a.brandId, "7d", a.user.userId);
+    await setBrandRetention(b.brandId, "forever", b.user.userId);
+    const closedAt = new Date(NOW.getTime() - 10 * DAY);
+    await db.update(schema.conversations).set({ status: "closed", closedAt });
+    await purgeExpiredRawClips(NOW, remove);
+    expect((await clip()).deletedAt).toEqual(NOW);
+    const [bClip] = await db.select().from(schema.mediaObjects).where(eq(schema.mediaObjects.id, b.mediaId));
+    expect(bClip.deletedAt).toBeNull();
+  });
+
+  it("threads without a brand use the platform value", async () => {
+    await setBrandRetention(a.brandId, "forever", a.user.userId);
+    await setRawClipRetention("1d", a.user.userId);
+    await db.update(schema.conversations).set({ brandId: null }).where(eq(schema.conversations.id, a.conversationId));
+    await close(2);
+    expect((await purgeExpiredRawClips(NOW, remove)).deleted).toBeGreaterThanOrEqual(1);
+    expect((await clip()).deletedAt).toEqual(NOW);
+  });
+
+  it("ignores an unknown stored value and uses the platform value", async () => {
+    await db.update(schema.brands).set({ settingsJson: { rawClipRetention: "bogus" } as unknown as BrandSettings }).where(eq(schema.brands.id, a.brandId));
+    await setRawClipRetention("1d", a.user.userId);
+    expect(await getBrandRetention(a.brandId)).toBe("1d");
+    await close(2);
+    expect((await purgeExpiredRawClips(NOW, remove)).deleted).toBeGreaterThanOrEqual(1);
   });
 });

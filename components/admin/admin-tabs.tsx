@@ -10,7 +10,6 @@ const TABS = [
   { href: "/admin/skill", label: "Editor skill" },
   { href: "/admin/connections", label: "Connections" },
   { href: "/admin/music", label: "Music" },
-  { href: "/admin/storage", label: "Storage" },
 ] as const;
 
 /** The Admin section's tabs; each tab is its own page under /admin. */

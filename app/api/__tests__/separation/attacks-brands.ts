@@ -51,6 +51,10 @@ export const routes: RouteAttack[] = [
   },
   { route: "app/api/brands/[id]/research/route.ts", method: "GET", build: brandParam },
 
+  // ---- storage (Settings > Storage) ----------------------------------------
+  { route: "app/api/brands/[id]/storage/route.ts", method: "GET", build: brandParam },
+  { route: "app/api/brands/[id]/storage/route.ts", method: "PUT", build: (victim) => ({ ...brandParam(victim), body: { retention: "after_post" } }) },
+
   // ---- editor style (Settings > Editor style) ------------------------------
   { route: "app/api/brands/[id]/editor-style/route.ts", method: "GET", build: brandParam },
   {
