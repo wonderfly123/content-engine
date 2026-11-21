@@ -20,14 +20,32 @@ export const MAX_MUSIC_TRACKS = 200;
 export const MAX_MUSIC_START = 3600;
 
 /**
- * The cut's music from the worker: the track (an id from the job's library) and where in it the
- * preview's sound starts; `silent` is the same cut without music, uploaded beside the preview.
+ * A track the editor brought in from the brand's Epidemic Sound account for this job: the file it
+ * uploaded beside the previews, and what Epidemic Sound calls it. The callback adds it to the
+ * brand's library (lib/music/library.ts addEpidemicTrack).
  */
-export const cutMusicSchema = z.object({
-  trackId: z.string().uuid(),
-  start: z.number().nonnegative().max(MAX_MUSIC_START),
-  silent: z.object({ key: text(1024).min(1) }),
+export const newTrackSchema = z.object({
+  key: text(1024).min(1),
+  recordingId: z.string().uuid(),
+  title: text(200).min(1),
+  seconds: z.number().positive().max(3600),
+  bpm: z.number().positive().max(400).nullable().optional(),
 });
+export type WorkerNewTrack = z.infer<typeof newTrackSchema>;
+
+/**
+ * The cut's music from the worker: the track (an id from the job's library, or a `newTrack` from
+ * Epidemic Sound, never both) and where in it the preview's sound starts; `silent` is the same cut
+ * without music, uploaded beside the preview.
+ */
+export const cutMusicSchema = z
+  .object({
+    trackId: z.string().uuid().optional(),
+    newTrack: newTrackSchema.optional(),
+    start: z.number().nonnegative().max(MAX_MUSIC_START),
+    silent: z.object({ key: text(1024).min(1) }),
+  })
+  .refine((m) => Boolean(m.trackId) !== Boolean(m.newTrack), { message: "music needs a trackId or a newTrack, not both" });
 
 export const cutSchema = z.object({
   id: text(100).min(1),
@@ -65,9 +83,9 @@ export const callbackSchema = z.object({
   usage: usageSchema.nullable().optional(),
 });
 
-/** Ten cuts, each with a copy without music. */
-export const MAX_UPLOAD_FILES = 20;
-export const UPLOAD_TYPES = ["video/mp4", "image/jpeg"] as const;
+/** Ten cuts, each with a copy without music, and the tracks brought in from Epidemic Sound (MAX_DOWNLOADS in workers/editor/epidemic.py). */
+export const MAX_UPLOAD_FILES = 24;
+export const UPLOAD_TYPES = ["video/mp4", "image/jpeg", "audio/mpeg"] as const;
 
 export const uploadsRequestSchema = z.object({
   files: z

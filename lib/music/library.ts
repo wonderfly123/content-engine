@@ -105,6 +105,32 @@ export async function setBrandTrackActive(brandId: string, workspaceId: string, 
   return rows.length > 0;
 }
 
+/** How a track from Epidemic Sound is marked in `source`: one row per recording per brand. */
+export const epidemicSource = (recordingId: string) => `epidemic-sound:${recordingId.toLowerCase()}`;
+
+/**
+ * Adds a track the editor brought in from the brand's Epidemic Sound account (its file is already in
+ * storage, uploaded by the worker under the job's own prefix), or returns the brand's existing row
+ * for that recording. Runs inside the caller's transaction.
+ */
+export async function addEpidemicTrack(
+  tx: Pick<typeof db, "select" | "insert">,
+  t: { brandId: string; workspaceId: string; key: string; recordingId: string; title: string; seconds: number; bpm: number | null },
+): Promise<{ id: string; title: string }> {
+  const source = epidemicSource(t.recordingId);
+  const [existing] = await tx
+    .select({ id: musicTracks.id, title: musicTracks.title })
+    .from(musicTracks)
+    .where(and(ownedBy(t.brandId, t.workspaceId), eq(musicTracks.source, source)))
+    .limit(1);
+  if (existing) return existing;
+  const [row] = await tx
+    .insert(musicTracks)
+    .values({ brandId: t.brandId, workspaceId: t.workspaceId, title: t.title, r2Key: t.key, seconds: t.seconds, bpm: t.bpm, source })
+    .returning({ id: musicTracks.id, title: musicTracks.title });
+  return row;
+}
+
 export const MUSIC_PREFIX = "music/library/";
 
 export interface IndexRow {

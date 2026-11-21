@@ -15,7 +15,7 @@ Every cut has music from `music/`, cut on the beat, unless the request or instru
 ## The folder
 
 ```
-job.json         the brief: kind, videoKind, brand {name, voice}, instructions, request, clips, music
+job.json         the brief: kind, videoKind, brand {name, voice}, instructions, request, clips, music, epidemicSound
 previous.json    revisions only: the last manifest; each EDL entry has its footage `file`, each cut its `music`
 footage/         the clips (flat; filenames as listed in job.json)
 music/           the music library (filenames as listed in job.json `music`, with title, bpm, loudestFrom)
@@ -46,6 +46,8 @@ Clips are only ever read; never modify or delete anything in `footage/`.
    **Music** (unless no music is wanted): pick one track per cut from `job.json` `music` that fits the brief and
    pace (follow any sound or music instruction in `request` or `instructions`; title and tempo are all you know;
    prefer `beatStrength` above ~2; a track with null `bpm` can be read with `python3 $SK/music.py info music/<file>`).
+   When `job.json` has `"epidemicSound": true`, the brand's Epidemic Sound account is also an option: `epidemic-sound.md`
+   says when to use it and how to bring a track from it into `music/`.
    Then `python3 $SK/beatfit.py footage work/edl/<id>.tsv music/<file> auto <seconds> work/edl/<id>.beat.tsv`
    re-times the same shots onto the beat and prints `audio_start` and `video_seconds`. From here on use the
    `.beat.tsv` as the cut's EDL and `video_seconds` as its `seconds`. `auto` starts at the loudest stretch (the
@@ -72,7 +74,8 @@ Read `previous.json` and the request. Change only what was asked; everything els
   asked (keep every shot the request does not touch), then fit (only if the length must change), render, check
   and review as above, and give the cut `preview` `{"path": ...}`. Keep its `id`. New words only if the request is about words.
 - A new cut asked for: make it as in a first cut, with a new `id`.
-- "Change the song": start from the previous EDL, pick a different track, beatfit, render, mix. "No music":
+- "Change the song": start from the previous EDL, pick a different track (from `music/`, or from Epidemic Sound
+  per `epidemic-sound.md` when it is connected), beatfit, render, mix. "No music":
   render the previous EDL as is, no mix, `music` null. Both count as a cut that changes.
 If the request is unclear about which cut it means, apply it to the cut it most plausibly means and say so in the reply.
 

@@ -5,17 +5,18 @@
  * Nothing the worker says is taken on trust: every preview key must sit under that job's own
  * prefix and exist in storage, every clip an edit list names must be a raw clip of that thread (or
  * a library clip of the same workspace and brand that the job was sent), every track a cut's music
- * names must be the platform's or that workspace's own, and the media rows
+ * names must be the platform's or that workspace's own (or a new one from Epidemic Sound whose file
+ * sits under the job's own prefix; it then joins the brand's library), and the media rows
  * (workspace, thread, brand, size) are built here from the job and storage.
  */
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { addMessage } from "@/lib/conversations/store";
 import { db, schema } from "@/lib/db";
 import { isJobPreviewKey } from "@/lib/storage/keys";
-import { usableTracks } from "@/lib/music/library";
+import { addEpidemicTrack, usableTracks } from "@/lib/music/library";
 import { headObject } from "@/lib/storage/r2";
 import { getJob, type EditorJobRow } from "./jobs";
-import { callbackSchema, type EditorCallback, type EditorManifest, type EditorUsage, type WorkerManifest } from "./manifest";
+import { callbackSchema, type EditorCallback, type EditorManifest, type EditorUsage, type WorkerManifest, type WorkerNewTrack } from "./manifest";
 import { lastInbound, postEditorMessage, textMember, watchLink } from "./notify";
 
 const { conversations, editorJobs, mediaObjects } = schema;
@@ -100,6 +101,8 @@ interface Checked {
   reused: Map<string, string>;
   /** Title of each track the cuts name (the platform's or this workspace's). */
   tracks: Map<string, string>;
+  /** Each track brought in from Epidemic Sound, by its uploaded file's key. */
+  newTracks: Map<string, WorkerNewTrack>;
 }
 
 /** Why the manifest cannot be accepted, or what to store when every key, clip and track checks out. */
@@ -135,9 +138,19 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
   }
 
   // Music only from this job's brand's library (or a pre-per-brand track of the platform or this workspace), never another brand's.
-  const trackIds = [...new Set(manifest.cuts.flatMap((c) => (c.music ? [c.music.trackId.toLowerCase()] : [])))];
+  const trackIds = [...new Set(manifest.cuts.flatMap((c) => (c.music?.trackId ? [c.music.trackId.toLowerCase()] : [])))];
   const usable = await usableTracks({ workspaceId: job.workspaceId, brandId: job.brandId }, trackIds);
   if (usable.size !== trackIds.length) return { error: "A cut names music that is not in this workspace's library." };
+
+  // A track from Epidemic Sound: its file must be an mp3 the worker uploaded under this job's own prefix.
+  const newTracks = new Map<string, WorkerNewTrack>();
+  for (const c of manifest.cuts) if (c.music?.newTrack) newTracks.set(c.music.newTrack.key, c.music.newTrack);
+  if (newTracks.size > 0 && !job.brandId) return { error: "A cut brings in a track, but the job has no brand to keep it." };
+  for (const key of newTracks.keys()) {
+    if (!isJobPreviewKey(key, scope) || !key.toLowerCase().endsWith(".mp3") || keys.includes(key)) return { error: "A track is outside this job's storage." };
+    const head = await headObject(key);
+    if (!head || !Number.isFinite(head.size) || head.size <= 0) return { error: "A track was not uploaded." };
+  }
 
   const sizes = new Map<string, number>();
   const reused = new Map<string, string>();
@@ -147,7 +160,7 @@ async function check(job: EditorJobRow, manifest: WorkerManifest): Promise<{ err
     if (isJobPreviewKey(key, scope)) sizes.set(key, head.size);
     else reused.set(key, previous.get(key)!);
   }
-  return { sizes, reused, tracks: new Map([...usable].map(([id, t]) => [id, t.title])) };
+  return { sizes, reused, tracks: new Map([...usable].map(([id, t]) => [id, t.title])), newTracks };
 }
 
 const replyText = (r: EditorCallback, hasCuts: boolean) => {
@@ -187,7 +200,7 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
     return { status: 200, body: { applied } };
   }
 
-  const checked: Checked | { error: string } = r.manifest ? await check(job, r.manifest) : { sizes: new Map(), reused: new Map(), tracks: new Map() };
+  const checked: Checked | { error: string } = r.manifest ? await check(job, r.manifest) : { sizes: new Map(), reused: new Map(), tracks: new Map(), newTracks: new Map() };
   if ("error" in checked) {
     const applied = await fail(job, `Rejected result: ${checked.error}`, r.usage);
     return { status: 422, body: { error: "invalid_manifest", message: checked.error, applied } };
@@ -219,6 +232,13 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
         )
         .returning({ id: mediaObjects.id, r2Key: mediaObjects.r2Key });
       const idOf = new Map([...checked.reused, ...rows.map((m) => [m.r2Key, m.id] as const)]);
+      // Tracks from Epidemic Sound join the brand's library (one row per recording), then read like any other.
+      const added = new Map<string, { id: string; title: string }>();
+      for (const [key, t] of checked.newTracks) {
+        added.set(key, await addEpidemicTrack(tx, { brandId: job.brandId!, workspaceId: job.workspaceId, key, recordingId: t.recordingId, title: t.title, seconds: t.seconds, bpm: t.bpm ?? null }));
+      }
+      const trackOf = (m: { trackId?: string; newTrack?: WorkerNewTrack }) =>
+        m.newTrack ? added.get(m.newTrack.key)! : { id: m.trackId!.toLowerCase(), title: checked.tracks.get(m.trackId!.toLowerCase())! };
       const manifest: EditorManifest | null = r.manifest
         ? {
             cuts: r.manifest.cuts.map((c) => ({
@@ -226,8 +246,8 @@ export async function applyEditorResult(payload: unknown): Promise<CallbackOutco
               preview: { key: c.preview.key, mediaId: idOf.get(c.preview.key)! },
               music: c.music
                 ? {
-                    trackId: c.music.trackId.toLowerCase(),
-                    title: checked.tracks.get(c.music.trackId.toLowerCase())!,
+                    trackId: trackOf(c.music).id,
+                    title: trackOf(c.music).title,
                     start: c.music.start,
                     silent: { key: c.music.silent.key, mediaId: idOf.get(c.music.silent.key)! },
                   }

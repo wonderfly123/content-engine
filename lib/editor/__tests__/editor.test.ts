@@ -260,7 +260,7 @@ describe("POST /api/editor/uploads", () => {
     const id = await runningJob();
     expect((await uploads(id, { files: [{ name: "../../raw/x.mp4", contentType: "video/mp4" }] })).status).toBe(400);
     expect((await uploads(id, { files: [{ name: "x.mov", contentType: "video/quicktime" }] })).status).toBe(400);
-    expect((await uploads(id, { files: Array.from({ length: 21 }, (_, i) => ({ name: `c${i}.mp4`, contentType: "video/mp4" })) })).status).toBe(400);
+    expect((await uploads(id, { files: Array.from({ length: 25 }, (_, i) => ({ name: `c${i}.mp4`, contentType: "video/mp4" })) })).status).toBe(400);
     expect((await uploads(id, { files: [ok.files[0], ok.files[0]] })).status).toBe(400);
     expect(r2.presignPut).not.toHaveBeenCalled();
   });

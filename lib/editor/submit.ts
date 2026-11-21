@@ -6,7 +6,8 @@
  *   worker -> POST /api/editor/callback (signed) -> lib/editor/callback.ts
  *
  * The worker gets presigned links (2 hours) for the thread's ready clips, the workspace's own
- * Anthropic key (decrypted here, at send time only) and nothing else: no database access, and
+ * Anthropic key (decrypted here, at send time only), its Epidemic Sound key when it has connected
+ * one, and nothing else: no database access, and
  * every storage key it writes to is derived here from the job, never taken from it.
  */
 import { isClipsMessage } from "@/lib/media/rules";
@@ -89,6 +90,12 @@ export interface EditorJobRequest {
    * they can't be read; the cuts are then silent.
    */
   music: EditorJobTrack[];
+  /**
+   * The workspace's own Epidemic Sound key (Settings > Integrations), when connected: the editor may
+   * then search that account for music and bring a track in (workers/editor/epidemic.py). A track a
+   * cut uses comes back as `music.newTrack` and joins the brand's library (lib/editor/callback.ts).
+   */
+  epidemicSoundApiKey?: string;
 }
 
 export interface EditorJobTrack {
@@ -321,6 +328,9 @@ export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHan
   };
   const skillFiles = await skillFilesForJob(jobId, brand);
   if (skillFiles) job.skillFiles = skillFiles;
+  // Optional: without it (or if it can't be read) the editor simply has the brand's library.
+  const epidemicKey = await getCredential(thread.workspaceId, "epidemic_sound").catch(() => null);
+  if (epidemicKey) job.epidemicSoundApiKey = epidemicKey;
 
   try {
     const res = await fetch(config.url, {

@@ -44,7 +44,7 @@ describe("workspace keys", () => {
 
   it("never includes a secret in what the browser may see", async () => {
     const listed = await listCredentials(a.workspaceId);
-    expect(listed.map((c) => [c.provider, c.connected])).toEqual([["anthropic", true]]);
+    expect(listed.map((c) => [c.provider, c.connected])).toEqual([["anthropic", true], ["epidemic_sound", false]]);
     expect(JSON.stringify(listed)).not.toContain("Alpha-anthropic-key");
     expect(JSON.stringify(listed)).not.toMatch(/secret/i);
   });
@@ -113,5 +113,29 @@ describe("hourly key check", () => {
     expect((await listCredentials(a.workspaceId))[0]).toMatchObject({ status: "failing" });
     await checkCredentials(respond(200));
     expect((await listCredentials(a.workspaceId))[0]).toMatchObject({ status: "ok", lastCheckError: null });
+  });
+});
+
+describe("the Epidemic Sound key", () => {
+  it("is tested by opening a session on Epidemic Sound's MCP server, and a 401 means the key was rejected", async () => {
+    const seen: Array<{ url: string; method?: string; auth: string | null; body: unknown }> = [];
+    const spy = (async (url: string, init: RequestInit) => {
+      seen.push({ url, method: init.method, auth: new Headers(init.headers).get("authorization"), body: JSON.parse(String(init.body)) });
+      return new Response("data: {}\n\n", { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as unknown as typeof fetch;
+    expect(await verifyCredential("epidemic_sound", "es-key", spy)).toEqual({ ok: true });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ url: "https://www.epidemicsound.com/a/mcp-service/mcp", method: "POST", auth: "Bearer es-key", body: { method: "initialize" } });
+    expect(await verifyCredential("epidemic_sound", "es-key", respond(401))).toMatchObject({ ok: false, rejected: true });
+  });
+
+  it("is stored per workspace next to the Anthropic key, and is optional", async () => {
+    await saveCredential(a.workspaceId, "epidemic_sound", "alpha-epidemic-key");
+    expect(await getCredential(a.workspaceId, "epidemic_sound")).toBe("alpha-epidemic-key");
+    expect(await getCredential(b.workspaceId, "epidemic_sound")).toBeNull();
+    expect(await getCredential(a.workspaceId, "anthropic")).toBe("Alpha-anthropic-key");
+    const listed = await listCredentials(a.workspaceId);
+    expect(listed.find((c) => c.provider === "epidemic_sound")).toMatchObject({ connected: true, status: "ok" });
+    expect(JSON.stringify(listed)).not.toContain("alpha-epidemic-key");
   });
 });

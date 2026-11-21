@@ -11,6 +11,9 @@ The editor worker's job contract, without Modal or the Agent SDK, so it runs (an
 - `valid_skill_files` / `write_skill_files`: the job's optional edited skill markdown (Admin > Editor skill),
   written over the baked copy in that job's .claude/skills/<name>/.
 - `valid_tracks` / `music_filenames`: the job's music library and its safe, unique music/ filenames.
+- `epidemicSoundApiKey` (optional): the brand's own Epidemic Sound account. With it the agent gets two tools to
+  search that catalogue and bring a track into music/ (epidemic.py); such a track reaches the manifest as
+  `music.newTrack` and the app adds it to the brand's library.
 """
 from __future__ import annotations
 
@@ -30,12 +33,15 @@ MAX_TEXT = 20_000
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
 MODEL_RE = re.compile(r"^claude-[a-z0-9.\-]{1,60}$")
 # The skill's editable markdown files (same list as EDITABLE_SKILL_PATHS in lib/editor/skill-files.ts).
-SKILL_FILES = ("SKILL.md", "captions.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md", "review.md")
+SKILL_FILES = ("SKILL.md", "captions.md", "epidemic-sound.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md", "review.md")
 MAX_SKILL_BYTES = 200 * 1024
 # Music: same limits as lib/editor/manifest.ts (MAX_MUSIC_TRACKS, MAX_MUSIC_START).
 MAX_TRACKS = 200
 MAX_MUSIC_START = 3600
 AUDIO_EXT = (".mp3", ".m4a", ".aac", ".wav")
+# The agent's Epidemic Sound tools (same names as SEARCH_TOOL / DOWNLOAD_TOOL in epidemic.py).
+EPIDEMIC_SEARCH_TOOL = "mcp__epidemic__search_music"
+EPIDEMIC_DOWNLOAD_TOOL = "mcp__epidemic__download_track"
 
 # The brand's editor style (Settings > Editor style), compiled by the app; job-only, never in the repo
 # folder, and counted on its own (same as STYLE_FILE / MAX_STYLE_BYTES in lib/editor/style-*.ts).
@@ -80,6 +86,7 @@ def valid_job(job: Any) -> Optional[Dict[str, Any]]:
         and _https(job.get("callbackUrl"))
         and ("skillFiles" not in job or job["skillFiles"] is None or valid_skill_files(job["skillFiles"]))
         and ("music" not in job or job["music"] is None or valid_tracks(job["music"]))
+        and (job.get("epidemicSoundApiKey") is None or _str(job["epidemicSoundApiKey"], 500))
     )
     if not ok:
         return None
@@ -256,7 +263,8 @@ def _file_of(entry: Dict[str, Any]) -> Optional[str]:
 
 def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Optional[set] = None,
                       tracks: Optional[List[Tuple[str, str]]] = None,
-                      previous_music: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+                      previous_music: Optional[Dict[str, Dict[str, Any]]] = None,
+                      downloaded: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Checks the agent's out/manifest.json and returns
     {"cuts": [...contract cuts, preview {"key"} or {"path"}...], "reply": str, "question": str|None}.
@@ -264,6 +272,8 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
     A preview is a local `path` (uploaded later) or, for a cut kept from the previous manifest, its `key`.
     A cut's `music` is null or {"file": music/<file>, "start": seconds}, mapped to {"trackId", "start"}; a kept
     cut keeps its previous music (and the key of its silent copy) whatever the agent wrote.
+    `downloaded`: music/ files this job brought in from Epidemic Sound (epidemic.MusicFinder.downloaded); a cut
+    using one gets {"newTrack": {"file", "recordingId", "title", "seconds", "bpm"}, "start"} instead of a trackId.
     """
     if not isinstance(raw, dict):
         raise ManifestError("The manifest is not a JSON object.")
@@ -272,6 +282,7 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
     previous_keys = previous_keys or set()
     by_track_file = {f.lower(): t for f, t in tracks or []}
     previous_music = previous_music or {}
+    new_files = {f.lower(): dict(meta, file=f) for f, meta in (downloaded or {}).items()}
 
     reply = raw.get("reply")
     if not _str(reply, 4000):
@@ -342,7 +353,7 @@ def validate_manifest(raw: Any, files: List[Tuple[str, str]], previous_keys: Opt
                 raise ManifestError(f"{where} shot {j} has cropX outside 0-1.")
             edl.append({"mediaId": media_id, "in": float(e["in"]), "dur": float(e["dur"]), "speed": float(e["speed"]), "cropX": None if crop is None else float(crop)})
 
-        music = previous_music.get(preview["key"]) if "key" in preview else _music_of(c.get("music"), by_track_file, where)
+        music = previous_music.get(preview["key"]) if "key" in preview else _music_of(c.get("music"), by_track_file, where, new_files)
 
         cuts.append({
             "id": cid, "title": c["title"], "seconds": float(c["seconds"]), "mode": c["mode"], "preview": preview,
@@ -357,8 +368,10 @@ def silent_name(cut_id: str) -> str:
     return f"{cut_id}-nomusic.mp4"
 
 
-def _music_of(m: Any, by_track_file: Dict[str, str], where: str) -> Optional[Dict[str, Any]]:
-    """A new cut's music: null, or {file, start} with a file from music/ -> {trackId, start}."""
+def _music_of(m: Any, by_track_file: Dict[str, str], where: str,
+              new_files: Optional[Dict[str, Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """A new cut's music: null, or {file, start} with a file from music/ -> {trackId, start}, or, for a file this
+    job downloaded from Epidemic Sound, {newTrack, start}."""
     if m is None:
         return None
     if not isinstance(m, dict):
@@ -367,11 +380,15 @@ def _music_of(m: Any, by_track_file: Dict[str, str], where: str) -> Optional[Dic
     f = f.replace("\\", "/") if isinstance(f, str) else None
     f = f[len("music/"):] if f and f.startswith("music/") else f
     track_id = by_track_file.get(f.lower()) if f else None
-    if track_id is None:
+    new_track = (new_files or {}).get(f.lower()) if f and track_id is None else None
+    if track_id is None and new_track is None:
         raise ManifestError(f"{where} uses music that is not in this job's library.")
     if not (_num(m.get("start")) and 0 <= m["start"] <= MAX_MUSIC_START):
         raise ManifestError(f"{where} needs a music start between 0 and {MAX_MUSIC_START} seconds.")
-    return {"trackId": track_id, "start": round(float(m["start"]), 3)}
+    start = round(float(m["start"]), 3)
+    if new_track is not None:
+        return {"newTrack": {k: new_track.get(k) for k in ("file", "recordingId", "title", "seconds", "bpm")}, "start": start}
+    return {"trackId": track_id, "start": start}
 
 
 def preview_path(ws: str, rel: str) -> str:
@@ -454,6 +471,10 @@ def step_label(tool: Optional[str], tool_input: Dict[str, Any]) -> Optional[str]
     Labels never carry file names or commands: only what kind of work is happening."""
     if tool in SUBAGENT_TOOLS:
         return "Reviewing the cut"
+    if tool == EPIDEMIC_SEARCH_TOOL:
+        return "Searching Epidemic Sound for music"
+    if tool == EPIDEMIC_DOWNLOAD_TOOL:
+        return "Getting a track from Epidemic Sound"
     if tool == "Bash":
         cmd = str(tool_input.get("command") or "")
         if "scan.py" in cmd:
@@ -560,6 +581,8 @@ def job_brief(job: Dict[str, Any], files: List[Tuple[str, str]], music_arrived: 
         "instructions": job["instructions"],
         "request": job["request"],
         "clips": [f for f, _ in files],
+        # True when the brand's own Epidemic Sound account is connected (the skill's epidemic-sound.md).
+        "epidemicSound": bool(job.get("epidemicSoundApiKey")),
         # The music library, downloaded to music/ (tempo fields null for a track not indexed yet).
         "music": [
             {"file": f, "title": t["title"], "seconds": t["seconds"], "bpm": t.get("bpm"), "firstBeat": t.get("firstBeat"),
@@ -584,9 +607,12 @@ def build_prompt(job: Dict[str, Any], files: List[Tuple[str, str]], skill_name: 
     ]
     if revision:
         lines.append("previous.json holds the last manifest (EDL entries carry their footage `file`). Change only what the request asks.")
+    epidemic = bool(job.get("epidemicSoundApiKey"))
+    if epidemic:
+        lines.append(f"Epidemic Sound is connected for this brand: before you choose music, read .claude/skills/{skill_name}/epidemic-sound.md.")
     lines += [
         "",
-        "Work only inside this folder. There is no network and nobody to ask while you work: if something essential is",
+        f"Work only inside this folder. There is no network{' (apart from the two Epidemic Sound tools)' if epidemic else ''} and nobody to ask while you work: if something essential is",
         "missing, put one question in the manifest and finish.",
     ]
     return "\n".join(lines)
