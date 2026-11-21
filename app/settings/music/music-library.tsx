@@ -5,7 +5,6 @@ import { useRef, useState } from "react";
 import { Loader2, Music, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +64,8 @@ const length = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)
 
 /**
  * Settings > Music: one brand's tracks the editor can choose from (a new brand starts with the
- * platform library), its own uploads, and the Epidemic Sound connection to come.
+ * platform library), its own uploads, and a pointer to the Epidemic Sound connection
+ * (a workspace key under Integrations; tracks the editor brings in from it are listed here too).
  */
 export function MusicLibrary({ brandId }: { brandId: string }) {
   const qc = useQueryClient();
@@ -132,10 +132,14 @@ export function MusicLibrary({ brandId }: { brandId: string }) {
           <div>
             <CardTitle className="text-base">Epidemic Sound</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Let each brand connect its own Epidemic Sound account, so the editor can search and use the tracks their subscription covers.
+              Connect your own Epidemic Sound account and the editor can search it for music when you ask for a new song or a
+              feel your tracks don&apos;t cover. Tracks it uses are added to the list below.
             </p>
           </div>
-          <Badge variant="outline" className="shrink-0">Coming soon</Badge>
+          <Button asChild variant="outline" className="shrink-0">
+            {/* A full page load: the tabs only read ?tab= when the page opens. */}
+            <a href={`/settings?brandId=${encodeURIComponent(brandId)}&tab=integrations`}>Connect</a>
+          </Button>
         </CardHeader>
       </Card>
 

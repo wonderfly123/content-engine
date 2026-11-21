@@ -345,3 +345,74 @@ describe("stuck jobs", () => {
     expect((await job(fresh)).status).toBe("running");
   });
 });
+
+describe("a track from Epidemic Sound", () => {
+  const RECORDING = "bc654f2f-4b61-4278-8f98-2cfb5c3aad7b";
+  const trackKey = (jobId: string) => key(jobId, "es-summer-knot-bc654f2f.mp3");
+  const withNewTrack = (jobId: string, over: Record<string, unknown> = {}, cutOver: Record<string, unknown> = {}) =>
+    cut(jobId, {
+      music: {
+        newTrack: { key: trackKey(jobId), recordingId: RECORDING, title: "Summer Knot", seconds: 192.5, bpm: 105, ...over },
+        start: 12.5,
+        silent: { key: key(jobId, `${(cutOver.id as string) ?? "reel-15"}-nomusic.mp4`) },
+      },
+      ...cutOver,
+    });
+  const tracks = async (brandId: string) => db.select().from(schema.musicTracks).where(and(eq(schema.musicTracks.brandId, brandId), eq(schema.musicTracks.source, `epidemic-sound:${RECORDING}`)));
+
+  it("joins the brand's library once, and the cuts name it like any other track", async () => {
+    const id = await runningJob();
+    const cuts = [withNewTrack(id), withNewTrack(id, {}, { id: "reel-30", preview: { key: key(id, "reel-30.mp4") } })];
+    expect((await send(result(id, { manifest: { cuts } }))).status).toBe(200);
+    const rows = await tracks(a.brandId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ title: "Summer Knot", seconds: 192.5, bpm: 105, r2Key: trackKey(id), workspaceId: a.workspaceId, active: true });
+    const j = await job(id);
+    expect(j.status).toBe("done");
+    expect(j.manifest?.cuts.map((c) => c.music)).toMatchObject([
+      { trackId: rows[0].id, title: "Summer Knot", start: 12.5 },
+      { trackId: rows[0].id, title: "Summer Knot", start: 12.5 },
+    ]);
+    // The audio file is not a preview: only the cuts and their copies without music are.
+    expect((await previews()).map((r) => r.r2Key)).not.toContain(trackKey(id));
+    expect(await tracks(b.brandId)).toHaveLength(0);
+  });
+
+  it("reuses the brand's row when a later job brings in the same recording", async () => {
+    const first = await runningJob();
+    expect((await send(result(first, { manifest: { cuts: [withNewTrack(first)] } }))).status).toBe(200);
+    await db.update(schema.editorJobs).set({ status: "approved" }).where(eq(schema.editorJobs.id, first));
+    const second = await runningJob();
+    expect((await send(result(second, { manifest: { cuts: [withNewTrack(second)] } }))).status).toBe(200);
+    const rows = await tracks(a.brandId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].r2Key).toBe(trackKey(first));
+    expect((await job(second)).manifest?.cuts[0].music?.trackId).toBe(rows[0].id);
+  });
+
+  it("refuses a file outside the job's own storage, one that is not an mp3, or one that was never uploaded", async () => {
+    const id = await runningJob();
+    const elsewhere = buildPreviewKey({ workspaceId: b.workspaceId, conversationId: b.conversationId, jobId: id, filename: "es-x.mp3" });
+    expect((await send(result(id, { manifest: { cuts: [withNewTrack(id, { key: elsewhere })] } }))).status).toBe(422);
+    const id2 = await runningJob();
+    expect((await send(result(id2, { manifest: { cuts: [withNewTrack(id2, { key: key(id2, "es-x.mp4") })] } }))).status).toBe(422);
+    const id3 = await runningJob();
+    r2.headObject.mockImplementation(async (k?: string) => (String(k).endsWith(".mp3") ? null : { size: 4321, contentType: "video/mp4", etag: '"e"' }));
+    try {
+      expect((await send(result(id3, { manifest: { cuts: [withNewTrack(id3)] } }))).status).toBe(422);
+    } finally {
+      r2.headObject.mockImplementation(async () => ({ size: 4321, contentType: "video/mp4", etag: '"e"' }));
+    }
+    expect(await tracks(a.brandId)).toHaveLength(0);
+    expect((await job(id3)).status).toBe("failed");
+  });
+
+  it("refuses music that names both a library track and a new one, or neither", async () => {
+    const id = await runningJob();
+    const both = withNewTrack(id) as unknown as { music: Record<string, unknown> };
+    both.music.trackId = "99999999-9999-4999-8999-999999999999";
+    expect((await send(result(id, { manifest: { cuts: [both] } }))).status).toBe(400);
+    const id2 = await runningJob();
+    expect((await send(result(id2, { manifest: { cuts: [cut(id2, { music: { start: 1, silent: { key: key(id2, "reel-15-nomusic.mp4") } } })] } }))).status).toBe(400);
+  });
+});

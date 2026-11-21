@@ -24,7 +24,7 @@ export async function issueUploadUrls(jobParam: string | null, payload: unknown)
   if (job.status !== "running") return { status: 409, body: { error: "job_not_running" } };
 
   const parsed = uploadsRequestSchema.safeParse(payload);
-  if (!parsed.success) return { status: 400, body: { error: "invalid", message: `Send 1 to ${MAX_UPLOAD_FILES} files, each video/mp4 or image/jpeg.` } };
+  if (!parsed.success) return { status: 400, body: { error: "invalid", message: `Send 1 to ${MAX_UPLOAD_FILES} files, each video/mp4, image/jpeg or audio/mpeg.` } };
 
   const named: Array<{ name: string; key: string }> = [];
   const seen = new Set<string>();

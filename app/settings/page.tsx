@@ -170,17 +170,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <p className="text-sm text-muted-foreground">Coming soon.</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Epidemic Sound</CardTitle>
-              <CardDescription>
-                Connect your own Epidemic Sound account so the editor can use the music your subscription covers.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Coming soon.</p>
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </div>

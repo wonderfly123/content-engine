@@ -25,6 +25,9 @@ from contract import (  # noqa: E402
     MAX_TRACKS, MAX_MUSIC_START, music_filenames, previous_music, silent_name,
 )
 
+import epidemic  # noqa: E402
+from epidemic import EpidemicClient, EpidemicError, MusicFinder, compact, track_filename  # noqa: E402
+
 SCRIPTS = os.path.join(HERE, "skill", "scripts")
 sys.path.insert(0, SCRIPTS)
 import numpy as np  # noqa: E402
@@ -506,6 +509,168 @@ class MixTests(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(ws, "cut.mix.mp4")))
             bad = subprocess.run(["bash", os.path.join(SCRIPTS, "mix.sh"), video, os.path.join(ws, "missing.mp3"), "0"], capture_output=True, text=True, env=env)
             self.assertNotEqual(bad.returncode, 0)
+
+
+
+# ---- Epidemic Sound ------------------------------------------------------------------------------
+
+REC_ID = "bc654f2f-4b61-4278-8f98-2cfb5c3aad7b"
+RECORDING = {
+    "id": REC_ID, "title": "Summer Knot (Instrumental)", "bpm": 105,
+    "audioFile": {"durationInMilliseconds": 192463, "lqmp3Url": "https://audiocdn.epidemicsound.com/lqmp3/x.mp3"},
+    "credits": [{"role": "COMPOSER", "artist": {"name": "Someone Else"}}, {"role": "MAIN_ARTIST", "artist": {"name": "American Legion"}}],
+    "tags": [{"displayName": "hopeful", "dimension": {"name": "mood"}}, {"displayName": "tropical house", "dimension": {"name": "genre"}}],
+}
+ASSET = "https://audiocdn.epidemicsound.com/audiofiles/mp3/x.mp3?signature=s3cret"
+
+
+class FakeResponse:
+    def __init__(self, body: bytes, headers=None):
+        self._body, self._at, self.headers = body, 0, headers or {}
+
+    def read(self, n=-1):
+        chunk = self._body[self._at:] if n < 0 else self._body[self._at:self._at + n]
+        self._at += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class FakeEpidemic:
+    """Stands in for Epidemic Sound's MCP server and its file host. Records what it was sent."""
+
+    def __init__(self, audio=b"ID3" + b"x" * 5000, asset=ASSET, search_error=None):
+        self.calls, self.auth, self.audio, self.asset, self.search_error = [], set(), audio, asset, search_error
+
+    def __call__(self, req, timeout):
+        if req.get_method() == "GET":
+            self.calls.append(("GET", req.full_url))
+            assert req.get_header("Authorization") is None  # the key never goes to the file host
+            return FakeResponse(self.audio)
+        self.auth.add(req.get_header("Authorization"))
+        msg = json.loads(req.data)
+        self.calls.append((msg["method"], (msg.get("params") or {}).get("name")))
+        if msg["method"] == "initialize":
+            return FakeResponse(b'data: \n\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n', {"Mcp-Session-Id": "sess-1"})
+        if msg["method"] == "notifications/initialized":
+            return FakeResponse(b"")
+        assert req.get_header("Mcp-session-id") == "sess-1"
+        args = msg["params"]["arguments"]
+        if msg["params"]["name"] == "SearchRecordings":
+            self.last_search = args
+            data = {"errors": [{"message": self.search_error, "extensions": {"code": "RETRY_LATER"}}]} if self.search_error else \
+                {"data": {"recordings": {"nodes": [{"recording": RECORDING}, {"recording": {"id": "nope", "title": "bad id"}}]}}}
+        else:
+            data = {"data": {"recordingDownload": {"assetUrl": self.asset}}}
+        result = {"jsonrpc": "2.0", "id": msg["id"], "result": {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}}
+        return FakeResponse(("data: " + json.dumps(result) + "\n\n").encode())
+
+
+class EpidemicTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="es-test-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def finder(self, server, **kw):
+        return MusicFinder(EpidemicClient("es-key-123", opener=server), self.dir, **kw)
+
+    def test_search_returns_compact_tracks_and_sends_filters(self):
+        server = FakeEpidemic()
+        out = json.loads(self.finder(server).search({"term": " upbeat summer ", "bpmMin": 100, "bpmMax": 130, "vocals": False, "count": 50}))
+        self.assertEqual(out["tracks"], [{"id": REC_ID, "title": "Summer Knot (Instrumental)", "artist": "American Legion", "bpm": 105,
+                                          "seconds": 192.5, "tags": ["hopeful", "tropical house"]}])
+        self.assertEqual((out["searchesLeft"], out["downloadsLeft"]), (11, 4))
+        self.assertEqual(server.last_search, {"query": {"term": "upbeat summer"}, "first": 10, "filter": {"bpm": {"min": 100, "max": 130}, "vocals": False}})
+        self.assertEqual(server.auth, {"Bearer es-key-123"})
+        self.assertNotIn("http", json.dumps(out))  # no preview or cover links reach the agent
+
+    def test_download_saves_into_music_and_records_the_track(self):
+        server = FakeEpidemic()
+        f = self.finder(server)
+        f.search({"term": "summer"})
+        out = json.loads(f.download({"id": REC_ID.upper()}))
+        name = track_filename("Summer Knot (Instrumental)", REC_ID)
+        self.assertEqual(name, "es-summer-knot-instrumental-bc654f2f.mp3")
+        self.assertEqual(out["file"], f"music/{name}")
+        with open(os.path.join(self.dir, name), "rb") as fh:
+            self.assertEqual(fh.read(), server.audio)
+        self.assertEqual(f.downloaded, {name: {"recordingId": REC_ID, "title": "Summer Knot (Instrumental)", "seconds": 192.5, "bpm": 105}})
+        self.assertNotIn("s3cret", json.dumps(out))
+        before = len(server.calls)
+        self.assertEqual(json.loads(f.download({"id": REC_ID}))["file"], f"music/{name}")  # asked twice: the same file, no second download
+        self.assertEqual(len(server.calls), before)
+
+    def test_limits_and_bad_input(self):
+        f = self.finder(FakeEpidemic(), max_searches=1, max_downloads=0)
+        for bad in ({}, {"term": ""}, {"term": 5}, {"term": "x" * 201}):
+            with self.assertRaises(EpidemicError):
+                f.search(bad)
+        with self.assertRaises(EpidemicError):
+            f.download({"id": REC_ID})  # not from a search in this job
+        f.search({"term": "summer"})
+        with self.assertRaises(EpidemicError):
+            f.search({"term": "again"})
+        with self.assertRaises(EpidemicError):
+            f.download({"id": REC_ID})  # no downloads left
+        self.assertEqual(os.listdir(self.dir), [])
+
+    def test_refuses_a_link_off_epidemic_sound_and_an_oversize_file(self):
+        for asset in ("https://evil.example/x.mp3", "http://audiocdn.epidemicsound.com/x.mp3", "https://notepidemicsound.com/x.mp3"):
+            f = self.finder(FakeEpidemic(asset=asset))
+            f.search({"term": "summer"})
+            with self.assertRaises(EpidemicError):
+                f.download({"id": REC_ID})
+        f = self.finder(FakeEpidemic(audio=b"x" * (epidemic.MAX_TRACK_BYTES + 1)))
+        f.search({"term": "summer"})
+        with self.assertRaises(EpidemicError):
+            f.download({"id": REC_ID})
+        self.assertEqual((os.listdir(self.dir), f.downloaded), ([], {}))
+
+    def test_errors_are_safe_to_show(self):
+        with self.assertRaises(EpidemicError) as ctx:
+            self.finder(FakeEpidemic(search_error="Try later, see https://internal.example/secret")).search({"term": "summer"})
+        self.assertIn("RETRY_LATER", str(ctx.exception))
+        self.assertNotIn("http", str(ctx.exception))
+
+        def rejected(req, timeout):
+            raise epidemic.urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+        with self.assertRaises(EpidemicError) as ctx:
+            self.finder(rejected).search({"term": "summer"})
+        self.assertNotIn("es-key-123", str(ctx.exception))
+        self.assertIsNone(compact({"id": "not-a-uuid", "title": "x"}))
+
+    def test_job_brief_prompt_and_steps(self):
+        job = dict(copy.deepcopy(JOB), epidemicSoundApiKey="es-key-123")
+        self.assertIsNotNone(valid_job(job))
+        self.assertIsNone(valid_job(dict(job, epidemicSoundApiKey=5)))
+        self.assertIsNotNone(valid_job(dict(job, epidemicSoundApiKey=None)))
+        files = clip_filenames(job["clips"])
+        brief, prompt = job_brief(job, files), build_prompt(job, files, "cutting-montage-videos")
+        self.assertIs(brief["epidemicSound"], True)
+        self.assertIs(job_brief(JOB, files)["epidemicSound"], False)
+        self.assertNotIn("es-key-123", json.dumps(brief) + prompt)
+        self.assertIn("epidemic-sound.md", prompt)
+        self.assertNotIn("Epidemic", build_prompt(JOB, files, "cutting-montage-videos"))
+        self.assertEqual(step_label(epidemic.SEARCH_TOOL, {"term": "x"}), "Searching Epidemic Sound for music")
+        self.assertEqual(step_label(epidemic.DOWNLOAD_TOOL, {"id": "x"}), "Getting a track from Epidemic Sound")
+
+    def test_manifest_accepts_a_downloaded_track_as_a_new_track(self):
+        files = clip_filenames(CLIPS)
+        name = track_filename("Summer Knot", REC_ID)
+        downloaded = {name: {"recordingId": REC_ID, "title": "Summer Knot", "seconds": 192.5, "bpm": 105}}
+        m = good_manifest()
+        m["cuts"][0]["music"] = {"file": f"music/{name}", "start": 41.2184}
+        with self.assertRaises(ManifestError):
+            validate_manifest(m, files, set(), music_filenames(TRACKS))  # not downloaded by this job
+        cut = validate_manifest(m, files, set(), music_filenames(TRACKS), None, downloaded)["cuts"][0]
+        self.assertEqual(cut["music"], {"newTrack": {"file": name, "recordingId": REC_ID, "title": "Summer Knot", "seconds": 192.5, "bpm": 105}, "start": 41.218})
+        m["cuts"][0]["music"] = {"file": music_filenames(TRACKS)[0][0], "start": 3}
+        self.assertEqual(validate_manifest(m, files, set(), music_filenames(TRACKS), None, downloaded)["cuts"][0]["music"], {"trackId": "t1", "start": 3.0})
+
 
 
 if __name__ == "__main__":

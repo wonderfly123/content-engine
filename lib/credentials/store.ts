@@ -1,5 +1,5 @@
 /**
- * Each workspace's own keys for outside services (today: Anthropic).
+ * Each workspace's own keys for outside services (Anthropic, and optionally Epidemic Sound).
  *
  * Secrets are encrypted at rest (the `secret` column) and decrypted only here, on the server, at
  * the moment of use. Nothing in this file returns a secret to a caller that could send it to the
@@ -23,6 +23,18 @@ export const PROVIDER_INFO: Record<CredentialProvider, { name: string; usedFor: 
       "Optional but recommended: set a monthly spend limit, so your AI costs can never run past it.",
       "Under API keys, create a key and name it \"Nekter\".",
       "Copy the key, paste it into the box above, and press Test and save. You won't see it again after saving.",
+    ],
+  },
+  epidemic_sound: {
+    name: "Epidemic Sound",
+    usedFor: "Optional. Lets the video editor search your Epidemic Sound account for music and use tracks your subscription covers. Tracks it uses are added to the brand's music library.",
+    required: false,
+    getKeyUrl: "https://www.epidemicsound.com/account/api-keys",
+    steps: [
+      "Sign in to Epidemic Sound with the account that holds your subscription. Downloading tracks needs a paid plan.",
+      "Open Account > API keys and create an MCP Server API key. This is not the Developer Portal key.",
+      "Copy the key, paste it into the box above, and press Test and save. You won't see it again after saving.",
+      "The key lasts one year. When it expires, create a new one on the same page and paste it here.",
     ],
   },
 };

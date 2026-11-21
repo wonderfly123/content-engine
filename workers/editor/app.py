@@ -7,11 +7,14 @@ answers 202 straight away and spawns `run_job`, which:
   fresh temp workspace -> streams the clips to footage/ and the music library to music/ (presigned GETs) ->
   runs the agent (cwd = workspace, skill in .claude/skills/: the baked copy with the job's `skillFiles`, if any,
   written over it, allow-listed tools, dontAsk, 80 turns, 25 min) -> validates out/manifest.json ->
-  makes a silent copy of every preview with music -> uploads previews (uploads endpoint + presigned PUTs) ->
+  makes a silent copy of every preview with music -> uploads previews (uploads endpoint + presigned PUTs) and
+  any track a cut uses that the agent brought in from Epidemic Sound ->
   POSTs the callback signed with
   X-Nekter-Signature = hex HMAC-SHA256(raw body, MODAL_EDITOR_SECRET).
 
 The workspace's Anthropic key lives only in the agent process's environment: never logged, written or sent back.
+A job may also carry the brand's own Epidemic Sound key (`epidemicSoundApiKey`). It stays in this process: the
+agent gets two tools served from here (search_music, download_track; epidemic.py) and never the key.
 Logs carry the job id, counts and tool names only: no URLs, filenames, prompts or clip contents.
 
 Deploy: see README.md next to this file.
@@ -59,7 +62,7 @@ image = (
     # numpy: the skill's beat tracking (scripts/music.py, beatfit.py).
     .pip_install("claude-agent-sdk==0.2.182", "fastapi[standard]==0.115.12", "requests==2.32.3", "numpy==2.2.6")
     .run_commands("python -c 'import claude_agent_sdk, numpy'")
-    .add_local_python_source("contract")
+    .add_local_python_source("contract", "epidemic")
     .add_local_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "skill"), SKILL_DIR)
 )
 
@@ -77,6 +80,7 @@ with image.imports():
         valid_job, validate_manifest,
         write_skill_files,
     )
+    from epidemic import TOOL_NAMES as EPIDEMIC_TOOLS, EpidemicClient, EpidemicError, MusicFinder
 
 
 class JobError(Exception):
@@ -185,7 +189,8 @@ def _silent_copy(path: str) -> str:
 
 def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -> None:
     """Replaces each local preview {path} with the {key} the uploads endpoint returned, after a presigned PUT.
-    A cut with music also gets a silent copy, uploaded alongside: its key goes in music.silent."""
+    A cut with music also gets a silent copy, uploaded alongside: its key goes in music.silent. A track from
+    Epidemic Sound that a cut uses is uploaded once: its key replaces the `file` in that cut's music.newTrack."""
     todo = []
     for cut in cuts:
         if "path" not in cut["preview"]:
@@ -202,13 +207,20 @@ def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -
             raise ManifestError(f"The preview for {cut['id']} has sound but names no track.")
         if os.path.getsize(path) > MAX_PUT_BYTES:
             raise ManifestError(f"The preview for {cut['id']} is over 5 GB.")
-        todo.append((cut, f"{cut['id']}.mp4", path, False))
+        todo.append((cut, f"{cut['id']}.mp4", path, "preview"))
         if cut.get("music"):
-            todo.append((cut, silent_name(cut["id"]), _silent_copy(path), True))
+            todo.append((cut, silent_name(cut["id"]), _silent_copy(path), "silent"))
+    new_tracks = sorted({cut["music"]["newTrack"]["file"] for cut in cuts if (cut.get("music") or {}).get("newTrack")})
+    for name in new_tracks:
+        path = os.path.join(ws, "music", name)
+        if not os.path.isfile(path) or os.path.getsize(path) > MAX_TRACK_BYTES:
+            raise ManifestError("A cut uses a downloaded track that is missing.")
+        todo.append((None, name, path, "track"))
     if not todo:
         return
+    mime = lambda kind: "audio/mpeg" if kind == "track" else "video/mp4"
     try:
-        res = requests.post(job["uploads"]["url"], json={"files": [{"name": n, "contentType": "video/mp4"} for _, n, _, _ in todo]},
+        res = requests.post(job["uploads"]["url"], json={"files": [{"name": n, "contentType": mime(k)} for _, n, _, k in todo]},
                             headers={"Authorization": f"Bearer {_secret()}"}, timeout=30)
     except requests.RequestException as err:
         raise JobError(f"Upload links could not be fetched ({type(err).__name__}).") from None
@@ -218,21 +230,29 @@ def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -
         given = {f["name"]: f for f in res.json()["files"] if isinstance(f.get("key"), str) and str(f.get("putUrl", "")).startswith("https://")}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise JobError("The upload links came back in an unexpected shape.") from None
-    for cut, name, path, silent in todo:
+    track_keys: Dict[str, str] = {}
+    for cut, name, path, kind in todo:
         if name not in given:
             raise JobError("An upload link is missing.")
         size = os.path.getsize(path)
         try:
             with open(path, "rb") as f:
-                put = requests.put(given[name]["putUrl"], data=f, headers={"Content-Type": "video/mp4", "Content-Length": str(size)}, timeout=(15, 600))
+                put = requests.put(given[name]["putUrl"], data=f, headers={"Content-Type": mime(kind), "Content-Length": str(size)}, timeout=(15, 600))
         except requests.RequestException as err:
             raise JobError(f"A preview upload failed ({type(err).__name__}).") from None
         if put.status_code not in (200, 201):
             raise JobError(f"A preview upload failed (HTTP {put.status_code}).")
-        if silent:
+        if kind == "track":
+            track_keys[name] = given[name]["key"]
+        elif kind == "silent":
             cut["music"] = dict(cut["music"], silent={"key": given[name]["key"]})
         else:
             cut["preview"] = {"key": given[name]["key"]}
+    for cut in cuts:
+        new = (cut.get("music") or {}).get("newTrack")
+        if new and "file" in new:
+            cut["music"] = dict(cut["music"], newTrack={"key": track_keys[new["file"]], "recordingId": new["recordingId"],
+                                                        "title": new["title"], "seconds": new["seconds"], "bpm": new.get("bpm")})
 
 
 def _callback(url: str, payload: Dict[str, Any]) -> None:
@@ -298,8 +318,50 @@ def _agent_env(api_key: str, tmp: str) -> Dict[str, str]:
     return env
 
 
+def _epidemic_server(finder: "MusicFinder") -> Any:
+    """The agent's two Epidemic Sound tools, served from this process (so the account's key stays here)."""
+    from claude_agent_sdk import create_sdk_mcp_server, tool
+
+    async def answer(fn: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return {"content": [{"type": "text", "text": await asyncio.to_thread(fn, args)}]}
+        except EpidemicError as err:
+            return {"content": [{"type": "text", "text": str(err)}], "is_error": True}
+        except Exception as err:  # never a raw message: it could carry a link
+            return {"content": [{"type": "text", "text": f"Epidemic Sound is not available right now ({type(err).__name__})."}], "is_error": True}
+
+    @tool(
+        "search_music",
+        "Search the brand's Epidemic Sound catalogue for music. Returns tracks with id, title, artist, bpm, seconds and tags.",
+        {
+            "type": "object",
+            "properties": {
+                "term": {"type": "string", "description": "A few plain words for the mood, genre or feel, e.g. 'upbeat tropical house' or 'warm acoustic morning'."},
+                "bpmMin": {"type": "integer", "description": "Slowest tempo wanted."},
+                "bpmMax": {"type": "integer", "description": "Fastest tempo wanted."},
+                "vocals": {"type": "boolean", "description": "false for instrumental only, true for tracks with vocals. Leave out for either."},
+                "minSeconds": {"type": "integer", "description": "Shortest track length wanted, in seconds."},
+                "count": {"type": "integer", "description": "How many tracks to return (1-10, default 8)."},
+            },
+            "required": ["term"],
+        },
+    )
+    async def search_music(args: Dict[str, Any]) -> Dict[str, Any]:
+        return await answer(finder.search, args)
+
+    @tool(
+        "download_track",
+        "Download one track from this job's search results into music/. Returns its file name, to use like any other track in music/.",
+        {"type": "object", "properties": {"id": {"type": "string", "description": "The track's id from search_music."}}, "required": ["id"]},
+    )
+    async def download_track(args: Dict[str, Any]) -> Dict[str, Any]:
+        return await answer(finder.download, args)
+
+    return create_sdk_mcp_server(name="epidemic", version="1.0.0", tools=[search_music, download_track])
+
+
 async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, budget_sec: float, state: Dict[str, Any],
-                     progress: Optional["Progress"] = None) -> Optional[str]:
+                     progress: Optional["Progress"] = None, finder: Optional["MusicFinder"] = None) -> Optional[str]:
     """Runs the agent. Fills state["result"] (the ResultMessage) and state["tokens"] as it goes, so they survive
     an exception; returns a safe error message or None."""
     from claude_agent_sdk import AgentDefinition, AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, HookMatcher, ResultMessage
@@ -317,10 +379,13 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
         maxTurns=15,
     )
 
+    # With the brand's Epidemic Sound account: its two tools, on top of the built-in ones.
+    allowed = TOOLS + list(EPIDEMIC_TOOLS) if finder is not None else TOOLS
+
     async def guard(input_data: Dict[str, Any], tool_use_id: Optional[str], context: Any) -> Dict[str, Any]:
         name = input_data.get("tool_name")
         tool_input = input_data.get("tool_input") or {}
-        if name not in TOOLS:
+        if name not in allowed:
             reason = "That tool is not available here."
         elif name == "Bash":
             reason = bash_denial(tool_input.get("command"), ws)
@@ -337,7 +402,8 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
 
     options = ClaudeAgentOptions(
         tools=TOOLS,                       # the only built-in tools the agent sees
-        allowed_tools=TOOLS,               # pre-approved; everything else is denied by dontAsk
+        allowed_tools=allowed,             # pre-approved; everything else is denied by dontAsk
+        mcp_servers={"epidemic": _epidemic_server(finder)} if finder is not None else {},
         permission_mode="dontAsk",         # headless: any call that would prompt is denied
         hooks={"PreToolUse": [HookMatcher(hooks=[guard], on_failure="block")]},  # keeps every call inside the workspace
         cwd=ws,
@@ -425,6 +491,8 @@ def run_job(job: Dict[str, Any]) -> None:
             _download_all(job["clips"], files, os.path.join(ws, "footage"))
             got = _download_music(job.get("music") or [], tracks, os.path.join(ws, "music")) if tracks else 0
             _write_brief(ws, job, files)
+            # The brand's own Epidemic Sound account, when connected: the agent may bring tracks into music/.
+            finder = MusicFinder(EpidemicClient(job["epidemicSoundApiKey"]), os.path.join(ws, "music")) if job.get("epidemicSoundApiKey") else None
             print(f"job {job['jobId']}: {len(files)} clips and {got}/{len(tracks)} tracks downloaded in {time.monotonic() - started:.0f}s")
 
             budget = min(AGENT_MAX_SEC, TIMEOUT_SEC - (time.monotonic() - started) - 240)
@@ -433,7 +501,7 @@ def run_job(job: Dict[str, Any]) -> None:
             agent_start = time.monotonic()
             try:
                 agent_err = asyncio.run(
-                    _run_agent(ws, tmp, build_prompt(job, files, SKILL_NAME), job["model"], job["anthropicApiKey"], budget, state, progress))
+                    _run_agent(ws, tmp, build_prompt(job, files, SKILL_NAME), job["model"], job["anthropicApiKey"], budget, state, progress, finder))
             except Exception as err:  # never send a raw message: it could carry CLI output
                 agent_err = f"The editor could not run ({type(err).__name__})."
             agent_sec = time.monotonic() - agent_start
@@ -446,7 +514,10 @@ def run_job(job: Dict[str, Any]) -> None:
                     raw = json.load(f)
             except (ValueError, OSError):
                 raise JobError("The editor's result was not valid JSON.") from None
-            checked = validate_manifest(raw, files, previous_keys(job.get("previous")), tracks, previous_music(job.get("previous")))
+            if finder is not None:
+                print(f"job {job['jobId']}: epidemic sound {finder.searches} searches, {len(finder.downloaded)} downloads")
+            checked = validate_manifest(raw, files, previous_keys(job.get("previous")), tracks, previous_music(job.get("previous")),
+                                        finder.downloaded if finder is not None else None)
             if checked["cuts"]:
                 progress.step("Uploading the cut" if len(checked["cuts"]) == 1 else "Uploading the cuts")
             _upload_previews(job, checked["cuts"], ws)
