@@ -12,6 +12,11 @@ export const MAX_PART_URLS_PER_CALL = 50;
 /** Media ids reported in one "done" call. */
 export const MAX_DONE_IDS = 200;
 
+/** A batch this big takes a while to shrink before the editor can start; the person is told to expect a wait. */
+export const LARGE_BATCH_BYTES = 200 * 1024 ** 2;
+/** Said after a large batch is sent (measured: a 489 MB clip took about 12 minutes to prepare). */
+export const LARGE_BATCH_NOTE = "Large clips take 10 to 15 minutes to prepare before editing starts, so the first cut will take longer.";
+
 const VIDEO_EXTENSIONS = /\.(mov|mp4|m4v)$/i;
 
 /** A video by its type (`video/*`), or by name (.mov / .mp4 / .m4v) when the browser sends no useful type. */
