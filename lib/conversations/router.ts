@@ -235,7 +235,8 @@ export function replyFor(decision: Decision, ctx: ReplyContext, editor?: { queue
     case "approve":
       return NOTHING_TO_APPROVE;
     case "new_thread":
-      return `New ${subject(ctx)} started. ${question ?? footageLine(ctx.channel, ctx.link)}`;
+      // By text, the first reply opens with a salute so it reads as "heard you" at a glance.
+      return `${ctx.channel === "sms" ? "🫡 Message received. " : ""}New ${subject(ctx)} started. ${question ?? footageLine(ctx.channel, ctx.link)}`;
     case "answer":
       return question ? `Got it. ${question}` : `Got it: a ${subject(ctx)}. ${footageLine(ctx.channel, ctx.link)}`;
     case "message": {
