@@ -3,11 +3,13 @@
  * the folder's index.tsv to R2 (music/library/...) and records it in music_tracks with its beat data.
  * Safe to run again: tracks already imported are updated, not duplicated.
  *
- *   npx tsx --env-file=.env.local scripts/import-music.ts [folder]   (default ~/Desktop/ai-video-editing/music)
+ *   npx tsx --env-file=.env.local scripts/import-music.ts [folder]
+ *
+ * The default folder is `music` beside VIDEO_JOBS_DIR, or ~/Desktop/ai-video-editing/music when that is unset.
  */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { musicKey, parseMusicIndex, trackTitle } from "@/lib/music/library";
@@ -16,7 +18,9 @@ import { headObject, presignPut } from "@/lib/storage/r2";
 const TYPES: Record<string, string> = { mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav" };
 
 async function main() {
-  const folder = resolve(process.argv[2] ?? join(homedir(), "Desktop/ai-video-editing/music"));
+  const jobs = process.env.VIDEO_JOBS_DIR;
+  const fallback = jobs ? join(dirname(jobs), "music") : join(homedir(), "Desktop/ai-video-editing/music");
+  const folder = resolve(process.argv[2] ?? fallback);
   const rows = parseMusicIndex(readFileSync(join(folder, "index.tsv"), "utf8"));
   let uploaded = 0;
   for (const row of rows) {
