@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useClipUploads, type UploadItem } from "@/components/conversations/use-clip-uploads";
+import { Toaster } from "@/components/ui/sonner";
 import { formatBytes } from "@/lib/media/rules";
 
 const pct = (i: UploadItem) => (i.file.size ? Math.min(100, Math.round((i.uploaded / i.file.size) * 100)) : 0);
@@ -28,6 +29,16 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // From the tap on "Add clips" until the phone hands the files over (it copies them first, which can take minutes).
+  const [picking, setPicking] = useState(false);
+  const [nothingPicked, setNothingPicked] = useState(false);
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    const cancelled = () => setPicking(false);
+    el.addEventListener("cancel", cancelled);
+    return () => el.removeEventListener("cancel", cancelled);
+  }, []);
   const done = items.filter((i) => i.status === "done");
   const unsent = done.length - sent;
   const allDone = items.length > 0 && !uploading && items.every((i) => i.status === "done" || i.status === "cancelled" || i.status === "failed");
@@ -90,18 +101,36 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
         multiple
         className="hidden"
         onChange={(e) => {
-          addFiles(Array.from(e.target.files ?? []));
+          const files = Array.from(e.target.files ?? []);
+          setPicking(false);
+          setNothingPicked(files.length === 0);
+          addFiles(files);
           e.target.value = "";
         }}
       />
+      <Toaster position="top-center" duration={10000} />
       <button
         type="button"
-        onClick={() => input.current?.click()}
+        onClick={() => {
+          setPicking(true);
+          setNothingPicked(false);
+          input.current?.click();
+        }}
         className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-lg font-semibold text-white shadow-md active:scale-[0.99]"
       >
         <Plus className="h-6 w-6" aria-hidden="true" />
         {items.length ? "Add more clips" : "Add clips"}
       </button>
+
+      {picking && (
+        <p className="flex items-start gap-2 text-sm text-muted-foreground">
+          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          Getting your clips from your phone. Long clips can take a few minutes to show up here. Keep this page open.
+        </p>
+      )}
+      {nothingPicked && (
+        <p className="text-sm text-destructive">Your phone didn&apos;t hand over any clips. Try again with fewer or shorter clips, and check the phone has free space.</p>
+      )}
 
       {items.length > 0 && (
         <ul className="flex flex-col gap-3">
