@@ -31,7 +31,7 @@ vi.mock("@/lib/storage/r2", async () => {
 
 import { POST as optimized } from "@/app/api/media/optimized/route";
 import { startFirstCutIfClipsReady } from "@/lib/editor/clips-ready";
-import { REPLIES } from "@/lib/editor/submit";
+import { REPLIES, startEditorJob } from "@/lib/editor/submit";
 import { recoverStuckOptimizing } from "@/lib/media/optimize";
 import { signWorkerBody } from "@/lib/media/worker-signature";
 import { buildMediaKey } from "@/lib/storage/keys";
@@ -118,6 +118,18 @@ describe("first cut when the last clip is ready", () => {
     await done(two, JOB2);
     expect(await jobs()).toHaveLength(1);
     expect(editorCalls()).toHaveLength(1);
+  });
+
+  it("a batch sent while one clip is ready and another still processing waits, then cuts with both", async () => {
+    const two = await secondClip();
+    await processing(a.mediaId, JOB1);
+    const added = (await db.select().from(schema.conversationMessages).where(eq(schema.conversationMessages.conversationId, a.conversationId))).find((m) => m.body.startsWith("Added "))!;
+    expect(await startEditorJob(a.conversationId, added.id)).toMatchObject({ queued: false, reason: "clips still processing" });
+    expect(await jobs()).toHaveLength(0);
+    expect(editorCalls()).toHaveLength(0);
+    await done(a.mediaId, JOB1);
+    const [job] = await jobs();
+    expect([...(job.clipIds as string[])].sort()).toEqual([a.mediaId, two].sort());
   });
 
   it("two callbacks at the same moment start one job, and say so once", async () => {

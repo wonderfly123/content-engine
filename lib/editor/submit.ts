@@ -209,6 +209,9 @@ export async function startEditorJob(threadId: string, messageId: string, origin
     .where(and(eq(mediaObjects.conversationId, thread.id), eq(mediaObjects.workspaceId, thread.workspaceId), eq(mediaObjects.kind, "raw"), isNull(mediaObjects.deletedAt)))
     .orderBy(asc(mediaObjects.createdAt));
   const ready = clipRows.filter((m) => m.status === "ready" && isWorkspaceKey(m.r2Key, thread.workspaceId));
+  // A batch's first cut waits for every clip: big ones are still being shrunk when the small ones are
+  // ready, and a cut started now would leave them out. The last one becoming ready starts it (clips-ready.ts).
+  if (byClips && clipRows.some((m) => m.status === "processing")) return { queued: false, reason: "clips still processing" };
   if (ready.length === 0) {
     const preparing = clipRows.some((m) => m.status === "processing");
     if (byClips) return { queued: false, reason: "clips still processing" };
