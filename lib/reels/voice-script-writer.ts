@@ -15,6 +15,8 @@ import { MAX_SPOKEN_CHARS } from "./voice-script";
 
 export const SCRIPT_MODEL = "claude-opus-5-5";
 const TIMEOUT_MS = 120_000;
+// Room for the model to think before it answers; with too little the script stops mid-sentence.
+const MAX_TOKENS = 16_000;
 const MAX_CONTEXT_CHARS = 6000;
 const MAX_GUIDE_CHARS = 40_000;
 
@@ -112,10 +114,11 @@ export async function writeVoiceScript(
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
-    body: JSON.stringify({ model: SCRIPT_MODEL, max_tokens: 1000, messages: [{ role: "user", content: [...frameBlocks(sources.frames), { type: "text", text: scriptPrompt(cut, sources) }] }] }),
+    body: JSON.stringify({ model: SCRIPT_MODEL, max_tokens: MAX_TOKENS, messages: [{ role: "user", content: [...frameBlocks(sources.frames), { type: "text", text: scriptPrompt(cut, sources) }] }] }),
   });
   if (!res.ok) throw new Error(`The script could not be written (Claude answered ${res.status}).`);
-  const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const json = (await res.json()) as { content?: Array<{ type: string; text?: string }>; stop_reason?: string };
+  if (json.stop_reason === "max_tokens") throw new Error("The script was cut off before it finished. Try again.");
   const text = (json.content?.find((c) => c.type === "text")?.text ?? "")
     .split("\n")
     .map((l) => l.replace(/\[[^\]\n]*\]/g, "").replace(/ {2,}/g, " ").trim())

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { VoiceScript } from "./use-voice-script";
 import { Loader2, Mic, PenLine, RotateCcw, Sparkles, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { speakableScript, spokenTextProblem } from "@/lib/reels/voice-script";
+import { spokenTextProblem } from "@/lib/reels/voice-script";
 
 interface VoiceRecorderProps {
   /** The shared player. It plays silently from `startAt` while recording, so the read lines up with the picture. */
@@ -15,6 +16,8 @@ interface VoiceRecorderProps {
   /** Called by the player when the (edited) cut finishes. */
   onEnd: React.RefObject<(() => void) | null>;
   script?: string;
+  /** The saved AI voice script for this cut; kept by the parent so it survives switching options. */
+  voiceScript: VoiceScript;
   /** record = the reviewer reads it; ai = the AI voice speaks the script. */
   method: "record" | "ai";
   /** The cut the AI voice is generated for. */
@@ -28,7 +31,7 @@ interface VoiceRecorderProps {
 }
 
 /** Records a voice-over against the cut as it is currently edited. The take is kept by the parent and sent on accept. */
-export function VoiceRecorder({ videoRef, startAt, onEnd, script, method, job, cutId, take, onTake, onRecordingChange, disabled }: VoiceRecorderProps) {
+export function VoiceRecorder({ videoRef, startAt, onEnd, script, voiceScript, method, job, cutId, take, onTake, onRecordingChange, disabled }: VoiceRecorderProps) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -37,35 +40,10 @@ export function VoiceRecorder({ videoRef, startAt, onEnd, script, method, job, c
   const [takeUrl, setTakeUrl] = useState<string | null>(null);
   // AI voice-over: the reviewer edits what will be said, then the voice tool speaks it. No recording.
   const [generating, setGenerating] = useState(false);
-  const [aiText, setAiText] = useState(() => speakableScript(script));
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [fromAi, setFromAi] = useState(false);
+  const { text: aiText, setText: setAiText, writing, regenerate: writeScript } = voiceScript;
+  const [voiceError, setAiError] = useState<string | null>(null);
+  const aiError = voiceError ?? voiceScript.error;
   const aiProblem = spokenTextProblem(aiText);
-  const [writing, setWriting] = useState(false);
-  const autoWrote = useRef(false);
-
-  /** Has Claude write the lines from the job's story, earlier voice-overs and the editor's draft. */
-  const writeScript = async () => {
-    setAiError(null);
-    setWriting(true);
-    try {
-      const res = await fetch("/api/reels/voice-script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job, id: cutId }) });
-      const json = (await res.json().catch(() => ({}))) as { script?: string; error?: string };
-      if (!res.ok || !json.script) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setAiText(json.script);
-    } catch (err) {
-      setAiError(`The script could not be written: ${(err as Error).message}`);
-    } finally {
-      setWriting(false);
-    }
-  };
-  // A script is always there to start from: when the draft cannot be spoken as it is (none, or open [brackets]), one is written.
-  useEffect(() => {
-    if (method !== "ai" || take || autoWrote.current) return;
-    autoWrote.current = true;
-    if (spokenTextProblem(aiText)) void writeScript();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method, take]);
 
   const generate = async () => {
     setAiError(null);
@@ -76,7 +54,6 @@ export function VoiceRecorder({ videoRef, startAt, onEnd, script, method, job, c
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
       const wav = await res.blob();
       if (!wav.size) throw new Error("The AI voice returned no audio.");
-      setFromAi(true);
       onTake(new Blob([wav], { type: "audio/wav" }));
     } catch (err) {
       const message = (err as Error).message;
@@ -113,7 +90,6 @@ export function VoiceRecorder({ videoRef, startAt, onEnd, script, method, job, c
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
         stopStream();
-        setFromAi(false);
         onTake(new Blob(chunks, { type: recorder.mimeType }));
         setPhase("idle");
         onRecordingChange(false);
@@ -167,7 +143,7 @@ export function VoiceRecorder({ videoRef, startAt, onEnd, script, method, job, c
         )}
         {phase === "idle" && take && (
           <>
-            <Badge variant="outline">{fromAi ? "AI take ready" : "Take recorded"}</Badge>
+            <Badge variant="outline">{method === "ai" ? "AI take ready" : "Take recorded"}</Badge>
             <Button className="flex-1" variant="outline" onClick={playTake} disabled={disabled}>Play back</Button>
             <Button className="flex-1" variant="outline" onClick={redo} disabled={disabled}><RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />Redo</Button>
           </>

@@ -12,6 +12,7 @@ import { ClipEditor } from "./clip-editor";
 import { HookPicker, Player, Split, patch, send } from "./shared";
 import { TrimEditor } from "./trim-editor";
 import { useEditedPlayback } from "./use-edited-playback";
+import { useVoiceScript } from "./use-voice-script";
 import { VoiceRecorder } from "./voice-recorder";
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
@@ -35,13 +36,17 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   // The editor's suggestion is only a starting point; the reviewer decides here.
   const [voice, setVoice] = useState(cut.mode === "voice");
   const [method, setMethod] = useState<"record" | "ai">("record");
-  const [take, setTake] = useState<Blob | null>(null);
+  // A recording and an AI take are kept side by side: switching options shows the other one, and only Redo discards one.
+  const [takes, setTakes] = useState<{ record: Blob | null; ai: Blob | null }>({ record: null, ai: null });
+  const take = takes[method];
+  const setTake = (next: Blob | null) => setTakes((t) => ({ ...t, [method]: next }));
+  const voiceScript = useVoiceScript(cut);
   const [recording, setRecording] = useState(false);
   const [hook, setHook] = useState(cut.hook ?? cut.hookBurned ?? "");
   const [note, setNote] = useState("");
   // Cuts that come with their clip list open in the full-screen clip editor; older ones only get the simple trim.
   const [editingClips, setEditingClips] = useState(false);
-  const takeLocksEdit = recording || (voice && Boolean(take));
+  const takeLocksEdit = recording || Boolean(takes.record || takes.ai);
 
   const accept = useMutation({
     mutationFn: () => {
@@ -72,8 +77,7 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   const blocked = duration <= 0 ? "Loading the video…" : keep.length === 0 ? "Nothing is left of the video." : voice && !take ? (method === "ai" ? "Generate the AI voice-over, or choose No voice-over." : "Record your voice-over, or choose No voice-over.") : null;
 
   const choose = (on: boolean, how: "record" | "ai" = method) => {
-    // A take belongs to the way it was made: switching between recording and the AI voice starts over.
-    if (on && how !== method) { setTake(null); setMethod(how); }
+    if (on) setMethod(how);
     setVoice(on);
     if (videoRef.current && !recording) videoRef.current.muted = false;
   };
@@ -117,7 +121,7 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
           {choice(false, "No voice-over")}
         </div>
         {voice && (
-          <VoiceRecorder videoRef={videoRef} startAt={keep[0]?.from ?? 0} onEnd={onEnd} script={cut.script} method={method} job={cut.job} cutId={cut.id} take={take} onTake={setTake} onRecordingChange={setRecording} disabled={busy || duration <= 0 || keep.length === 0} />
+          <VoiceRecorder videoRef={videoRef} startAt={keep[0]?.from ?? 0} onEnd={onEnd} script={cut.script} voiceScript={voiceScript} method={method} job={cut.job} cutId={cut.id} take={take} onTake={setTake} onRecordingChange={setRecording} disabled={busy || duration <= 0 || keep.length === 0} />
         )}
       </Step>
       <Step n={3} title="Opening text">

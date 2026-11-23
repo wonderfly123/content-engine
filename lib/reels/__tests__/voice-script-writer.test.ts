@@ -47,4 +47,9 @@ describe("voice script writer", () => {
     await expect(writeVoiceScript(cut, sources, "k", reply("", 529))).rejects.toThrow(/529/);
     await expect(writeVoiceScript(cut, sources, "k", reply("  "))).rejects.toThrow(/empty/);
   });
+
+  it("refuses a script that was cut off part-way", async () => {
+    const cutOff = (async () => new Response(JSON.stringify({ stop_reason: "max_tokens", content: [{ type: "text", text: "I built a hot apple cider stand for the" }] }))) as unknown as typeof fetch;
+    await expect(writeVoiceScript(cut, sources, "k", cutOff)).rejects.toThrow(/cut off/);
+  });
 });
