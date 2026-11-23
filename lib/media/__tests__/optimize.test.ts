@@ -36,7 +36,7 @@ vi.mock("@/lib/storage/r2", async () => {
 import { POST as complete } from "@/app/api/conversations/[id]/uploads/[mediaId]/complete/route";
 import { POST as optimized } from "@/app/api/media/optimized/route";
 import { workspaceStorageBytes } from "@/lib/limits/storage";
-import { recoverStuckOptimizing } from "@/lib/media/optimize";
+import { deleteReplacedOriginals, recoverStuckOptimizing } from "@/lib/media/optimize";
 import { signWorkerBody } from "@/lib/media/worker-signature";
 import { buildMediaKey, buildOptimizedKey } from "@/lib/storage/keys";
 
@@ -82,13 +82,14 @@ beforeEach(async () => {
 });
 
 describe("complete hands the clip to the optimizer", () => {
-  it("marks it processing and sends the worker presigned links only", async () => {
+  it("makes it ready as uploaded at once, and sends the worker presigned links only", async () => {
     r2.headObject.mockResolvedValueOnce({ size: 2000, contentType: "video/quicktime", etag: '"x"' });
     const res = await complete(completeReq(), ctx({ id: a.conversationId, mediaId: a.uploadingMediaId }));
     expect(res.status).toBe(200);
-    expect((await res.json()).clip.status).toBe("processing");
+    expect((await res.json()).clip.status).toBe("ready");
     const clip = await row(a.uploadingMediaId);
-    expect(clip).toMatchObject({ status: "processing", uploadId: null, originalSizeBytes: 2000, sizeBytes: 2000 });
+    // Usable straight away on the camera original; the small copy takes over when the worker answers.
+    expect(clip).toMatchObject({ status: "ready", uploadId: null, originalSizeBytes: 2000, sizeBytes: 2000, optimizeError: null });
     expect(clip.optimizeJobId).toMatch(/^[0-9a-f-]{36}$/);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -144,7 +145,7 @@ describe("the worker's callback", () => {
     expect(r2.deleteObject).not.toHaveBeenCalled();
   });
 
-  it("swaps in the small copy and deletes the original", async () => {
+  it("swaps in the small copy and leaves the original for the sweep", async () => {
     await processing();
     const usedBefore = await workspaceStorageBytes(a.workspaceId); // counts the original while processing
     r2.headObject.mockResolvedValueOnce({ size: 500, contentType: "video/mp4", etag: '"o"' });
@@ -152,10 +153,44 @@ describe("the worker's callback", () => {
     expect(res.status).toBe(200);
     expect(r2.headObject).toHaveBeenCalledWith(outputKey());
     expect(await row(a.mediaId)).toMatchObject({ status: "ready", r2Key: outputKey(), sizeBytes: 500, originalSizeBytes: 2000, contentType: "video/mp4", optimizeError: null });
-    expect(r2.deleteObject).toHaveBeenCalledTimes(1);
-    expect(r2.deleteObject).toHaveBeenCalledWith(incomingKey());
+    // An edit may still be downloading the original: it is not deleted here.
+    expect(r2.deleteObject).not.toHaveBeenCalled();
     // Storage now counts the small copy instead of the original.
     expect(await workspaceStorageBytes(a.workspaceId)).toBe(usedBefore - 1500);
+  });
+
+  it("swaps in the small copy for a clip already ready on its original", async () => {
+    await processing();
+    await db.update(schema.mediaObjects).set({ status: "ready" }).where(eq(schema.mediaObjects.id, a.mediaId));
+    r2.headObject.mockResolvedValueOnce({ size: 500, contentType: "video/mp4", etag: '"o"' });
+    expect((await (await callback(okResult())).json()).applied).toBe(true);
+    expect(await row(a.mediaId)).toMatchObject({ status: "ready", r2Key: outputKey(), sizeBytes: 500, originalSizeBytes: 2000 });
+  });
+
+  it("a ready clip whose shrinking failed stays on its original, and a repeat answer changes nothing", async () => {
+    await processing();
+    await db.update(schema.mediaObjects).set({ status: "ready" }).where(eq(schema.mediaObjects.id, a.mediaId));
+    await callback({ jobId: JOB, mediaId: a.mediaId, ok: false, error: "ffmpeg failed" });
+    const after = await row(a.mediaId);
+    expect(after).toMatchObject({ status: "ready", r2Key: incomingKey(), optimizeError: "ffmpeg failed" });
+    r2.headObject.mockResolvedValue({ size: 500, contentType: "video/mp4", etag: '"o"' });
+    expect((await (await callback(okResult())).json()).applied).toBe(false);
+    expect((await row(a.mediaId)).r2Key).toBe(incomingKey());
+  });
+
+  it("the sweep deletes the original an hour after the swap, not before", async () => {
+    await processing();
+    r2.headObject.mockResolvedValueOnce({ size: 500, contentType: "video/mp4", etag: '"o"' });
+    await callback(okResult());
+    vi.clearAllMocks();
+    expect(await deleteReplacedOriginals()).toBe(0);
+    expect(r2.deleteObject).not.toHaveBeenCalled();
+    expect(await deleteReplacedOriginals(new Date(Date.now() + 61 * 60 * 1000))).toBe(1);
+    expect(r2.deleteObject).toHaveBeenCalledTimes(1);
+    expect(r2.deleteObject).toHaveBeenCalledWith(incomingKey());
+    // Long after, it is no longer tried.
+    vi.clearAllMocks();
+    expect(await deleteReplacedOriginals(new Date(Date.now() + 5 * 60 * 60 * 1000))).toBe(0);
   });
 
   it("is a no-op for a repeated jobId", async () => {

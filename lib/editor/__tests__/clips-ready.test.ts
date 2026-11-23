@@ -65,6 +65,8 @@ async function secondClip(): Promise<string> {
     sizeBytes: 2000,
     status: "ready",
     uploadedBy: a.user.userId,
+    // Part of the batch that was sent: uploaded before its "Added 2 clips" message.
+    createdAt: new Date(Date.now() - 60_000),
   });
   return id;
 }
@@ -158,6 +160,29 @@ describe("first cut when the last clip is ready", () => {
     await db.update(schema.mediaObjects).set({ status: "uploading", deletedAt: null }).where(eq(schema.mediaObjects.id, a.uploadingMediaId));
     await processing(a.mediaId, JOB1);
     await done(a.mediaId, JOB1);
+    expect(await jobs()).toHaveLength(0);
+  });
+
+  it("starts nothing for a clip added after the batch was sent, or before any batch is sent", async () => {
+    // A clip that finished uploading after the last "Added" message: the person has not tapped Send for it.
+    await db.insert(schema.mediaObjects).values({
+      id: crypto.randomUUID(),
+      workspaceId: a.workspaceId,
+      brandId: a.brandId,
+      conversationId: a.conversationId,
+      kind: "raw",
+      r2Key: buildMediaKey({ workspaceId: a.workspaceId, conversationId: a.conversationId, filename: "late.mov", id: crypto.randomUUID() }),
+      filename: "late.mov",
+      contentType: "video/quicktime",
+      sizeBytes: 2000,
+      status: "ready",
+      uploadedBy: a.user.userId,
+      createdAt: new Date(Date.now() + 60_000),
+    });
+    expect(await startFirstCutIfClipsReady(a.conversationId)).toBe(false);
+    await db.delete(schema.mediaObjects).where(eq(schema.mediaObjects.filename, "late.mov"));
+    await db.delete(schema.conversationMessages).where(eq(schema.conversationMessages.body, "Added 2 clips (4 KB)"));
+    expect(await startFirstCutIfClipsReady(a.conversationId)).toBe(false);
     expect(await jobs()).toHaveLength(0);
   });
 

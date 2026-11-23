@@ -29,8 +29,6 @@ import {
   clipsAddedMessage,
   formatBytes,
   isVideoFile,
-  LARGE_BATCH_BYTES,
-  LARGE_BATCH_NOTE,
   MAX_DONE_IDS,
   MAX_FILE_BYTES,
   MAX_PART_URLS_PER_CALL,
@@ -229,8 +227,7 @@ export async function uploadsDone(req: NextRequest, access: ConversationAccess, 
     const what = `${seconds ? `${seconds}s ` : ""}${thread.kind ?? "video"}`;
     namedReply =
       `Got your ${clips.length} ${clips.length === 1 ? "clip" : "clips"}. Making a ${what}: "${name.title}". ${name.summary}` +
-      (channel === "sms" ? " I'll text you when the first cut is ready." : " The first cut will show up here.") +
-      (total > LARGE_BATCH_BYTES ? ` ${LARGE_BATCH_NOTE}` : "");
+      (channel === "sms" ? " I'll text you when the first cut is ready." : " The first cut will show up here.");
   }
   const { queued, reply } = await handOffToEditor(access.conversation.id, message.id, req.nextUrl.origin);
   // The naming reply already says what's next; any other answer (a problem, a question) still goes out.

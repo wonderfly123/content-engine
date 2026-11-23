@@ -9,6 +9,11 @@
  * The worker only gets two presigned links (2 hours): never keys, database access or other secrets.
  * The output key is derived from the row here, never taken from the worker.
  *
+ * A clip does not wait for this: as soon as the optimizer accepts the job the clip is `ready` as
+ * uploaded, so the editor can start from the camera original (its render step tonemaps HDR itself).
+ * The small copy replaces the original when the worker answers; the original is deleted an hour or
+ * more later (deleteReplacedOriginals), never at once, because an edit may be downloading it.
+ *
  * The user's footage is never lost: whenever optimizing cannot happen (not configured, the worker
  * unreachable or failing, the output missing or wrong, nothing heard back for 2 hours) the clip
  * becomes `ready` as uploaded, with the reason in `optimize_error`.
@@ -16,12 +21,12 @@
  * Whenever a thread's last clip becomes ready, the editor's first cut starts (lib/editor/clips-ready.ts).
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, like, lt } from "drizzle-orm";
 import { z } from "zod";
 import { appUrl } from "@/lib/conversations/texting";
 import { startFirstCutIfClipsReady } from "@/lib/editor/clips-ready";
 import { db, schema } from "@/lib/db";
-import { buildOptimizedKey, isWorkspaceKey } from "@/lib/storage/keys";
+import { buildMediaKey, buildOptimizedKey, isWorkspaceKey } from "@/lib/storage/keys";
 import { deleteObject, headObject, presignGet, presignPut } from "@/lib/storage/r2";
 import type { MediaRow } from "./access";
 import { addClipToLibrary } from "./describe";
@@ -53,7 +58,7 @@ function optimizeConfig(): { url: string; secret: string } | null {
 const optimizedKeyOf = (m: MediaRow): string | null =>
   m.conversationId ? buildOptimizedKey({ workspaceId: m.workspaceId, conversationId: m.conversationId, id: m.id }) : null;
 
-/** Makes a processing clip `ready` as uploaded. With `jobId`, only while that job is still the current one. */
+/** Settles a clip on its original: `ready` as uploaded, with why it was not shrunk. With `jobId`, only while that job is still the current one. */
 async function keepOriginal(m: MediaRow, error: string | null, jobId?: string): Promise<MediaRow | null> {
   const [row] = await db
     .update(mediaObjects)
@@ -62,7 +67,8 @@ async function keepOriginal(m: MediaRow, error: string | null, jobId?: string): 
       and(
         eq(mediaObjects.id, m.id),
         eq(mediaObjects.workspaceId, m.workspaceId),
-        eq(mediaObjects.status, "processing"),
+        inArray(mediaObjects.status, ["processing", "ready"]),
+        eq(mediaObjects.r2Key, m.r2Key),
         ...(jobId ? [eq(mediaObjects.optimizeJobId, jobId)] : []),
       ),
     )
@@ -75,8 +81,8 @@ async function keepOriginal(m: MediaRow, error: string | null, jobId?: string): 
 }
 
 /**
- * Sends a processing clip to the optimizer. Returns the row as it now stands: still `processing`
- * when the job was accepted, `ready` (original kept) otherwise. `origin` is the request's own address,
+ * Sends a processing clip to the optimizer. Returns the row as it now stands: `ready` either way,
+ * as uploaded. When the job was accepted the small copy takes over later (applyOptimizeResult). `origin` is the request's own address,
  * used for the callback when APP_URL is not set.
  */
 export async function requestOptimize(mediaId: string, origin?: string | null): Promise<MediaRow | null> {
@@ -127,7 +133,14 @@ export async function requestOptimize(mediaId: string, origin?: string | null): 
     console.warn(`[optimize] the optimizer could not be reached for clip ${row.id}; kept as uploaded.`);
     return keepOriginal(row, "The optimizer could not be reached.", jobId);
   }
-  return row;
+  // Accepted: usable now, as uploaded. Shrinking carries on in the background.
+  const [usable] = await db
+    .update(mediaObjects)
+    .set({ status: "ready", updatedAt: new Date() })
+    .where(and(eq(mediaObjects.id, row.id), eq(mediaObjects.status, "processing"), eq(mediaObjects.optimizeJobId, jobId)))
+    .returning();
+  if (usable) await startFirstCutIfClipsReady(usable.conversationId);
+  return usable ?? row;
 }
 
 const resultSchema = z.object({
@@ -167,8 +180,10 @@ export async function applyOptimizeResult(payload: unknown): Promise<ApplyOutcom
   if (!media) return { status: 404, body: { error: "unknown_job" } };
 
   const outputKey = optimizedKeyOf(media);
-  const applied = media.status !== "processing" || media.deletedAt !== null;
-  if (applied) {
+  // Still waiting for this answer: on its original, not removed, and not already settled with a reason.
+  const waiting =
+    media.deletedAt === null && media.r2Key !== outputKey && (media.status === "processing" || (media.status === "ready" && media.optimizeError === null));
+  if (!waiting) {
     // A late answer (the clip was given up on, or removed): its output is referenced by nothing.
     if (r.ok && outputKey && media.r2Key !== outputKey) await bestEffortDelete(outputKey, "late optimized copy");
     return { status: 200, body: { applied: false, reason: "already handled" } };
@@ -189,10 +204,17 @@ export async function applyOptimizeResult(payload: unknown): Promise<ApplyOutcom
   const [row] = await db
     .update(mediaObjects)
     .set({ r2Key: outputKey, sizeBytes: r.sizeBytes, contentType: "video/mp4", status: "ready", optimizeError: null, updatedAt: new Date() })
-    .where(and(eq(mediaObjects.id, media.id), eq(mediaObjects.optimizeJobId, r.jobId.toLowerCase()), eq(mediaObjects.status, "processing")))
+    .where(
+      and(
+        eq(mediaObjects.id, media.id),
+        eq(mediaObjects.optimizeJobId, r.jobId.toLowerCase()),
+        eq(mediaObjects.r2Key, media.r2Key),
+        inArray(mediaObjects.status, ["processing", "ready"]),
+      ),
+    )
     .returning();
   if (!row) return { status: 200, body: { applied: false, reason: "already handled" } };
-  if (media.r2Key !== outputKey) await bestEffortDelete(media.r2Key, "original upload");
+  // The original stays for now: an edit that started on it may still be downloading it (deleteReplacedOriginals).
   // The thread's last clip ready: the editor can start the first cut.
   await startFirstCutIfClipsReady(row.conversationId);
   // Into the brand's Assets library, described and tagged by AI (lib/media/describe.ts).
@@ -209,4 +231,43 @@ export async function recoverStuckOptimizing(now: Date = new Date()): Promise<nu
     .returning({ id: mediaObjects.id, conversationId: mediaObjects.conversationId });
   for (const conversationId of new Set(rows.map((r) => r.conversationId))) await startFirstCutIfClipsReady(conversationId);
   return rows.length;
+}
+
+/** How long an original outlives its small copy: longer than any edit that could still be reading it. */
+export const ORIGINAL_GRACE_MS = 60 * 60 * 1000;
+const ORIGINAL_SWEEP_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Deletes the camera originals of clips whose small copy took over between one and four hours ago
+ * (run hourly by the connections cron, so each is tried a few times; deleting a missing object is
+ * not an error). The original's key is rebuilt from the row, the same way the upload made it.
+ */
+export async function deleteReplacedOriginals(now: Date = new Date()): Promise<number> {
+  const rows = await db
+    .select()
+    .from(mediaObjects)
+    .where(
+      and(
+        eq(mediaObjects.kind, "raw"),
+        isNotNull(mediaObjects.conversationId),
+        isNotNull(mediaObjects.originalSizeBytes),
+        like(mediaObjects.r2Key, "ws/%/raw/%"),
+        lt(mediaObjects.updatedAt, new Date(now.getTime() - ORIGINAL_GRACE_MS)),
+        gt(mediaObjects.updatedAt, new Date(now.getTime() - ORIGINAL_SWEEP_WINDOW_MS)),
+      ),
+    );
+  let tried = 0;
+  for (const m of rows) {
+    if (!m.conversationId || m.r2Key !== optimizedKeyOf(m)) continue;
+    let original: string;
+    try {
+      original = buildMediaKey({ workspaceId: m.workspaceId, conversationId: m.conversationId, filename: m.filename, id: m.id, kind: "incoming" });
+    } catch {
+      continue;
+    }
+    if (original === m.r2Key) continue;
+    await bestEffortDelete(original, "original upload");
+    tried++;
+  }
+  return tried;
 }
