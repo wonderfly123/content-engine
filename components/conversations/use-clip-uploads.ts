@@ -48,6 +48,8 @@ export function useClipUploads(conversationId: string, onChange: () => void, bas
       const tooBig = files.filter((f) => isVideoFile(f.name, f.type) && f.size > MAX_FILE_BYTES);
       if (notVideo.length) toast.error(`${notVideo.map((f) => f.name).join(", ")}: not a video. Add .mov, .mp4 or .m4v clips.`);
       if (tooBig.length) toast.error(`${tooBig.map((f) => f.name).join(", ")}: over ${formatBytes(MAX_FILE_BYTES)}.`);
+      const empty = files.filter((f) => isVideoFile(f.name, f.type) && f.size === 0);
+      if (empty.length) toast.error(`${empty.map((f) => f.name).join(", ")}: came through empty. Pick it again.`);
       const ok = files.filter((f) => isVideoFile(f.name, f.type) && f.size > 0 && f.size <= MAX_FILE_BYTES);
       setItems((prev) => {
         const busy = new Set(prev.filter((i) => ACTIVE.includes(i.status)).map((i) => fingerprint(i.file)));
