@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { guard, requireBrandBySlug, requireLocalReels } from "@/lib/auth/workspace";
-import { listCuts, updateCut } from "@/lib/reels/store";
+import { deleteCut, listCuts, updateCut } from "@/lib/reels/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +38,21 @@ export const PATCH = guard(async (req: NextRequest): Promise<NextResponse> => {
       }
     });
     return NextResponse.json({ cut });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+  }
+});
+
+const deleteSchema = z.object({ job: z.string().min(1), id: z.string().min(1) });
+
+/** Deletes a cut from the first review. The cut moves to the manifest's `deleted` list; no file is removed. */
+export const DELETE = guard(async (req: NextRequest): Promise<NextResponse> => {
+  await requireLocalReels();
+  const parsed = deleteSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "invalid request" }, { status: 400 });
+  try {
+    await deleteCut(parsed.data.job, parsed.data.id, ["cut_review", "voiceover"]);
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
