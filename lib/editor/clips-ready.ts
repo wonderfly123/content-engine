@@ -1,11 +1,10 @@
 /**
- * With the optimizer on, clips are still `processing` when the "Added N clips" message is stored,
- * so that hand-off finds nothing ready. This is the other trigger: when a thread's last clip
- * becomes ready (optimized, kept as uploaded, or given up on by the sweep), start the same first
- * cut, once. Two callbacks landing together both reach the insert; the one-active-job unique index
+ * A clip can still be `processing` (waiting for the optimizer to take it) when the "Added N clips"
+ * message is stored, and that hand-off then holds off. This is the other trigger: when a thread's
+ * last clip becomes ready, start the same first cut, once, provided the batch has been sent. Two callbacks landing together both reach the insert; the one-active-job unique index
  * lets one through and the other is treated as "already started" (nothing is posted for it).
  */
-import { and, desc, eq, inArray, isNull, like, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, like } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { hasAnyJob } from "./jobs";
 import { postEditorMessage } from "./notify";
@@ -31,13 +30,22 @@ export async function startFirstCutIfClipsReady(conversationId: string | null): 
       )
       .limit(1);
     if (pending || (await hasAnyJob(thread.id))) return false;
-    // The clips' own message ("Added N clips") when there is one; else the thread's latest message.
-    const latest = (where: SQL | undefined) =>
-      db.select({ id: conversationMessages.id }).from(conversationMessages).where(where).orderBy(desc(conversationMessages.createdAt)).limit(1);
-    const [trigger] = await latest(and(eq(conversationMessages.conversationId, thread.id), like(conversationMessages.body, "Added %")));
-    const [fallback] = trigger ? [trigger] : await latest(eq(conversationMessages.conversationId, thread.id));
-    if (!fallback) return false;
-    const handoff = await startEditorJob(thread.id, fallback.id);
+    // Only once the person has sent the batch: its own message ("Added N clips"), with no clip added since.
+    // Clips are ready the moment they finish uploading, long before Send on an upload link.
+    const [trigger] = await db
+      .select({ id: conversationMessages.id, createdAt: conversationMessages.createdAt })
+      .from(conversationMessages)
+      .where(and(eq(conversationMessages.conversationId, thread.id), like(conversationMessages.body, "Added %")))
+      .orderBy(desc(conversationMessages.createdAt))
+      .limit(1);
+    if (!trigger) return false;
+    const [unsent] = await db
+      .select({ id: mediaObjects.id })
+      .from(mediaObjects)
+      .where(and(eq(mediaObjects.conversationId, thread.id), eq(mediaObjects.kind, "raw"), isNull(mediaObjects.deletedAt), gt(mediaObjects.createdAt, trigger.createdAt)))
+      .limit(1);
+    if (unsent) return false;
+    const handoff = await startEditorJob(thread.id, trigger.id);
     // "busy" means another callback started it a moment ago: already started, say nothing.
     if (handoff.reason === "busy") return false;
     if (handoff.reply) await postEditorMessage(thread, handoff.reply);

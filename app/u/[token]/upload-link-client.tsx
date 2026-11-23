@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronRight, Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useClipUploads, type UploadItem } from "@/components/conversations/use-clip-uploads";
 import { Toaster } from "@/components/ui/sonner";
-import { formatBytes, LARGE_BATCH_BYTES, LARGE_BATCH_NOTE } from "@/lib/media/rules";
+import { formatBytes } from "@/lib/media/rules";
 
 const pct = (i: UploadItem) => (i.file.size ? Math.min(100, Math.round((i.uploaded / i.file.size) * 100)) : 0);
 
@@ -41,7 +41,6 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
   }, []);
   const done = items.filter((i) => i.status === "done");
   const unsent = done.length - sent;
-  const largeBatch = done.reduce((sum, i) => sum + i.file.size, 0) > LARGE_BATCH_BYTES;
   const allDone = items.length > 0 && !uploading && items.every((i) => i.status === "done" || i.status === "cancelled" || i.status === "failed");
   const send = async () => {
     setSending(true);
@@ -219,13 +218,11 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
           Send {unsent} {unsent === 1 ? "clip" : "clips"} to the editor
         </button>
       )}
-      {allDone && unsent > 0 && largeBatch && <p className="text-sm text-muted-foreground">{LARGE_BATCH_NOTE}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {sent > 0 && unsent === 0 && !uploading && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-100">
           <p className="font-semibold">Sent to the editor.</p>
           <p className="mt-1 text-sm">We&apos;ll text you what we&apos;re making, then again when the first cut is ready. You can close this page.</p>
-          {largeBatch && <p className="mt-2 text-sm font-medium">{LARGE_BATCH_NOTE}</p>}
         </div>
       )}
     </main>
