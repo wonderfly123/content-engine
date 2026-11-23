@@ -209,9 +209,12 @@ export function nextQuestion(ctx: ReplyContext): string | null {
   return null;
 }
 
+/** A phone that keeps videos in iCloud downloads them before the upload page gets anything; said up front so the wait is not blamed on the app. */
+export const ICLOUD_TIP = "Clips saved in iCloud load to your phone first. If picking stalls, add them one at a time.";
+
 /** Clips cannot come by text (carriers shrink video): texts get the thread's upload link instead. */
 export function footageLine(channel: MessageChannel, link: string): string {
-  return channel === "sms" ? `Tap to add your clips: ${link}` : "Add your clips with the paperclip below, or drop them in.";
+  return channel === "sms" ? `Tap to add your clips: ${link}\n\n${ICLOUD_TIP}` : "Add your clips with the paperclip below, or drop them in.";
 }
 
 function subject(ctx: ReplyContext): string {

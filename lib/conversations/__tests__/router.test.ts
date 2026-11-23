@@ -141,7 +141,7 @@ describe("replies", () => {
 
   it("links to the thread in texts that need footage, and says upload is coming in the app", () => {
     expect(replyFor({ type: "new_thread", kind: "reel", brandId: wind.id }, ctx())).toBe(
-      "🫡 Message received. New reel for Windansea Coconuts started. Tap to add your clips: https://app.test/conversations/t1",
+      "🫡 Message received. New reel for Windansea Coconuts started. Tap to add your clips: https://app.test/conversations/t1\n\nClips saved in iCloud load to your phone first. If picking stalls, add them one at a time.",
     );
     expect(replyFor({ type: "answer", brandId: wind.id }, ctx({ channel: "app" }))).toBe(
       "Got it: a reel for Windansea Coconuts. Add your clips with the paperclip below, or drop them in.",

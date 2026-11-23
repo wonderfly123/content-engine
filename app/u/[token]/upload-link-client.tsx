@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Loader2, Plus, RotateCcw, X } from "lucide-react";
+import { CheckCircle2, ChevronRight, Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useClipUploads, type UploadItem } from "@/components/conversations/use-clip-uploads";
 import { Toaster } from "@/components/ui/sonner";
 import { formatBytes } from "@/lib/media/rules";
@@ -62,6 +62,29 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 text-muted-foreground">Pick the clips from your camera roll. They upload at full quality.</p>
       </header>
+
+      <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-50">
+        <p className="font-semibold">Clips saved in iCloud take longer</p>
+        <p className="mt-1 text-sm">
+          Your phone has to download them before this page gets anything. That happens in the photo picker and can take a few minutes. Adding one clip at a time
+          works best.
+        </p>
+        <details className="group mt-3 text-sm">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium underline underline-offset-2 [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" aria-hidden="true" />
+            Clips not showing up? Try this
+          </summary>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+            <li>Add one clip at a time: pick one, tap the check, wait for it to appear here, then tap Add more clips.</li>
+            <li>If a clip shows a spinning circle in the picker, wait for it to finish, then tap the check again.</li>
+            <li>If the check does nothing, close the picker with the X, wait a moment, and tap Add clips again.</li>
+            <li>Open the clip in the Photos app and let it play through, so it is fully on your phone. Then come back and pick it.</li>
+            <li>Stay on Wi-Fi and keep this page open while clips load.</li>
+            <li>Check the phone has free space: Settings, General, iPhone Storage.</li>
+            <li>Still stuck? Open this link in Safari.</li>
+          </ol>
+        </details>
+      </section>
 
       {!named && sent === 0 && (
         <section className="flex flex-col gap-3">
@@ -125,11 +148,11 @@ export function UploadLinkClient({ token, conversationId, title, named }: { toke
       {picking && (
         <p className="flex items-start gap-2 text-sm text-muted-foreground">
           <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
-          Getting your clips from your phone. Long clips can take a few minutes to show up here. Keep this page open.
+          Getting your clips from your phone. Long clips, and clips saved in iCloud, can take a few minutes to show up here. Keep this page open.
         </p>
       )}
       {nothingPicked && (
-        <p className="text-sm text-destructive">Your phone didn&apos;t hand over any clips. Try again with fewer or shorter clips, and check the phone has free space.</p>
+        <p className="text-sm text-destructive">Your phone didn&apos;t hand over any clips. Try again one clip at a time, and check the phone has free space.</p>
       )}
 
       {items.length > 0 && (
