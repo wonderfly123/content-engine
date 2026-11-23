@@ -81,13 +81,21 @@ export const resumeStore = {
   },
 };
 
-async function api<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+/**
+ * `retries`: how many more times to try when the request never got an answer (the phone dropped the
+ * connection, "Load failed"). Only for calls that are safe to repeat: part URLs and complete.
+ */
+async function api<T>(url: string, body: unknown, signal?: AbortSignal, retries = 0): Promise<T> {
   let res: Response;
-  try {
-    res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}), signal });
-  } catch (err) {
-    if (signal?.aborted) throw new UploadCancelled();
-    throw new UploadError((err as Error).message || "Network error.");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}), signal });
+      break;
+    } catch {
+      if (signal?.aborted) throw new UploadCancelled();
+      if (attempt >= retries) throw new UploadError("The connection dropped. Tap retry to carry on where it stopped.");
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt)); // 1 s, 2 s, 4 s
+    }
   }
   const json = (await res.json().catch(() => ({}))) as T & { message?: string; error?: string };
   if (!res.ok) throw new UploadError(json.message ?? json.error ?? `HTTP ${res.status}`, res.status);
@@ -184,7 +192,7 @@ async function run(o: UploadOptions, resume: ResumeEntry | null): Promise<string
       if (!fetching) {
         const from = todo.indexOf(n);
         const batch = todo.slice(from, from + MAX_PART_URLS_PER_CALL).filter((x) => !entry.etags[x] && !urls.has(x));
-        fetching = api<{ urls: Array<{ partNumber: number; url: string }> }>(`${base}/${mediaId}/parts`, { partNumbers: batch }, signal)
+        fetching = api<{ urls: Array<{ partNumber: number; url: string }> }>(`${base}/${mediaId}/parts`, { partNumbers: batch }, signal, PART_RETRIES)
           .then((r) => r.urls.forEach((u) => urls.set(u.partNumber, u.url)))
           .finally(() => (fetching = null));
       }
@@ -229,7 +237,7 @@ async function run(o: UploadOptions, resume: ResumeEntry | null): Promise<string
 
   const parts = Object.entries(entry.etags).map(([n, etag]) => ({ partNumber: Number(n), etag }));
   try {
-    await api(`${base}/${mediaId}/complete`, { parts }, signal);
+    await api(`${base}/${mediaId}/complete`, { parts }, signal, PART_RETRIES);
   } catch (err) {
     if (isFinal(err)) resumeStore.clear(conversationId, file);
     throw err;
