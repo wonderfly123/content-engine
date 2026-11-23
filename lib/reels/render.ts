@@ -90,3 +90,29 @@ export async function renderClips(footageRoot: string, clips: Clip[], out: strin
     await run(bin("ffmpeg"), ["-v", "error", "-y", "-i", silent, "-c", "copy", "-movflags", "+faststart", out]);
   }
 }
+
+export interface VideoFrame {
+  /** Seconds into the video. */
+  at: number;
+  jpeg: Buffer;
+}
+
+/** Evenly spaced stills from `file` (about one every five seconds, 4 to 10 in all), small enough to send to Claude. */
+export async function sampleFrames(file: string): Promise<VideoFrame[]> {
+  const length = await sourceDuration(file);
+  const count = Math.min(10, Math.max(4, Math.round(length / 5)));
+  const times = Array.from({ length: count }, (_, i) => Math.round(((length * (i + 0.5)) / count) * 10) / 10);
+  return Promise.all(
+    times.map((at) =>
+      heavy(async () => {
+        const { stdout } = await run(
+          bin("ffmpeg"),
+          ["-v", "error", "-ss", String(at), "-i", file, "-frames:v", "1", "-vf", "scale=-2:640", "-q:v", "5", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"],
+          { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 },
+        );
+        if (!stdout.length) throw new Error(`could not read a frame of ${path.basename(file)}`);
+        return { at, jpeg: stdout };
+      }),
+    ),
+  );
+}

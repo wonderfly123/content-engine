@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Check, Maximize2 } from "lucide-react";
+import { Check, Maximize2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   const { time, duration, keep } = useEditedPlayback(videoRef, trim, onEnd);
   // The editor's suggestion is only a starting point; the reviewer decides here.
   const [voice, setVoice] = useState(cut.mode === "voice");
+  const [method, setMethod] = useState<"record" | "ai">("record");
   const [take, setTake] = useState<Blob | null>(null);
   const [recording, setRecording] = useState(false);
   const [hook, setHook] = useState(cut.hook ?? cut.hookBurned ?? "");
@@ -61,19 +62,30 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
     onSuccess: () => { toast.success("Sent back with your note"); setNote(""); onDone(); },
     onError: (e) => toast.error((e as Error).message),
   });
-  const busy = accept.isPending || sendBack.isPending;
-  const blocked = duration <= 0 ? "Loading the video…" : keep.length === 0 ? "Nothing is left of the video." : voice && !take ? "Record your voice-over, or choose No voice-over." : null;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => send("/api/reels", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: cut.job, id: cut.id }) }),
+    onSuccess: () => { toast.success("Cut deleted"); onDone(); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const busy = accept.isPending || sendBack.isPending || remove.isPending;
+  const blocked = duration <= 0 ? "Loading the video…" : keep.length === 0 ? "Nothing is left of the video." : voice && !take ? (method === "ai" ? "Generate the AI voice-over, or choose No voice-over." : "Record your voice-over, or choose No voice-over.") : null;
 
-  const choose = (on: boolean) => {
+  const choose = (on: boolean, how: "record" | "ai" = method) => {
+    // A take belongs to the way it was made: switching between recording and the AI voice starts over.
+    if (on && how !== method) { setTake(null); setMethod(how); }
     setVoice(on);
     if (videoRef.current && !recording) videoRef.current.muted = false;
   };
-  const choice = (on: boolean, label: string) => (
-    <button type="button" role="radio" aria-checked={voice === on} disabled={recording || busy} onClick={() => choose(on)}
-      className={`flex-1 rounded-md border px-3 py-1.5 text-sm ${voice === on ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted"}`}>
-      {label}
-    </button>
-  );
+  const choice = (on: boolean, label: string, how: "record" | "ai" = "record") => {
+    const selected = voice === on && (!on || method === how);
+    return (
+      <button type="button" role="radio" aria-checked={selected} disabled={recording || busy} onClick={() => choose(on, on ? how : method)}
+        className={`flex-1 rounded-md border px-3 py-1.5 text-sm ${selected ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted"}`}>
+        {label}
+      </button>
+    );
+  };
 
   return (
     <Split video={
@@ -100,11 +112,12 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
       </Step>
       <Step n={2} title="Voice-over">
         <div className="flex gap-2" role="radiogroup" aria-label="Voice-over">
-          {choice(true, "Voice-over")}
+          {choice(true, "Record voice-over")}
+          {choice(true, "AI voice over", "ai")}
           {choice(false, "No voice-over")}
         </div>
         {voice && (
-          <VoiceRecorder videoRef={videoRef} startAt={keep[0]?.from ?? 0} onEnd={onEnd} script={cut.script} take={take} onTake={setTake} onRecordingChange={setRecording} disabled={busy || duration <= 0 || keep.length === 0} />
+          <VoiceRecorder videoRef={videoRef} startAt={keep[0]?.from ?? 0} onEnd={onEnd} script={cut.script} method={method} job={cut.job} cutId={cut.id} take={take} onTake={setTake} onRecordingChange={setRecording} disabled={busy || duration <= 0 || keep.length === 0} />
         )}
       </Step>
       <Step n={3} title="Opening text">
@@ -119,6 +132,17 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
         <Input placeholder="Or say what should change" value={note} onChange={(e) => setNote(e.target.value)} />
         <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || recording || !note.trim()}>Send back</Button>
       </div>
+      {confirmDelete ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-2">
+          <p className="min-w-0 flex-1 text-sm">Delete this cut? It leaves review; the video file stays on the drive.</p>
+          <Button size="sm" variant="destructive" onClick={() => remove.mutate()} disabled={busy}>{remove.isPending ? "Deleting…" : "Delete"}</Button>
+          <Button size="sm" variant="outline" onClick={() => setConfirmDelete(false)} disabled={busy}>Keep</Button>
+        </div>
+      ) : (
+        <Button variant="ghost" className="w-fit self-end text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)} disabled={busy || recording}>
+          <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />Delete cut
+        </Button>
+      )}
     </Split>
   );
 }
