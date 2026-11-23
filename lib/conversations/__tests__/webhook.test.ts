@@ -88,7 +88,7 @@ describe("POST /api/salesmsg/sms", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe(a.phone);
     expect(sent[0].team).toBe(TEAM);
-    expect(sent[0].message).toMatch(/^New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
+    expect(sent[0].message).toMatch(/^🫡 Message received\. New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
   });
 
   it("accepts a text identified by our number instead of the inbox id", async () => {

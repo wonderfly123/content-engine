@@ -53,7 +53,7 @@ describe("several videos at once", () => {
     const open = await openThreads(a.workspaceId);
     expect(open).toHaveLength(2);
     expect(open.find((t) => t.id === result.conversationId)).toMatchObject({ kind: "reel", brandId: a.brandId, startedVia: "sms" });
-    expect(result.reply).toMatch(/^New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
+    expect(result.reply).toMatch(/^🫡 Message received\. New reel for Alpha brand started\. Tap to add your clips: https:\/\/app\.test\/u\/[A-Za-z0-9_-]{43}$/);
   });
 });
 
