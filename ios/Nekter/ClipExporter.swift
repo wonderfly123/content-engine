@@ -9,12 +9,17 @@ enum ClipExporter {
         let file: URL
         let filename: String
         let size: Int
+        let contentType: String
     }
 
-    static let preset = AVAssetExportPresetHEVC1920x1080
+    /// Full picture for the editor to cut from: used when the phone cannot rebuild the cut itself (an upload link).
+    static let fullPreset = AVAssetExportPresetHEVC1920x1080
+    /// A small copy, about a tenth of the size: enough for the editor to watch and listen. The finished
+    /// video is then rebuilt on the phone from the camera original (LocalCut).
+    static let proxyPreset = AVAssetExportPresetMediumQuality
 
     /// From the photo library (needs access to it): downloads from iCloud if needed, then exports.
-    static func export(assetID: String, onProgress: @escaping @Sendable (_ stage: String, _ fraction: Double) -> Void) async throws -> Output {
+    static func export(assetID: String, preset: String, onProgress: @escaping @Sendable (_ stage: String, _ fraction: Double) -> Void) async throws -> Output {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else {
             throw UploadError(message: "That clip could not be opened from your library.")
         }
@@ -37,7 +42,7 @@ enum ClipExporter {
     }
 
     /// From a file the picker handed over (no library access): exports that copy.
-    static func export(file: URL, named: String, onProgress: @escaping @Sendable (_ stage: String, _ fraction: Double) -> Void) async throws -> Output {
+    static func export(file: URL, named: String, preset: String, onProgress: @escaping @Sendable (_ stage: String, _ fraction: Double) -> Void) async throws -> Output {
         guard let session = AVAssetExportSession(asset: AVURLAsset(url: file), presetName: preset) else {
             throw UploadError(message: "That clip is in a format this phone cannot convert.")
         }
@@ -45,7 +50,9 @@ enum ClipExporter {
     }
 
     private static func run(_ session: AVAssetExportSession, named: String, onProgress: @escaping @Sendable (String, Double) -> Void) async throws -> Output {
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        let type: AVFileType = session.supportedFileTypes.contains(.mp4) ? .mp4 : .mov
+        let ext = type == .mp4 ? "mp4" : "mov"
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
         let watcher = Task {
             for await state in session.states(updateInterval: 0.3) {
                 if case .exporting(let progress) = state { onProgress("Getting it ready", progress.fractionCompleted) }
@@ -53,7 +60,7 @@ enum ClipExporter {
         }
         defer { watcher.cancel() }
         do {
-            try await session.export(to: out, as: .mp4)
+            try await session.export(to: out, as: type)
         } catch {
             try? FileManager.default.removeItem(at: out)
             throw UploadError(message: "That clip could not be prepared. \(error.localizedDescription)")
@@ -61,6 +68,6 @@ enum ClipExporter {
         let size = (try? out.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         guard size > 0 else { throw UploadError(message: "That clip came out empty. Try picking it again.") }
         let stem = (named as NSString).deletingPathExtension
-        return Output(file: out, filename: "\(stem.isEmpty ? "clip" : stem).mp4", size: size)
+        return Output(file: out, filename: "\(stem.isEmpty ? "clip" : stem).\(ext)", size: size, contentType: type == .mp4 ? "video/mp4" : "video/quicktime")
     }
 }

@@ -25,7 +25,30 @@ final class PartTransfer: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
     }()
 
     /// PUTs one part file to its presigned URL and returns the ETag storage answers with.
+    /// Tried on the background session first. If the system refuses the transfer outright (the
+    /// Simulator does, with "unknown error"), the part is sent directly while the app is open.
     func put(file: URL, to url: URL, onBytes: @escaping @Sendable (Int64) -> Void) async throws -> String {
+        do {
+            return try await putInBackground(file: file, to: url, onBytes: onBytes)
+        } catch let error as URLError where error.code == .unknown || error.code == .backgroundSessionWasDisconnected || error.code == .backgroundSessionInUseByAnotherProcess {
+            return try await putDirectly(file: file, to: url, onBytes: onBytes)
+        }
+    }
+
+    private func putDirectly(file: URL, to url: URL, onBytes: @escaping @Sendable (Int64) -> Void) async throws -> String {
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        let size = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        let (_, res) = try await URLSession.shared.upload(for: req, fromFile: file)
+        let http = res as? HTTPURLResponse
+        guard let http, (200..<300).contains(http.statusCode), let etag = http.value(forHTTPHeaderField: "ETag") else {
+            throw UploadError(message: "A part failed to upload (\(http?.statusCode ?? 0)).")
+        }
+        onBytes(size)
+        return etag
+    }
+
+    private func putInBackground(file: URL, to url: URL, onBytes: @escaping @Sendable (Int64) -> Void) async throws -> String {
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         let task = session.uploadTask(with: req, fromFile: file)

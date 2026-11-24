@@ -40,6 +40,7 @@ final class Uploader: ObservableObject {
     private static let maxAtOnce = 2
     private nonisolated static let partsAtOnce = 4
     private var running = 0
+    private var proxies = false
 
     /// For an upload link (remembered between launches).
     init() {
@@ -49,9 +50,11 @@ final class Uploader: ObservableObject {
         }
     }
 
-    /// For a chat, signed in.
+    /// For a chat, signed in. Sends small copies and remembers which library clip each came from,
+    /// so the phone can rebuild the editor's cut from the originals.
     init(target: UploadTarget) {
         self.target = target
+        proxies = true
     }
 
     var finished: [Clip] { clips.filter { $0.stage == .done } }
@@ -146,14 +149,18 @@ final class Uploader: ObservableObject {
         var mediaId: String?
         do {
             switch source {
-            case .asset(let assetID): output = try await ClipExporter.export(assetID: assetID, onProgress: progress)
-            case .file(let url, let name): output = try await ClipExporter.export(file: url, named: name, onProgress: progress)
+            case .asset(let assetID):
+                output = try await ClipExporter.export(assetID: assetID, preset: proxies ? ClipExporter.proxyPreset : ClipExporter.fullPreset, onProgress: progress)
+            case .file(let url, let name):
+                // No way back to the original from a copied file: send the full picture.
+                output = try await ClipExporter.export(file: url, named: name, preset: ClipExporter.fullPreset, onProgress: progress)
             }
             guard let output else { return }
             update(id) { $0.name = output.filename; $0.size = output.size; $0.stage = .uploading; $0.fraction = 0 }
 
-            let started = try await api.start(filename: output.filename, size: output.size, contentType: "video/mp4")
+            let started = try await api.start(filename: output.filename, size: output.size, contentType: output.contentType)
             mediaId = started.mediaId
+            if proxies, case .asset(let assetID) = source { LocalClips.remember(mediaID: started.mediaId, assetID: assetID) }
             update(id) { $0.mediaId = started.mediaId }
             let etags = try await uploadParts(of: output, started: started, api: api) { [weak self] sent in
                 Task { @MainActor in self?.update(id) { if $0.stage == .uploading { $0.fraction = Double(sent) / Double(max(1, output.size)) } } }
