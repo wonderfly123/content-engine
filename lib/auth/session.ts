@@ -1,11 +1,17 @@
 import "server-only";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { accessFromClaims, type Access } from "./access";
+import { accessFromClaims, bearerFrom, type Access } from "./access";
 
-/** The verified caller, or null. Use inside routes that need to know who is asking. */
+/**
+ * The verified caller, or null. Use inside routes that need to know who is asking.
+ * The browser is known by its session cookies; the native app by a bearer token.
+ */
 export async function getAccess(): Promise<Access | null> {
   const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
+  const bearer = bearerFrom((await headers()).get("authorization"));
+  // A malformed token makes getClaims throw; that is simply "not signed in".
+  const { data } = bearer ? await supabase.auth.getClaims(bearer).catch(() => ({ data: null })) : await supabase.auth.getClaims();
   return accessFromClaims(data?.claims as Record<string, unknown> | undefined);
 }
 

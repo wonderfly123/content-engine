@@ -109,3 +109,12 @@ export function decideAccess(pathname: string, access: Access | null): Decision 
 export function initialAccess(existingAdmins: number): { role: Role; status: Status } {
   return { role: existingAdmins === 0 ? "admin" : "user", status: "active" };
 }
+
+/**
+ * The access token a native app sends (`Authorization: Bearer <jwt>`), or null. The browser uses
+ * session cookies instead; the token is verified the same way (supabase.auth.getClaims).
+ */
+export function bearerFrom(header: string | null | undefined): string | null {
+  const m = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec((header ?? "").trim());
+  return m ? m[1] : null;
+}

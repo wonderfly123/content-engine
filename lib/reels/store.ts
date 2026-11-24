@@ -55,6 +55,8 @@ export interface ReelManifest {
   /** Brand slug this job posts under. */
   brand: string;
   cuts: ReelCut[];
+  /** Cuts the reviewer deleted in the app. Kept here (and their files left on disk) so a delete can be undone by hand. */
+  deleted?: ReelCut[];
 }
 
 export interface ReelCutView extends ReelCut {
@@ -137,4 +139,16 @@ export async function updateCut(job: string, id: string, change: (cut: ReelCut) 
   cut.updatedAt = new Date().toISOString();
   await writeManifest(m);
   return { ...cut, job: m.job, brand: m.brand };
+}
+
+/** Takes a cut out of review. Nothing is erased: the entry moves to the manifest's `deleted` list and its files stay on disk. */
+export async function deleteCut(job: string, id: string, allowed: readonly ReelStage[]): Promise<void> {
+  const m = await readManifest(job);
+  const cut = m?.cuts.find((c) => c.id === id);
+  if (!m || !cut) throw new Error(`cut ${job}/${id} not found`);
+  if (!allowed.includes(cut.stage)) throw new Error("this cut is not waiting for review");
+  cut.updatedAt = new Date().toISOString();
+  m.cuts = m.cuts.filter((c) => c !== cut);
+  m.deleted = [...(m.deleted ?? []), cut];
+  await writeManifest(m);
 }

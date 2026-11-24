@@ -13,6 +13,8 @@ export const edlEntrySchema = z.object({
   // Same limits as the worker (workers/editor/contract.py): a fast pan can be sped up a lot.
   speed: z.number().positive().max(500),
   cropX: z.number().nullable(),
+  // True on a shot that keeps its clip's own sound (someone talking); the music drops under it.
+  sound: z.boolean().optional(),
 });
 
 /** Same limits as the worker (MAX_TRACKS, MAX_MUSIC_START in workers/editor/contract.py). */

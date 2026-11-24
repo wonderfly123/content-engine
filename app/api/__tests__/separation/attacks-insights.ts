@@ -78,6 +78,9 @@ export const routes: RouteAttack[] = [
     build: () => ({ form: { ...cut, voice: "1", hook: "", audio: new Blob(["audio"], { type: "audio/webm" }) } }),
     skipOwnerControl: LOCAL_REELS,
   },
+  { route: "app/api/reels/route.ts", method: "DELETE", build: () => ({ body: cut }), skipOwnerControl: LOCAL_REELS },
+  { route: "app/api/reels/voice-script/route.ts", method: "POST", build: () => ({ body: cut }), skipOwnerControl: LOCAL_REELS },
+  { route: "app/api/reels/voice-ai/route.ts", method: "POST", build: () => ({ body: { ...cut, text: "Hello." } }), skipOwnerControl: LOCAL_REELS },
   { route: "app/api/reels/clips/route.ts", method: "GET", build: () => ({ query: cut }), skipOwnerControl: LOCAL_REELS },
   {
     route: "app/api/reels/clips/route.ts",

@@ -38,6 +38,7 @@ import modal
 SECRET_NAME = "nekter-editor"
 SKILL_NAME = "cutting-montage-videos"
 SKILL_DIR = "/opt/nekter/skill"
+WHISPER_DIR = "/opt/nekter/whisper"  # scripts/listen.py reads the speech model from here
 TIMEOUT_SEC = 30 * 60
 AGENT_MAX_SEC = 25 * 60
 MAX_TURNS = 100
@@ -62,6 +63,13 @@ image = (
     # numpy: the skill's beat tracking (scripts/music.py, beatfit.py).
     .pip_install("claude-agent-sdk==0.2.182", "fastapi[standard]==0.115.12", "requests==2.32.3", "numpy==2.2.6")
     .run_commands("python -c 'import claude_agent_sdk, numpy'")
+    # Speech to text for the skill's scripts/listen.py: runs on the CPU inside the job, nothing leaves the
+    # container. The model is baked in here so a job never downloads it.
+    .pip_install("faster-whisper==1.2.1")
+    .run_commands(
+        f"python -c \"from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='{WHISPER_DIR}')\"",
+        "ffmpeg -hide_banner -filters | grep -qw sidechaincompress",
+    )
     .add_local_python_source("contract", "epidemic")
     .add_local_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "skill"), SKILL_DIR)
 )
@@ -177,11 +185,19 @@ def _probe_preview(path: str) -> Tuple[int, int, float, bool]:
     return int(s.get("width") or 0), int(s.get("height") or 0), float((j.get("format") or {}).get("duration") or 0), audio
 
 
-def _silent_copy(path: str) -> str:
-    """The same picture without its sound, next to the preview (stream copy, so it is the identical cut)."""
+def _silent_copy(path: str, voiced: bool = False) -> str:
+    """The same picture without the music, next to the preview (the picture is a stream copy, so it is the
+    identical cut). A cut whose shots keep their own sound (`voiced`) keeps that sound here: render.sh left it
+    in <preview>.voice.wav."""
     dest = path[: -len(".mp4")] + ".nomusic.mp4"
-    out = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-map", "0:v:0", "-c", "copy", "-an", "-movflags", "+faststart", dest],
-                         capture_output=True, timeout=300)
+    voice = path[: -len(".mp4")] + ".voice.wav"
+    if voiced and os.path.isfile(voice):
+        cmd = ["ffmpeg", "-v", "error", "-y", "-i", path, "-i", voice, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+               "-af", "highpass=f=90,loudnorm=I=-15:TP=-1.5:LRA=11,aresample=48000", "-c:a", "aac", "-b:a", "192k", "-shortest",
+               "-movflags", "+faststart", dest]
+    else:
+        cmd = ["ffmpeg", "-v", "error", "-y", "-i", path, "-map", "0:v:0", "-c", "copy", "-an", "-movflags", "+faststart", dest]
+    out = subprocess.run(cmd, capture_output=True, timeout=300)
     if out.returncode != 0 or not os.path.isfile(dest):
         raise ManifestError("A copy without music could not be made.")
     return dest
@@ -201,15 +217,16 @@ def _upload_previews(job: Dict[str, Any], cuts: List[Dict[str, Any]], ws: str) -
             raise ManifestError(f"The preview for {cut['id']} is {w}x{h}, not 1080x1920.")
         if abs(dur - cut["seconds"]) > 1.0:
             raise ManifestError(f"The preview for {cut['id']} is {dur:.1f}s, not {cut['seconds']:.0f}s.")
-        if cut.get("music") and not audio:
-            raise ManifestError(f"The preview for {cut['id']} names a track but has no sound.")
-        if not cut.get("music") and audio:
+        voiced = any(e.get("sound") for e in cut["edl"])  # a shot keeps its clip's own sound
+        if (cut.get("music") or voiced) and not audio:
+            raise ManifestError(f"The preview for {cut['id']} should have sound but has none.")
+        if not cut.get("music") and not voiced and audio:
             raise ManifestError(f"The preview for {cut['id']} has sound but names no track.")
         if os.path.getsize(path) > MAX_PUT_BYTES:
             raise ManifestError(f"The preview for {cut['id']} is over 5 GB.")
         todo.append((cut, f"{cut['id']}.mp4", path, "preview"))
         if cut.get("music"):
-            todo.append((cut, silent_name(cut["id"]), _silent_copy(path), "silent"))
+            todo.append((cut, silent_name(cut["id"]), _silent_copy(path, voiced), "silent"))
     new_tracks = sorted({cut["music"]["newTrack"]["file"] for cut in cuts if (cut.get("music") or {}).get("newTrack")})
     for name in new_tracks:
         path = os.path.join(ws, "music", name)
@@ -376,7 +393,7 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
         ),
         tools=["Read", "Glob", "Grep"],
         model="inherit",
-        maxTurns=15,
+        maxTurns=20,
     )
 
     # With the brand's Epidemic Sound account: its two tools, on top of the built-in ones.

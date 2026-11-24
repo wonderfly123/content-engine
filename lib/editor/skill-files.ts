@@ -4,7 +4,7 @@
  * and the bundled defaults in step. Safe to import from client code.
  */
 
-export const EDITABLE_SKILL_PATHS = ["SKILL.md", "captions.md", "epidemic-sound.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md", "review.md"] as const;
+export const EDITABLE_SKILL_PATHS = ["SKILL.md", "captions.md", "epidemic-sound.md", "hooks-formulas.md", "hooks.md", "intake.md", "profiles/build.md", "profiles/event.md", "profiles/training.md", "review.md"] as const;
 export type SkillPath = (typeof EDITABLE_SKILL_PATHS)[number];
 
 /** Largest single save. */

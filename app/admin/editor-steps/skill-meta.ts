@@ -14,6 +14,7 @@ export const STEP_META: Record<SkillPath, StepMeta> = {
   "captions.md": { title: "Post captions", blurb: "How the caption under the post is written." },
   "profiles/build.md": { title: "Build videos", blurb: "What to show and how to pace a project or build video." },
   "profiles/event.md": { title: "Event videos", blurb: "What to show and how to pace an event recap." },
+  "profiles/training.md": { title: "Training and sport videos", blurb: "How to find the hits, reps and exchanges in workout, sparring or game footage." },
   "review.md": { title: "Review", blurb: "The second pair of eyes that checks each cut before you see it." },
   "epidemic-sound.md": { title: "Epidemic Sound", blurb: "When the editor looks for music in a connected Epidemic Sound account, and how it brings a track in." },
 };
@@ -21,5 +22,5 @@ export const STEP_META: Record<SkillPath, StepMeta> = {
 export const STEP_GROUPS: Array<{ label: string; paths: SkillPath[] }> = [
   { label: "How it edits", paths: ["SKILL.md", "intake.md", "review.md", "epidemic-sound.md"] },
   { label: "Words", paths: ["hooks.md", "hooks-formulas.md", "captions.md"] },
-  { label: "Video types", paths: ["profiles/build.md", "profiles/event.md"] },
+  { label: "Video types", paths: ["profiles/build.md", "profiles/event.md", "profiles/training.md"] },
 ];
