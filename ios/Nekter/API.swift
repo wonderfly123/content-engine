@@ -27,7 +27,19 @@ struct Cut: Decodable, Identifiable, Hashable {
     let hookOptions: [String]
     let caption: String
     let music: Music?
+    /// The edit list: which clip, from where, for how long, at what speed. Absent from an older server.
+    let shots: [Shot]?
     var id: String { key }
+
+    struct Shot: Codable, Hashable {
+        var mediaId: String
+        /// Where in the clip the shot starts, and how much of the clip it uses (seconds).
+        var `in`: Double
+        var dur: Double
+        var speed: Double
+        var cropX: Double?
+        var sound: Bool?
+    }
 }
 
 struct EditorJob: Decodable, Hashable {

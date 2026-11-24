@@ -172,6 +172,9 @@ private struct CutCard: View {
     @State private var player: AVPlayer?
     @State private var loading = false
     @State private var failed: String?
+    @State private var fromOriginals = false
+    @State private var editing = false
+    @State private var edited = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -192,6 +195,16 @@ private struct CutCard: View {
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
             .frame(maxWidth: 260)
             Text("\(cut.title) · \(Int(cut.seconds.rounded()))s").font(.subheadline.weight(.semibold))
+            if fromOriginals { Label("Full quality, from your phone's originals", systemImage: "sparkles").font(.caption).foregroundStyle(.orange) }
+            if cut.shots?.isEmpty == false {
+                Button {
+                    player?.pause()
+                    editing = true
+                } label: {
+                    Label(edited ? "Edited on this phone" : "Edit shots", systemImage: "scissors").font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+            }
             if let music = cut.music { Label(music.title, systemImage: "music.note").font(.caption).foregroundStyle(.secondary) }
             if !cut.caption.isEmpty { Text(cut.caption).font(.footnote).textSelection(.enabled) }
             if !cut.hookOptions.isEmpty {
@@ -204,6 +217,15 @@ private struct CutCard: View {
         }
         .frame(maxWidth: 300, alignment: .leading)
         .onDisappear { player?.pause() }
+        .onAppear { edited = CutEdits.shots(for: cut) != nil }
+        .sheet(isPresented: $editing) {
+            ShotEditorView(cut: cut, api: api) {
+                // Saved or reset: the next play rebuilds the cut.
+                edited = CutEdits.shots(for: cut) != nil
+                player = nil
+                fromOriginals = false
+            }
+        }
     }
 
     private func play() {
@@ -212,7 +234,21 @@ private struct CutCard: View {
         Task {
             defer { loading = false }
             do {
-                let fresh = AVPlayer(url: try await api.mediaURL(cut.previewId))
+                let preview = try await api.mediaURL(cut.previewId)
+                // With the originals on this phone, the cut is rebuilt from them at full quality; the
+                // editor's own preview is the fallback (another phone, or a clip since deleted).
+                // A cut changed in the phone's editor is always rebuilt, from the server's clips if need be.
+                let local = LocalCut.canBuild(cut)
+                if local || edited, let built = try? await LocalCut.build(cut, soundFrom: preview, cloud: { try await api.mediaURL($0) }) {
+                    let item = AVPlayerItem(asset: built.asset)
+                    item.videoComposition = built.video
+                    let fresh = AVPlayer(playerItem: item)
+                    player = fresh
+                    fromOriginals = local
+                    fresh.play()
+                    return
+                }
+                let fresh = AVPlayer(url: preview)
                 player = fresh
                 fresh.play()
             } catch {
