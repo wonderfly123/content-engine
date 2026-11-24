@@ -10,7 +10,8 @@ import { accessFromClaims, bearerFrom, type Access } from "./access";
 export async function getAccess(): Promise<Access | null> {
   const supabase = await createClient();
   const bearer = bearerFrom((await headers()).get("authorization"));
-  const { data } = bearer ? await supabase.auth.getClaims(bearer) : await supabase.auth.getClaims();
+  // A malformed token makes getClaims throw; that is simply "not signed in".
+  const { data } = bearer ? await supabase.auth.getClaims(bearer).catch(() => ({ data: null })) : await supabase.auth.getClaims();
   return accessFromClaims(data?.claims as Record<string, unknown> | undefined);
 }
 
