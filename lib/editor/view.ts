@@ -17,6 +17,11 @@ export interface CutView {
   caption: string;
   /** The track under the cut, and the media id of the same cut without it; null for a silent cut. */
   music: { title: string; silentId: string } | null;
+  /**
+   * The edit list the preview was rendered from: which clip, from where, for how long, at what speed.
+   * The phone app rebuilds the cut from the camera originals with it, so only small copies need uploading.
+   */
+  shots: Array<{ mediaId: string; in: number; dur: number; speed: number; cropX: number | null; sound: boolean }>;
 }
 
 export interface EditorJobView {
@@ -67,6 +72,7 @@ export async function threadEditorView(thread: ConversationRow, now: Date = new 
         hookOptions: c.hookOptions,
         caption: c.caption,
         music: c.music ? { title: c.music.title, silentId: c.music.silent.mediaId } : null,
+        shots: c.edl.map((e) => ({ mediaId: e.mediaId, in: e.in, dur: e.dur, speed: e.speed, cropX: e.cropX ?? null, sound: e.sound === true })),
       })),
       approvable: j.status === "done" && (j.campaignItemId ? latestOfItem.get(j.campaignItemId) === j.id : latestDone?.id === j.id),
       steps: j.progress ?? [],

@@ -330,7 +330,7 @@ describe("GET /api/conversations/[id]", () => {
       status: "done",
       costUsd: 1.42,
       approvable: true,
-      cuts: [{ key: "cut-1", title: "Alpha cut", seconds: 15, previewId: previewMediaId, hookOptions: ["Alpha hook option"], caption: "Alpha cut caption", music: null }],
+      cuts: [{ key: "cut-1", title: "Alpha cut", seconds: 15, previewId: previewMediaId, hookOptions: ["Alpha hook option"], caption: "Alpha cut caption", music: null, shots: expect.any(Array) }],
       steps: [],
       seconds: 300,
     });
