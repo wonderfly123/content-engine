@@ -511,6 +511,171 @@ class MixTests(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
 
 
+def _tone_db(ffmpeg, path, start, seconds, hz):
+    """Level of one tone in a stretch of a file's sound, in dB (for telling the music from the voice)."""
+    raw = subprocess.run([ffmpeg, "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", path, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+                         capture_output=True).stdout
+    x = np.frombuffer(raw, dtype=np.int16).astype(float) / 32768
+    spec, freqs = np.abs(np.fft.rfft(x)), np.fft.rfftfreq(len(x), 1 / 8000)
+    return 20 * np.log10(spec[(freqs > hz - 15) & (freqs < hz + 15)].sum() / len(x) + 1e-12)
+
+
+@unittest.skipUnless(FFMPEG, "ffmpeg not installed")
+class ClipSoundTests(unittest.TestCase):
+    """A shot that keeps its clip's own sound (someone talking): held through fit and beatfit, heard in the mix."""
+
+    def setUp(self):
+        self.env = dict(os.environ, PATH=os.path.dirname(FFMPEG) + os.pathsep + os.environ.get("PATH", ""))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = self.tmp.name
+        self.footage, self.work = os.path.join(self.ws, "footage"), os.path.join(self.ws, "work")
+        os.makedirs(self.footage), os.makedirs(self.work)
+        # talk.mp4: a 1000 Hz "voice"; action.mp4: still, then 3 seconds of movement and loud hits from 10s; no sound in mute.mp4
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=360x640:r=30:d=8", "-f", "lavfi", "-i", "sine=frequency=1000:duration=8",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", os.path.join(self.footage, "talk.mp4")], check=True, env=self.env)
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=360x640:r=30:d=10", "-f", "lavfi", "-i", "testsrc2=s=360x640:r=30:d=3",
+                        "-f", "lavfi", "-i", "color=c=black:s=360x640:r=30:d=7",
+                        "-f", "lavfi", "-i", "sine=f=80:d=20,volume='if(between(t,10,13),if(lt(mod(t,0.5),0.05),8,0.02),0.02)':eval=frame",
+                        "-filter_complex", "[0][1][2]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-map", "3:a", "-shortest",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", os.path.join(self.footage, "action.mp4")], check=True, env=self.env)
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=360x640:rate=30:duration=6", "-pix_fmt", "yuv420p",
+                        "-c:v", "libx264", "-preset", "ultrafast", os.path.join(self.footage, "mute.mp4")], check=True, env=self.env)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_script(self, *args):
+        cmd = (["bash"] if args[0].endswith(".sh") else [sys.executable]) + [os.path.join(SCRIPTS, args[0]), *args[1:]]
+        return subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+
+    def test_fit_holds_long_shots_only_when_asked_and_never_scales_a_talking_shot(self):
+        draft, out = os.path.join(self.work, "d.tsv"), os.path.join(self.work, "c.tsv")
+        with open(draft, "w") as f:
+            f.write("talk.mp4|1|4|1||1\naction.mp4|9.5|3|1\nmute.mp4|0.5|3|1\naction.mp4|14|3|1\n")
+        quick = self.run_script("fit.py", self.footage, draft, "15", out)
+        self.assertEqual(quick.returncode, 1)
+        self.assertIn("pacing", quick.stdout)
+        held = self.run_script("fit.py", self.footage, draft, "15", out, "held")
+        self.assertEqual(held.returncode, 0, held.stdout + held.stderr)
+        rows = [l.split("|") for l in open(out).read().split()]
+        self.assertEqual(rows[0], ["talk.mp4", "1", "4", "1", "", "1"])  # the words are left whole
+        self.assertAlmostEqual(sum(float(r[2]) for r in rows), 15.0, delta=0.01)
+        with open(draft, "w") as f:  # a held cut chopped into one-second shots is refused too
+            f.write("".join(f"action.mp4|{i * 1.5}|1|1\n" for i in range(10)))
+        self.assertEqual(self.run_script("fit.py", self.footage, draft, "10", out, "held").returncode, 1)
+        with open(draft, "w") as f:
+            f.write("talk.mp4|1|4|2||1\n")
+        self.assertNotEqual(self.run_script("fit.py", self.footage, draft, "4", out).returncode, 0)  # sound needs speed 1
+
+    def test_beatfit_never_shortens_a_talking_shot(self):
+        n = allocate_beats([3.1, 2.0, 2.0, 2.0], 0.5, 8, fixed={0})
+        self.assertGreaterEqual(n[0] * 0.5, 3.1)
+        self.assertEqual(allocate_beats([1.2, 0.4, 3.0, 2.1, 1.0], 0.5, 15), allocate_beats([1.2, 0.4, 3.0, 2.1, 1.0], 0.5, 15, fixed=()))
+
+    def test_render_and_mix_keep_the_voice_and_lower_the_music_under_it(self):
+        ffprobe = os.path.join(os.path.dirname(FFMPEG), "ffprobe")
+        edl, out, track = os.path.join(self.work, "story-15.tsv"), os.path.join(self.ws, "story-15.mp4"), os.path.join(self.ws, "song.mp3")
+        with open(edl, "w") as f:
+            f.write("talk.mp4|1|4|1||1\naction.mp4|10|3|1\nmute.mp4|1|3|1||1\n")
+        subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=30", track], check=True, env=self.env)
+        r = self.run_script("render.sh", self.footage, edl, out)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("1 with their own sound", r.stdout)
+        self.assertIn("WARN shot 3", r.stdout)  # mute.mp4 has no sound to keep
+        voice = out.replace(".mp4", ".voice.wav")
+        self.assertTrue(os.path.isfile(voice))
+        self.assertTrue(os.path.isfile(out.replace(".mp4", ".review-1.jpg")))
+        dur = lambda p: float(subprocess.check_output([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", p]))
+        self.assertAlmostEqual(dur(voice), dur(out), delta=0.02)
+        m = self.run_script("mix.sh", out, track, "5")
+        self.assertEqual(m.returncode, 0, m.stdout + m.stderr)
+        self.assertAlmostEqual(dur(out), 10.0, delta=0.1)
+        # The voice (1000 Hz) is there for the first shot only; the music (440 Hz) is clearly lower under it.
+        self.assertGreater(_tone_db(FFMPEG, out, 0.5, 3, 1000), _tone_db(FFMPEG, out, 5, 3, 1000) + 20)
+        self.assertLess(_tone_db(FFMPEG, out, 0.5, 3, 440), _tone_db(FFMPEG, out, 5, 3, 440) - 8)
+        self.assertGreater(_tone_db(FFMPEG, out, 0.5, 3, 1000), _tone_db(FFMPEG, out, 0.5, 3, 440) + 6)
+        # No music at all: the shot's own sound alone.
+        self.assertEqual(self.run_script("render.sh", self.footage, edl, out).returncode, 0)
+        only = self.run_script("mix.sh", out, "none", "0")
+        self.assertEqual(only.returncode, 0, only.stdout + only.stderr)
+        self.assertGreater(_tone_db(FFMPEG, out, 0.5, 3, 1000), _tone_db(FFMPEG, out, 5, 3, 1000) + 20)
+        # Without a shot that keeps its sound there is no voice file, and `none` has nothing to mix.
+        with open(edl, "w") as f:
+            f.write("action.mp4|10|3|1\n")
+        self.assertEqual(self.run_script("render.sh", self.footage, edl, out).returncode, 0)
+        self.assertFalse(os.path.exists(voice))
+        self.assertNotEqual(self.run_script("mix.sh", out, "none", "0").returncode, 0)
+
+    def test_edl_round_trip_keeps_the_sound_flag(self):
+        edl = os.path.join(self.work, "c.tsv")
+        with open(edl, "w") as f:
+            f.write("talk.mp4|1|4|1||1\naction.mp4|10|3|1|0.5\nmute.mp4|1|3|1\n")
+        entries = json.loads(self.run_script("edl2json.py", "json", edl).stdout)
+        self.assertEqual([e.get("sound") for e in entries], [True, None, None])
+        prev = os.path.join(self.work, "previous.json")
+        with open(prev, "w") as f:
+            json.dump({"cuts": [{"id": "story-15", "edl": entries}]}, f)
+        back = os.path.join(self.work, "back.tsv")
+        self.assertEqual(self.run_script("edl2json.py", "tsv", prev, "story-15", back).returncode, 0)
+        self.assertEqual(json.loads(self.run_script("edl2json.py", "json", back).stdout), entries)
+
+    def test_moments_finds_the_action_and_sampling_can_look_closely(self):
+        m = self.run_script("moments.py", self.footage, os.path.join(self.work, "moments"))
+        self.assertEqual(m.returncode, 0, m.stdout + m.stderr)
+        rows = [l.split("\t") for l in open(os.path.join(self.work, "moments", "moments.tsv")).read().splitlines()[1:]]
+        best = max((r for r in rows if r[0] == "action.mp4"), key=lambda r: float(r[3]))
+        self.assertTrue(9 <= int(best[1]) <= 11, best)  # the movement and hits are at 10-13s
+        self.assertNotIn("mute.mp4", {r[0] for r in rows})  # under 8s: nothing to find
+        s = subprocess.run(["bash", os.path.join(SCRIPTS, "sample.sh"), self.footage, os.path.join(self.work, "samples")],
+                           input="action.mp4\naction.mp4|10|13\n", capture_output=True, text=True, env=self.env)
+        self.assertEqual(s.returncode, 0, s.stdout + s.stderr)
+        lines = [l for l in s.stdout.splitlines() if l.startswith("row")]
+        self.assertEqual(len(lines[0].split(":")[1].split()), 10)                      # a 20s clip: ten frames, one every 2s
+        zoom = [float(t) for t in lines[1].split(":")[1].split()]
+        self.assertEqual(len(zoom), 10)
+        self.assertTrue(all(10 <= t <= 13 for t in zoom))
+        self.assertTrue(os.path.isfile(os.path.join(self.work, "samples", "sheet1.jpg")))
+
+    def test_listen_never_fails_the_job(self):
+        r = self.run_script("listen.py", self.footage, os.path.join(self.work, "listen"))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(self.work, "listen", "speech.tsv")))
+
+
+class HistoryAndSoundContractTests(unittest.TestCase):
+    def test_history_reaches_the_brief(self):
+        job = dict(JOB, kind="revision", previous={"manifest": {"cuts": []}}, history=["open with him talking", "  ", "no choppy cuts"])
+        self.assertIsNotNone(valid_job(job))
+        files = clip_filenames(job["clips"])
+        self.assertEqual(job_brief(job, files)["history"], ["open with him talking", "no choppy cuts"])
+        self.assertIn("history", build_prompt(job, files, "cutting-montage-videos"))
+        self.assertEqual(job_brief(dict(JOB), files)["history"], [])
+        self.assertIsNone(valid_job(dict(JOB, history="x")))
+        self.assertIsNone(valid_job(dict(JOB, history=[1])))
+        self.assertIsNone(valid_job(dict(JOB, history=["x"] * 31)))
+
+    def test_manifest_keeps_the_sound_flag(self):
+        files = clip_filenames(CLIPS)
+        raw = good_manifest()
+        raw["cuts"][0]["edl"][0]["sound"] = True
+        cut = validate_manifest(raw, files)["cuts"][0]
+        self.assertIs(cut["edl"][0].get("sound"), True)
+        self.assertTrue(all("sound" not in e for e in cut["edl"][1:]))
+        raw["cuts"][0]["edl"][0]["speed"] = 2
+        with self.assertRaises(ManifestError):
+            validate_manifest(raw, files)
+        raw["cuts"][0]["edl"][0].update(speed=1, sound="yes")
+        with self.assertRaises(ManifestError):
+            validate_manifest(raw, files)
+
+    def test_new_step_labels(self):
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/listen.py footage work/listen"}), "Listening for people talking")
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/moments.py footage work/moments"}), "Finding the action")
+        self.assertEqual(step_label("Bash", {"command": "bash $SK/mix.sh out/previews/story-15.mp4 none 0"}), "Adding the sound to the 15s story")
+        self.assertEqual(step_label("Read", {"file_path": "out/previews/reel-30.review-2.jpg"}), "Checking the 30s reel")
+        self.assertIsNone(bash_denial("printf '%s\\n' 'a.mov|41|47' | bash $SK/sample.sh footage work/samples/zoom-1", "/tmp/ws"))
+
+
 
 # ---- Epidemic Sound ------------------------------------------------------------------------------
 

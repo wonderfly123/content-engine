@@ -12,7 +12,7 @@
  */
 import { isClipsMessage } from "@/lib/media/rules";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte } from "drizzle-orm";
 import { EDITOR_NOT_CONNECTED, listBrands } from "@/lib/conversations/router";
 import { activeBrands } from "@/lib/conversations/store";
 import { appUrl } from "@/lib/conversations/texting";
@@ -41,6 +41,8 @@ export const CALLBACK_PATH = "/api/editor/callback";
 export const UPLOADS_PATH = "/api/editor/uploads";
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_REQUEST_CHARS = 8000;
+/** Earlier messages sent with a revision (the worker refuses more: MAX_HISTORY in workers/editor/contract.py). */
+const MAX_HISTORY = 30;
 
 export const REPLIES = {
   needClips: "Send or upload your clips first, then tell me what you want.",
@@ -70,6 +72,11 @@ export interface EditorJobRequest {
   brand: { name: string; voice: string };
   instructions: string;
   request: string;
+  /**
+   * On a revision: what the person said earlier in the same conversation, oldest first. The editor
+   * keeps honouring it ("don't make it choppy" still holds when the next message only asks for 30s).
+   */
+  history?: string[];
   clips: Array<{ mediaId: string; filename: string; url: string }>;
   previous: null | { manifest: EditorManifest };
   uploads: { url: string };
@@ -182,6 +189,21 @@ async function recentRequests(conversationId: string): Promise<string> {
     .join("\n");
 }
 
+/** What the person said in the thread before `before`, oldest first (new-clip notices left out). */
+async function earlierRequests(conversationId: string, before: Date, triggerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: conversationMessages.id, body: conversationMessages.body })
+    .from(conversationMessages)
+    .where(and(eq(conversationMessages.conversationId, conversationId), eq(conversationMessages.direction, "in"), lte(conversationMessages.createdAt, before)))
+    .orderBy(desc(conversationMessages.createdAt))
+    .limit(MAX_HISTORY + 1);
+  return rows
+    .filter((r) => r.id !== triggerId && r.body.trim() && !isClipsMessage(r.body))
+    .slice(0, MAX_HISTORY)
+    .reverse()
+    .map((r) => r.body.slice(0, MAX_REQUEST_CHARS));
+}
+
 export async function startEditorJob(threadId: string, messageId: string, origin?: string | null): Promise<EditorHandoff> {
   const [thread] = await db.select().from(conversations).where(eq(conversations.id, threadId)).limit(1);
   if (!thread || thread.status !== "open") return { queued: false, reason: "no open thread" };
@@ -236,6 +258,7 @@ export async function startEditorJob(threadId: string, messageId: string, origin
     kind,
     videoKind: thread.kind === "story" ? "story" : "reel",
     request,
+    history: kind === "revision" ? await earlierRequests(thread.id, trigger.createdAt, trigger.id).catch(() => []) : [],
     instructions: "",
     clips: ready,
     previous: previous?.manifest ?? null,
@@ -254,6 +277,8 @@ export interface DispatchInput {
   kind: EditorJobKind;
   videoKind: "reel" | "story";
   request: string;
+  /** Earlier messages of the conversation, oldest first (revisions). */
+  history?: string[];
   instructions: string;
   /** Ready raw clips, already checked to belong to the thread's workspace (and brand, for library clips). */
   clips: MediaRow[];
@@ -329,6 +354,7 @@ export async function dispatchEditorJob(input: DispatchInput): Promise<EditorHan
     callbackUrl: `${base}${CALLBACK_PATH}`,
     music: await musicForJob(brand.id, thread.workspaceId, jobId),
   };
+  if (input.history?.length) job.history = input.history;
   const skillFiles = await skillFilesForJob(jobId, brand);
   if (skillFiles) job.skillFiles = skillFiles;
   // Optional: without it (or if it can't be read) the editor simply has the brand's library.

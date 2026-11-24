@@ -2,7 +2,7 @@
 """usage: beatfit.py <footage_dir> <edl.tsv> <track> <start_seconds|auto> <target_seconds> <out.tsv>
 Re-time a cut so every cut lands on a beat of the track (cloud copy of the owner's beatfit.py).
 Shot order and source ranges stay the same; each shot becomes a whole number of beats (the first at
-least two). Prints `audio_start` (where the track starts under the video, on a beat) and
+least two). A shot that keeps its sound (EDL column 6 = 1) is only ever rounded up, so no word is cut off. Prints `audio_start` (where the track starts under the video, on a beat) and
 `video_seconds` (the cut's new exact length: use it as the cut's `seconds`).
 'auto' starts at the track's loudest 15 seconds. Cut times are rounded to 30 fps frames cumulatively,
 so the cuts never drift off the beat."""
@@ -12,18 +12,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 FPS = 30
 
 
-def allocate_beats(want, p, target):
-    """Whole beats per shot (first shot >= 2, others >= 1), summing to round(target / p) where possible."""
+def allocate_beats(want, p, target, fixed=()):
+    """Whole beats per shot (first shot >= 2, others >= 1), summing to round(target / p) where possible.
+    Shots in `fixed` (they keep their sound) are rounded up and never shortened."""
+    import math
     N = max(1, round(target / p))
-    n = [max(2 if i == 0 else 1, round(d / p)) for i, d in enumerate(want)]
+    n = [max(2 if i == 0 else 1, math.ceil(d / p - 0.05) if i in fixed else round(d / p)) for i, d in enumerate(want)]
     while sum(n) != N:
         if sum(n) > N:
-            c = [i for i in range(len(n)) if n[i] > (2 if i == 0 else 1)]
+            c = [i for i in range(len(n)) if n[i] > (2 if i == 0 else 1) and i not in fixed]
             if not c:
                 break
             i = max(c, key=lambda i: n[i] * p - want[i]); n[i] -= 1
         else:
-            i = max(range(len(n)), key=lambda i: want[i] - n[i] * p); n[i] += 1
+            c = [i for i in range(len(n)) if i not in fixed] or list(range(len(n)))
+            i = max(c, key=lambda i: want[i] - n[i] * p); n[i] += 1
     return n
 
 
@@ -70,7 +73,8 @@ def main(argv):
         sys.exit(f"no beat found in {os.path.basename(track)} from {start:.1f}s: pick another track or start")
     p = 60 / bpm
     a0 = beat_start(start, lead, first, p)
-    n = allocate_beats([float(r[2]) / float(r[3]) for r in rows], p, target)
+    fixed = {i for i, r in enumerate(rows) if len(r) > 5 and r[5].strip() == "1"}
+    n = allocate_beats([float(r[2]) / float(r[3]) for r in rows], p, target, fixed)
     cache = {}
 
     def clip_seconds(f):
