@@ -14,6 +14,10 @@ make it, so judge only what is in front of you. Be quick and specific. Never edi
 - `work/edl/<id>.tsv` (or `<id>.beat.tsv` when it exists): the shots (clip, start, length, speed, crop, and a
   final `1` when the shot keeps its own sound).
 - `work/listen/speech.tsv`, if it exists: what is said in each clip, and when.
+- `work/edl/<id>.speech.txt` (or `<id>.beat.speech.txt`), if it exists: the word-by-word check of every shot that
+  keeps its sound. It ends in `PASS`, or lists the shots that cut into speech.
+- `out/previews/<id>.sound.txt`, if it exists: the measured sound of the finished cut (loudness, the music under
+  anyone speaking, the fade out at the end). It ends in `PASS`, or lists what is wrong and what to run.
 - `work/moments/moments.tsv`, if it exists: the liveliest windows of each long clip.
 - The cut's `hookOptions` and `caption`, which the editor pastes into its message to you.
 
@@ -28,7 +32,9 @@ make it, so judge only what is in front of you. Be quick and specific. Never edi
    frames look the same, or people only walk, circle, reset, wait, adjust gear or stand, fails: name the shot and,
    when `moments.tsv` has a stronger window in that clip that the cut does not use, name its seconds.
 3. **Talking is used as talking.** A clip with speech that is in the cut keeps its sound, starts and ends on whole
-   phrases by the times in `speech.tsv` (not mid-sentence), and what is said makes sense on its own. A `TALKING`
+   phrases by the times in `speech.tsv` (not mid-sentence), and what is said makes sense on its own. When the
+   cut has a shot that keeps its sound, its `.speech.txt` must exist and end in `PASS`: a `FAIL` there, or the
+   file missing, is a fix (name the shot and repeat the corrected line it gives). A `TALKING`
    clip left out, or used silent, is a fix unless the person asked for that.
 4. **The opener.** The first shot is the strongest image (the finished result, the peak of an event, the best hit)
    or the person talking when they asked for that. Never setup, an empty room or people waiting.
@@ -36,7 +42,10 @@ make it, so judge only what is in front of you. Be quick and specific. Never edi
    slow: no shot that keeps going after its action is over.
 6. **No repeats and no bad shots.** No two shots look the same; no black, blurry, shaky, sideways or blocked shots.
 7. **The ending.** It ends on a strong image, not in the middle of something.
-8. **The words.** Hooks are short, true to the footage and not made up. The caption reads naturally in the brand's
+8. **The sound.** You cannot hear the cut, so go by the measurements: when the cut has music or a shot that keeps
+   its sound, `out/previews/<id>.sound.txt` must exist and end in `PASS`. A `FAIL` there, or the file missing, is
+   a fix: repeat each `FIX` line it gives.
+9. **The words.** Hooks are short, true to the footage and not made up. The caption reads naturally in the brand's
    voice, with no invented names, places, dates or prices. A story has no caption.
 
 ## How to answer
@@ -55,6 +64,6 @@ VERDICT: fix
 2. ...
 ```
 
-At most 6 fixes, most important first. Checks 1 to 3 are not matters of taste: if one fails, the verdict is fix.
+At most 6 fixes, most important first. Checks 1 to 3 and 8 are not matters of taste: if one fails, the verdict is fix.
 For the rest, only list problems a viewer would notice; taste differences that the request, style and profile do
 not settle are not problems.

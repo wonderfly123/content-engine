@@ -493,6 +493,11 @@ def step_label(tool: Optional[str], tool_input: Dict[str, Any]) -> Optional[str]
             return "Looking through the clips"
         if "listen.py" in cmd:
             return "Listening for people talking"
+        if "soundcheck.py" in cmd:
+            cut = _cut_name(cmd)
+            return f"Checking the sound of {cut}" if cut else "Checking the sound"
+        if "speechcheck.py" in cmd:
+            return "Checking nobody is cut off mid-word"
         if "moments.py" in cmd:
             return "Finding the action"
         if "sample.sh" in cmd:

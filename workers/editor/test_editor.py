@@ -316,6 +316,107 @@ class RenderTests(unittest.TestCase):
             self.assertIsNone(edl[0]["cropX"])
 
 
+class SpeechCheckTests(unittest.TestCase):
+    """A shot that keeps its sound must not cut into a word or stop mid-sentence."""
+
+    WORDS = [  # "Today we're doing cardio kickboxing.  [pause]  You put combos together and then you rest."
+        (1.00, 1.30, "Today"), (1.32, 1.50, "we're"), (1.52, 1.80, "doing"), (1.82, 2.20, "cardio"), (2.22, 2.90, "kickboxing."),
+        (3.60, 3.75, "You"), (3.77, 3.95, "put"), (3.97, 4.40, "combos"), (4.42, 4.90, "together"),
+        (4.92, 5.05, "and"), (5.07, 5.25, "then"), (5.27, 5.40, "you"), (5.42, 5.80, "rest."),
+    ]
+
+    def run_check(self, edl_lines, words=True, phrases=True, word_rows=None, phrase_rows=None):
+        with tempfile.TemporaryDirectory() as d:
+            listen = os.path.join(d, "listen")
+            os.makedirs(listen)
+            if words:
+                with open(os.path.join(listen, "words.tsv"), "w") as f:
+                    f.write("clip\tstart\tend\tword\n" + "".join(f"talk.mov\t{s}\t{e}\t{w}\n" for s, e, w in (word_rows or self.WORDS)))
+            if phrases and phrase_rows:
+                with open(os.path.join(listen, "speech.tsv"), "w") as f:
+                    f.write("clip\tstart\tend\ttext\n" + "".join(f"talk.mov\t{s}\t{e}\t{t}\n" for s, e, t in phrase_rows))
+                phrases = False
+            if phrases:
+                with open(os.path.join(listen, "speech.tsv"), "w") as f:
+                    f.write("clip\tstart\tend\ttext\ntalk.mov\t1.00\t2.90\tToday we're doing cardio kickboxing.\n"
+                            "talk.mov\t3.60\t5.80\tYou put combos together and then you rest.\n")
+            edl = os.path.join(d, "cut.beat.tsv")
+            with open(edl, "w") as f:
+                f.write("\n".join(edl_lines) + "\n")
+            r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "speechcheck.py"), edl, listen], capture_output=True, text=True)
+            report = ""
+            if os.path.isfile(os.path.join(d, "cut.beat.speech.txt")):
+                with open(os.path.join(d, "cut.beat.speech.txt")) as f:
+                    report = f.read()
+            return r.returncode, r.stdout, report
+
+    def test_a_whole_sentence_with_room_passes(self):
+        code, out, report = self.run_check(["action.mov|4|1.5|1", "talk.mov|0.8|2.4|1||1"])
+        self.assertEqual(code, 0, out)
+        self.assertIn("shot 2 talk.mov 0.80-3.20: ok", out)
+        self.assertTrue(out.strip().endswith("PASS"))
+        self.assertEqual(report, out)                      # the reviewer reads the same text
+
+    def test_a_shot_that_cuts_off_a_word_fails_with_the_corrected_line(self):
+        code, out, _ = self.run_check(["talk.mov|0.8|1.8|1||1"])           # ends at 2.60, inside "kickboxing."
+        self.assertEqual(code, 1)
+        self.assertIn('cuts off "kickboxing."', out)
+        self.assertIn("use: talk.mov|0.80|2.40|1||1", out)                  # out to 2.90 + 0.3
+        self.assertIn("FAIL 1 talking shot cut into speech", out)
+
+    def test_a_shot_that_starts_inside_a_word_or_too_tight_fails(self):
+        code, out, _ = self.run_check(["talk.mov|1.15|2.05|1||1"])          # starts inside "Today"
+        self.assertEqual(code, 1)
+        self.assertIn('starts inside "Today"', out)
+        self.assertIn("use: talk.mov|0.80|2.40|1||1", out)
+        code, out, _ = self.run_check(["talk.mov|0.97|2.23|1||1"])          # 0.03s before the first word
+        self.assertEqual(code, 1)
+        self.assertIn('starts too tight on "Today"', out)
+
+    def test_stopping_or_starting_mid_sentence_fails_even_between_words(self):
+        code, out, _ = self.run_check(["talk.mov|3.4|1.51|1||1"])           # ends at 4.91, between "together" and "and"
+        self.assertEqual(code, 1)
+        self.assertIn('ends mid-sentence, before "and"', out)
+        self.assertIn("use: talk.mov|3.40|2.70|1||1", out)                  # out to "rest." 5.80 + 0.3
+        code, out, _ = self.run_check(["talk.mov|4.91|1.2|1||1"])           # starts between "together" and "and"
+        self.assertEqual(code, 1)
+        self.assertIn('starts mid-sentence, after "together"', out)
+        self.assertIn("use: talk.mov|3.40|", out)                           # back to "You" 3.60 - 0.2
+
+    def test_stopping_at_the_end_of_a_sentence_is_fine_even_with_more_speech_after(self):
+        code, out, _ = self.run_check(["talk.mov|0.8|2.4|1||1"])            # first sentence only; a pause follows
+        self.assertEqual(code, 0, out)
+
+    def test_silent_shots_are_not_checked_and_phrases_stand_in_for_words(self):
+        code, out, _ = self.run_check(["talk.mov|1.5|0.8|1"])               # no |1: silent under the music
+        self.assertEqual(code, 0, out)
+        self.assertIn("no shot keeps its own sound", out)
+        code, out, _ = self.run_check(["talk.mov|0.8|1.8|1||1"], words=False)   # only speech.tsv: cuts into the phrase
+        self.assertEqual(code, 1)
+        self.assertIn("cuts off", out)
+        self.assertIn("use: talk.mov|0.80|2.40|1||1", out)
+
+    def test_real_speech_with_no_full_stops_and_no_gap_between_sentences(self):
+        # Word times as the transcriber gave them for a real phone clip: no punctuation, and the next sentence
+        # starts the instant the last one ends. The phrases are what mark where a sentence may be cut.
+        words = [(4.44, 4.76, "punches"), (4.76, 4.94, "to"), (4.94, 5.22, "kicks"), (5.22, 5.42, "as"), (5.42, 5.58, "well"),
+                 (5.58, 5.74, "as"), (5.74, 5.94, "kicks"), (5.94, 6.14, "to"), (6.14, 6.48, "punches"),
+                 (6.48, 7.16, "Putting"), (7.16, 7.36, "some"), (7.36, 7.74, "combos"), (7.74, 8.16, "together")]
+        phrases = [(4.44, 6.48, "punches to kicks as well as kicks to punches"), (6.48, 8.16, "Putting some combos together")]
+        code, out, _ = self.run_check(["talk.mov|4.3|2.367|1||1"], word_rows=words, phrase_rows=phrases)   # ends 6.667, into "Putting"
+        self.assertEqual(code, 1)
+        self.assertIn('catches the start of "Putting"', out)
+        self.assertIn("use: talk.mov|4.30|2.18|1||1", out)                  # out at 6.48, where the sentence ends
+        code, out, _ = self.run_check(["talk.mov|4.3|2.18|1||1"], word_rows=words, phrase_rows=phrases)
+        self.assertEqual(code, 0, out)                                      # the corrected line passes
+        code, out, _ = self.run_check(["talk.mov|4.3|1.45|1||1"], word_rows=words, phrase_rows=phrases)    # ends 5.75, between words
+        self.assertEqual(code, 1)
+        self.assertIn("ends mid-sentence", out)
+
+    def test_step_label(self):
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/speechcheck.py work/edl/a.beat.tsv work/listen"}), "Checking nobody is cut off mid-word")
+
+
 class WorkingCopyTests(unittest.TestCase):
     """Heavy camera originals: the agent watches a small copy, render.sh cuts from the original."""
 
@@ -680,6 +781,26 @@ class ClipSoundTests(unittest.TestCase):
         self.assertGreater(_tone_db(FFMPEG, out, 0.5, 3, 1000), _tone_db(FFMPEG, out, 5, 3, 1000) + 20)
         self.assertLess(_tone_db(FFMPEG, out, 0.5, 3, 440), _tone_db(FFMPEG, out, 5, 3, 440) - 8)
         self.assertGreater(_tone_db(FFMPEG, out, 0.5, 3, 1000), _tone_db(FFMPEG, out, 0.5, 3, 440) + 6)
+        # The measured check passes on this mix, and its report is left for the reviewer.
+        music_wav, said_wav, report = (out.replace(".mp4", e) for e in (".music.wav", ".said.wav", ".sound.txt"))
+        self.assertTrue(os.path.isfile(music_wav) and os.path.isfile(said_wav))
+        ok = self.run_script("soundcheck.py", out)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        self.assertIn("ok voice over music", ok.stdout)
+        self.assertIn("ok ending", ok.stdout)
+        with open(report) as f:
+            self.assertTrue(f.read().strip().endswith("PASS"))
+        # Music as loud as the voice under the talking: a FIX that says how much lower to mix it.
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-i", said_wav, "-af", "volume=-2dB", "-c:a", "pcm_s16le", music_wav + ".tmp.wav"], check=True, env=self.env)
+        os.replace(music_wav + ".tmp.wav", music_wav)
+        loud = self.run_script("soundcheck.py", out)
+        self.assertEqual(loud.returncode, 1, loud.stdout)
+        self.assertRegex(loud.stdout, r"FIX voice over music.*mix\.sh <preview> <track> <audio_start> -\d+")
+        self.assertIn("FAIL", loud.stdout)
+        # Mixing again with the music turned down is accepted, and a bad number is refused.
+        self.assertEqual(self.run_script("mix.sh", out, track, "5", "-6").returncode, 0)
+        self.assertEqual(self.run_script("soundcheck.py", out).returncode, 0)
+        self.assertNotEqual(self.run_script("mix.sh", out, track, "5", "loud").returncode, 0)
         # No music at all: the shot's own sound alone.
         self.assertEqual(self.run_script("render.sh", self.footage, edl, out).returncode, 0)
         only = self.run_script("mix.sh", out, "none", "0")
@@ -691,6 +812,17 @@ class ClipSoundTests(unittest.TestCase):
         self.assertEqual(self.run_script("render.sh", self.footage, edl, out).returncode, 0)
         self.assertFalse(os.path.exists(voice))
         self.assertNotEqual(self.run_script("mix.sh", out, "none", "0").returncode, 0)
+        # A preview nobody mixed has no sound to measure, and music that stops dead is caught.
+        silent = self.run_script("soundcheck.py", out)
+        self.assertEqual(silent.returncode, 1, silent.stdout)
+        self.assertIn("no sound in this cut", silent.stdout)
+        dead = os.path.join(self.ws, "dead.mp4")
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-i", out, "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-map", "0:v:0", "-map", "1:a:0",
+                        "-c:v", "copy", "-af", "loudnorm=I=-14:TP=-1.5", "-c:a", "aac", "-shortest", dead], check=True, env=self.env)
+        stop = self.run_script("soundcheck.py", dead)
+        self.assertEqual(stop.returncode, 1, stop.stdout)
+        self.assertIn("it stops dead", stop.stdout)
+        self.assertEqual(step_label("Bash", {"command": "python3 $SK/soundcheck.py out/previews/story-15.mp4"}), "Checking the sound of the 15s story")
 
     def test_edl_round_trip_keeps_the_sound_flag(self):
         edl = os.path.join(self.work, "c.tsv")
