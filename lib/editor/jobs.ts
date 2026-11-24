@@ -13,7 +13,7 @@ const { editorJobs, conversations } = schema;
 export type EditorJobRow = typeof editorJobs.$inferSelect;
 
 /** A job queued or running for longer than this is given up on. */
-export const EDITOR_STUCK_AFTER_MS = 35 * 60 * 1000;
+export const EDITOR_STUCK_AFTER_MS = 65 * 60 * 1000;
 export const STUCK_MESSAGE = "This edit took too long and was stopped. Send your request again to retry.";
 
 export async function getJob(id: string): Promise<EditorJobRow | null> {
@@ -86,7 +86,7 @@ export async function approveLatestDone(conversationId: string): Promise<EditorJ
 }
 
 /**
- * Jobs queued or running for over 35 minutes become `failed`, with a message in their thread. Runs
+ * Jobs queued or running for longer than EDITOR_STUCK_AFTER_MS become `failed`, with a message in their thread. Runs
  * hourly with the optimizer's sweep (the connections cron), and for one thread whenever that thread
  * is opened or messaged, so nobody waits on a job that is gone.
  */
@@ -94,7 +94,7 @@ export async function recoverStuckEditorJobs(now: Date = new Date(), conversatio
   const cutoff = new Date(now.getTime() - EDITOR_STUCK_AFTER_MS);
   const rows = await db
     .update(editorJobs)
-    .set({ status: "failed", error: "No result within 35 minutes.", finishedAt: now, updatedAt: now })
+    .set({ status: "failed", error: `No result within ${EDITOR_STUCK_AFTER_MS / 60_000} minutes.`, finishedAt: now, updatedAt: now })
     .where(
       and(
         inArray(editorJobs.status, ["queued", "running"]),

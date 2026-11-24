@@ -23,12 +23,16 @@ function makeDb(seed: {
   jobs: Row[];
   conns: Row[];
   posts: Row[];
+  edits?: Row[];
+  clips?: Row[];
 }): { select: () => unknown } {
   return {
     select(cols: Record<string, unknown> = {}) {
       // Detect source by a column key unique to each branch.
       let bucket: Row[];
-      if ("lastError" in cols) bucket = seed.jobs;
+      if ("editError" in cols) bucket = seed.edits ?? [];
+      else if ("optimizeError" in cols) bucket = seed.clips ?? [];
+      else if ("lastError" in cols) bucket = seed.jobs;
       else if ("connectedAt" in cols && "status" in cols) bucket = seed.conns;
       else bucket = seed.posts;
 
@@ -179,5 +183,20 @@ describe("listSystemAlerts", () => {
     const alerts = await listSystemAlerts({ db });
     expect(alerts[0]!.id).toBe("post_failed:p-new");
     expect(alerts[1]!.id).toBe("job_failed:j-old");
+  });
+
+  it("lists a failed edit with the worker's reason, and a clip kept at full size", async () => {
+    const now = new Date();
+    const db = makeDb({
+      jobs: [],
+      conns: [],
+      posts: [],
+      edits: [{ id: "e1", brandId: "b1", conversationId: "t1", editError: "The editor could not run (CLIJSONDecodeError).", finishedAt: now, updatedAt: now }],
+      clips: [{ id: "m1", brandId: "b1", conversationId: "t1", filename: "IMG_1.mov", optimizeError: "Optimizing took too long.", updatedAt: new Date(now.getTime() - 1000) }],
+    });
+    const alerts = await listSystemAlerts({ db: db as never });
+    expect(alerts.map((a) => a.id)).toEqual(["edit_failed:e1", "clip_not_shrunk:m1"]);
+    expect(alerts[0]).toMatchObject({ kind: "edit_failed", detail: "The editor could not run (CLIJSONDecodeError).", entityId: "t1" });
+    expect(alerts[1]).toMatchObject({ kind: "clip_not_shrunk", title: "IMG_1.mov was kept at full size", detail: "Optimizing took too long." });
   });
 });

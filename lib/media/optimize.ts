@@ -6,7 +6,7 @@
  *   worker -> ffmpeg -> PUT outputUrl (ws/<ws>/conv/<conv>/raw/<id>.mp4) -> POST /api/media/optimized
  *   applyOptimizeResult -> the row points at the small copy, the original in incoming/ is deleted.
  *
- * The worker only gets two presigned links (2 hours): never keys, database access or other secrets.
+ * The worker only gets two presigned links (OPTIMIZE_LINK_SECONDS): never keys, database access or other secrets.
  * The output key is derived from the row here, never taken from the worker.
  *
  * A clip does not wait for this: as soon as the optimizer accepts the job the clip is `ready` as
@@ -15,7 +15,7 @@
  * more later (deleteReplacedOriginals), never at once, because an edit may be downloading it.
  *
  * The user's footage is never lost: whenever optimizing cannot happen (not configured, the worker
- * unreachable or failing, the output missing or wrong, nothing heard back for 2 hours) the clip
+ * unreachable or failing, the output missing or wrong, nothing heard back within STUCK_AFTER_MS) the clip
  * becomes `ready` as uploaded, with the reason in `optimize_error`.
  *
  * Whenever a thread's last clip becomes ready, the editor's first cut starts (lib/editor/clips-ready.ts).
@@ -35,9 +35,9 @@ import { optimizeSecret } from "./worker-signature";
 const { mediaObjects } = schema;
 
 /** How long the worker's links stay valid. */
-export const OPTIMIZE_LINK_SECONDS = 2 * 60 * 60;
+export const OPTIMIZE_LINK_SECONDS = 3 * 60 * 60;
 /** A clip still processing after this long is given up on (the original is kept). */
-export const STUCK_AFTER_MS = 2 * 60 * 60 * 1000;
+export const STUCK_AFTER_MS = 150 * 60 * 1000;
 export const CALLBACK_PATH = "/api/media/optimized";
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -222,11 +222,11 @@ export async function applyOptimizeResult(payload: unknown): Promise<ApplyOutcom
   return { status: 200, body: { applied: true, sizeBytes: row.sizeBytes, codec: r.codec ?? null } };
 }
 
-/** Clips processing for over 2 hours become ready as uploaded (run hourly by the connections cron). */
+/** Clips processing for longer than STUCK_AFTER_MS become ready as uploaded (run hourly by the connections cron). */
 export async function recoverStuckOptimizing(now: Date = new Date()): Promise<number> {
   const rows = await db
     .update(mediaObjects)
-    .set({ status: "ready", optimizeError: "Optimizing did not finish within 2 hours; the clip was kept as uploaded.", updatedAt: now })
+    .set({ status: "ready", optimizeError: "Optimizing did not finish in time; the clip was kept as uploaded.", updatedAt: now })
     .where(and(eq(mediaObjects.status, "processing"), lt(mediaObjects.updatedAt, new Date(now.getTime() - STUCK_AFTER_MS))))
     .returning({ id: mediaObjects.id, conversationId: mediaObjects.conversationId });
   for (const conversationId of new Set(rows.map((r) => r.conversationId))) await startFirstCutIfClipsReady(conversationId);

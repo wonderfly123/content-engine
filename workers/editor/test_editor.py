@@ -26,6 +26,7 @@ from contract import (  # noqa: E402
 )
 
 import epidemic  # noqa: E402
+import prepare  # noqa: E402
 from epidemic import EpidemicClient, EpidemicError, MusicFinder, compact, track_filename  # noqa: E402
 
 SCRIPTS = os.path.join(HERE, "skill", "scripts")
@@ -313,6 +314,91 @@ class RenderTests(unittest.TestCase):
             self.assertEqual([e["file"] for e in edl], ["tall.mp4", "wide.mp4", "tall.mp4"])
             self.assertEqual(edl[1]["cropX"], 0.5)
             self.assertIsNone(edl[0]["cropX"])
+
+
+class WorkingCopyTests(unittest.TestCase):
+    """Heavy camera originals: the agent watches a small copy, render.sh cuts from the original."""
+
+    def setUp(self):
+        self.env = dict(os.environ, PATH=os.path.dirname(FFMPEG) + os.pathsep + os.environ.get("PATH", ""))
+        self.ffprobe = os.path.join(os.path.dirname(FFMPEG), "ffprobe")
+
+    def _video(self, path):
+        j = json.loads(subprocess.check_output([self.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                                "stream=width,height,color_transfer,pix_fmt:format=duration", "-of", "json", path]))
+        return j["streams"][0], float(j["format"]["duration"])
+
+    def test_heavy_rules(self):
+        base = {"width": 1080, "height": 1920, "bitRate": 8_000_000, "hdr": False, "seconds": 10}
+        self.assertFalse(prepare.is_heavy(base))
+        self.assertTrue(prepare.is_heavy(dict(base, width=2160, height=3840)))
+        self.assertTrue(prepare.is_heavy(dict(base, hdr=True)))
+        self.assertTrue(prepare.is_heavy(dict(base, bitRate=40_000_000)))
+        self.assertIn("scale=540:-2:flags=fast_bilinear", " ".join(prepare.copy_args("a", "b", base)))
+        self.assertIn("scale=-2:540:flags=fast_bilinear", " ".join(prepare.copy_args("a", "b", dict(base, width=1920, height=1080))))
+        self.assertIn("tonemap", " ".join(prepare.copy_args("a", "b", dict(base, hdr=True))))
+
+    def test_4k_hdr_clip_gets_a_small_copy_and_is_rendered_from_the_original(self):
+        with tempfile.TemporaryDirectory() as ws:
+            footage, work = os.path.join(ws, "footage"), os.path.join(ws, "work")
+            os.makedirs(footage), os.makedirs(work)
+            heavy, light = os.path.join(footage, "IMG_0001.mov"), os.path.join(footage, "small.mp4")
+            # A 4K, 60 fps, 10-bit HLG clip with sound, like an iPhone original; and a clip that needs no copy.
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=2160x3840:rate=60:duration=4",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-c:v", "libx265", "-preset", "ultrafast",
+                            "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1", "-c:a", "aac", "-shortest",
+                            "-x265-params", "log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc", heavy], check=True, env=self.env)
+            subprocess.run([FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=30:duration=3",
+                            "-pix_fmt", "yuv420p", light], check=True, env=self.env)
+            before = os.path.getsize(heavy)
+
+            cwd = os.getcwd()
+            os.environ["PATH"], old_path = self.env["PATH"], os.environ.get("PATH", "")
+            try:
+                done = prepare.make_working_copies(ws, ["IMG_0001.mov", "small.mp4"], 300)
+            finally:
+                os.environ["PATH"] = old_path
+                os.chdir(cwd)
+            self.assertEqual((done["made"], done["kept"]), (1, 1))
+
+            original = os.path.join(ws, "originals", "IMG_0001.mov")
+            self.assertEqual(os.path.getsize(original), before)          # the original is intact, just moved
+            self.assertFalse(os.path.exists(os.path.join(ws, "originals", "small.mp4")))
+            copy_stream, copy_seconds = self._video(heavy)
+            self.assertEqual((copy_stream["width"], copy_stream["height"], copy_stream["pix_fmt"]), (540, 960, "yuv420p"))
+            self.assertEqual(copy_stream.get("color_transfer"), "bt709")  # tonemapped: no washed-out frames
+            self.assertAlmostEqual(copy_seconds, 4.0, delta=0.1)           # same timing as the original
+            self.assertLess(os.path.getsize(heavy), before)
+
+            # Proof the render reads the original: the working copy is swapped for plain red, and the cut is not red.
+            subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=540x960:rate=30:duration=4",
+                            "-pix_fmt", "yuv420p", heavy], check=True, env=self.env)
+            with open(os.path.join(work, "cut.tsv"), "w") as f:
+                f.write("IMG_0001.mov|0.5|1.5|1\nsmall.mp4|0.5|1|1\n")
+            out = os.path.join(ws, "out", "cut.mp4")
+            os.makedirs(os.path.dirname(out))
+            r = subprocess.run(["bash", os.path.join(SCRIPTS, "render.sh"), footage, os.path.join(work, "cut.tsv"), out],
+                               capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            stream, seconds = self._video(out)
+            self.assertEqual((stream["width"], stream["height"]), (1080, 1920))
+            self.assertAlmostEqual(seconds, 2.5, delta=0.15)
+            pixel = subprocess.check_output([FFMPEG, "-v", "error", "-ss", "0.5", "-i", out, "-frames:v", "1", "-vf", "scale=1:1",
+                                             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], env=self.env)
+            self.assertGreater(pixel[1] + pixel[2], 60, "the first shot is plain red: render.sh read the working copy")
+
+    def test_a_clip_that_cannot_be_read_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as ws:
+            os.makedirs(os.path.join(ws, "footage"))
+            with open(os.path.join(ws, "footage", "broken.mov"), "wb") as f:
+                f.write(b"not a video")
+            os.environ["PATH"], old_path = self.env["PATH"], os.environ.get("PATH", "")
+            try:
+                done = prepare.make_working_copies(ws, ["broken.mov", "missing.mov"], 60)
+            finally:
+                os.environ["PATH"] = old_path
+            self.assertEqual((done["made"], done["kept"]), (0, 2))
+            self.assertTrue(os.path.isfile(os.path.join(ws, "footage", "broken.mov")))
 
 
 class TestProgress(unittest.TestCase):
