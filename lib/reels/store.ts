@@ -29,6 +29,8 @@ export interface ReelCut {
   voiceover?: string;
   /** Draft voice-over script shown while recording. */
   script?: string;
+  /** The ready-to-speak script for the AI voice: written once, then only changed by the reviewer (their edits, or Regenerate script). */
+  voiceScript?: string;
   /** Post caption (the text under the Reel). */
   caption?: string;
   /** Reviewer's note back to the editor. */
@@ -131,14 +133,24 @@ export async function listCuts(brandSlug?: string): Promise<ReelCutView[]> {
   return out;
 }
 
-export async function updateCut(job: string, id: string, change: (cut: ReelCut) => void): Promise<ReelCutView> {
-  const m = await readManifest(job);
-  const cut = m?.cuts.find((c) => c.id === id);
-  if (!m || !cut) throw new Error(`cut ${job}/${id} not found`);
-  change(cut);
-  cut.updatedAt = new Date().toISOString();
-  await writeManifest(m);
-  return { ...cut, job: m.job, brand: m.brand };
+/** One change to a job's manifest at a time, so two saves close together (a script being written, the reviewer typing) cannot overwrite each other. */
+const queues = new Map<string, Promise<unknown>>();
+function inTurn<T>(job: string, work: () => Promise<T>): Promise<T> {
+  const next = (queues.get(job) ?? Promise.resolve()).then(work, work);
+  queues.set(job, next.catch(() => undefined));
+  return next;
+}
+
+export function updateCut(job: string, id: string, change: (cut: ReelCut) => void): Promise<ReelCutView> {
+  return inTurn(job, async () => {
+    const m = await readManifest(job);
+    const cut = m?.cuts.find((c) => c.id === id);
+    if (!m || !cut) throw new Error(`cut ${job}/${id} not found`);
+    change(cut);
+    cut.updatedAt = new Date().toISOString();
+    await writeManifest(m);
+    return { ...cut, job: m.job, brand: m.brand };
+  });
 }
 
 /** Takes a cut out of review. Nothing is erased: the entry moves to the manifest's `deleted` list and its files stay on disk. */

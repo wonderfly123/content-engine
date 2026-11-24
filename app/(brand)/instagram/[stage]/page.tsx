@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { FinalReview } from "@/components/reels/final-review";
 import { ReviewAndEdit } from "@/components/reels/review-and-edit";
 import { Player, Split, keyOf, mediaUrl } from "@/components/reels/shared";
+import { useWriteMissingScripts } from "@/components/reels/use-voice-script";
 import type { ReelCutView } from "@/lib/reels/store";
 
 const STAGES = {
@@ -56,6 +57,7 @@ export default function InstagramPipelinePage() {
     refetchInterval: 15_000,
   });
 
+  useWriteMissingScripts(data ?? [], refresh);
   const cuts = (data ?? []).filter((c) => (stage.show as readonly string[]).includes(c.stage));
   const order = (c: ReelCutView) => stage.show.indexOf(c.stage as never);
   cuts.sort((a, b) => order(a) - order(b) || a.job.localeCompare(b.job) || a.seconds - b.seconds);
