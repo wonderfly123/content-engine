@@ -178,6 +178,21 @@ describe("handOffToEditor", () => {
     expect(sent.previous.manifest.cuts[0].preview.mediaId).toBe(prev.previewMediaId);
   });
 
+  it("sends a revision what the person asked earlier in the conversation, oldest first, without clip notices", async () => {
+    await seedEditorJob(db, a, "Alpha");
+    const earlier = (body: string, minutesAgo: number) =>
+      db.insert(schema.conversationMessages).values({ conversationId: a.conversationId, direction: "in", channel: "app", body, createdAt: new Date(Date.now() - minutesAgo * 60_000) });
+    await earlier("open with him talking", 30);
+    await earlier("Added 3 clips (944 MB)", 25);
+    await earlier("don't make so many choppy cuts", 20);
+    await db.insert(schema.conversationMessages).values({ conversationId: a.conversationId, direction: "out", channel: "app", body: "Here is the cut", createdAt: new Date(Date.now() - 15 * 60_000) });
+    await say("make it 30 seconds");
+    const sent = sentJob();
+    expect(sent.request).toBe("make it 30 seconds");
+    // "Alpha message" is the seeded thread's own first message.
+    expect(sent.history).toEqual(["open with him talking", "don't make so many choppy cuts", "Alpha message"]);
+  });
+
   it("asks for clips first when the thread has none ready", async () => {
     await db.update(schema.mediaObjects).set({ status: "uploading" }).where(eq(schema.mediaObjects.conversationId, a.conversationId));
     expect(await say("make a reel")).toMatchObject({ queued: false, reply: REPLIES.needClips });

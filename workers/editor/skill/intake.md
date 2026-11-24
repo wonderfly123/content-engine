@@ -2,9 +2,11 @@
 
 Decide from `job.json` and the scan. Take anything the `request` or `instructions` say over these defaults.
 
-1. **Project type**: build (default) or event recap, only when the request says event, recap, party, launch,
-   activation day or similar, or the footage plainly shows an event with no build. Build uses `profiles/build.md`; an event recap uses `profiles/event.md`.
-   In short, the differences:
+1. **Project type**: build (default), event recap or training. Event recap only when the request says event,
+   recap, party, launch, activation day or similar, or the footage plainly shows an event with no build. Training
+   when the footage shows sport, a workout, sparring, a class, a game or any physical practice.
+   Build uses `profiles/build.md`; an event recap uses `profiles/event.md`; training uses `profiles/training.md`.
+   Build and event, in short:
 
    | | Build | Event recap |
    |---|---|---|
@@ -19,7 +21,8 @@ Decide from `job.json` and the scan. Take anything the `request` or `instruction
 3. **Lengths**: `reel` = one 15s cut and one 30s cut. `story` = one 15s cut. Other lengths or counts only when
    the request asks (at most 4 cuts, each 5 to 90 s).
 
-4. **Mode**: music-led pacing, silent previews, no voice-over and no music (the person adds a sound in Instagram).
+4. **Mode**: music-led pacing with a track from `music/`, and no added voice-over. Clips where someone talks keep
+   their words (SKILL.md, "Sound from the clips"): the person filmed them to be heard.
 
 5. **Odd clips**: clips `scan.py` flags as horizontal or a different shape are cropped to fill (choose `crop_x` to
    keep the action in frame) when they are strong; otherwise leave them out. Say so in the reply if a strong clip
