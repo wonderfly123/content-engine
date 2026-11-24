@@ -39,10 +39,14 @@ SECRET_NAME = "nekter-editor"
 SKILL_NAME = "cutting-montage-videos"
 SKILL_DIR = "/opt/nekter/skill"
 WHISPER_DIR = "/opt/nekter/whisper"  # scripts/listen.py reads the speech model from here
-TIMEOUT_SEC = 30 * 60
+# One edit, end to end. Sized for a batch of long 4K clips: download, working copies, the agent, uploads.
+# The app waits a little longer before calling a job stuck (EDITOR_STUCK_AFTER_MS in lib/editor/jobs.ts).
+TIMEOUT_SEC = 60 * 60
+# Most of the time working copies may take; clips it does not reach are used as they are.
+WORKING_COPY_MAX_SEC = 20 * 60
 # Largest single message accepted from the agent's CLI (see ClaudeAgentOptions.max_buffer_size).
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
-AGENT_MAX_SEC = 25 * 60
+AGENT_MAX_SEC = 35 * 60
 MAX_TURNS = 100
 MAX_FOOTAGE_BYTES = 40 * 1024**3
 MAX_PUT_BYTES = 5 * 1024**3
@@ -72,7 +76,7 @@ image = (
         f"python -c \"from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='{WHISPER_DIR}')\"",
         "ffmpeg -hide_banner -filters | grep -qw sidechaincompress",
     )
-    .add_local_python_source("contract", "epidemic")
+    .add_local_python_source("contract", "epidemic", "prepare")
     .add_local_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "skill"), SKILL_DIR)
 )
 
@@ -91,6 +95,7 @@ with image.imports():
         write_skill_files,
     )
     from epidemic import TOOL_NAMES as EPIDEMIC_TOOLS, EpidemicClient, EpidemicError, MusicFinder
+    from prepare import make_working_copies
 
 
 class JobError(Exception):
@@ -511,6 +516,11 @@ def run_job(job: Dict[str, Any]) -> None:
             ws = _workspace(tmp, job, files, tracks)
             progress.step(f"Downloading {len(files)} {'clip' if len(files) == 1 else 'clips'}")
             _download_all(job["clips"], files, os.path.join(ws, "footage"))
+            # Heavy camera originals get a small working copy to look at; render.sh still cuts from the originals.
+            if files:
+                progress.step(f"Getting {len(files)} {'clip' if len(files) == 1 else 'clips'} ready to watch")
+                copies = make_working_copies(ws, [name for name, _ in files], WORKING_COPY_MAX_SEC, print)
+                print(f"job {job['jobId']}: {copies['made']} working copies, {copies['kept']} clips used as they are, {copies['seconds']}s")
             got = _download_music(job.get("music") or [], tracks, os.path.join(ws, "music")) if tracks else 0
             _write_brief(ws, job, files)
             # The brand's own Epidemic Sound account, when connected: the agent may bring tracks into music/.

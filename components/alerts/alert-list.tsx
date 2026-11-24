@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 
 export interface SystemAlertDTO {
   id: string;
-  kind: "job_failed" | "channel_disconnected" | "post_failed";
+  kind: "job_failed" | "channel_disconnected" | "post_failed" | "edit_failed" | "clip_not_shrunk";
   brandId: string | null;
   title: string;
   detail: string;
@@ -87,6 +87,15 @@ export function AlertList({ alerts, loading }: AlertListProps) {
 
 function AlertAction({ alert }: { alert: SystemAlertDTO }) {
   switch (alert.kind) {
+    case "edit_failed":
+    case "clip_not_shrunk":
+      return (
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/chats/${alert.entityId}`} aria-label="Open the chat">
+            Open chat
+          </Link>
+        </Button>
+      );
     case "channel_disconnected":
       return (
         <Button asChild size="sm" variant="outline">

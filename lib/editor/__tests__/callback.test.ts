@@ -329,9 +329,9 @@ describe("music on a cut", () => {
 });
 
 describe("stuck jobs", () => {
-  it("fails jobs with no result within 35 minutes and says so in their thread", async () => {
+  it("fails jobs with no result in time and says so in their thread", async () => {
     const now = new Date();
-    const stuck = await runningJob(new Date(now.getTime() - 40 * 60 * 1000));
+    const stuck = await runningJob(new Date(now.getTime() - 70 * 60 * 1000));
     expect(await recoverStuckEditorJobs(now)).toBe(1);
     expect((await job(stuck)).status).toBe("failed");
     expect((await outMessages()).map((m) => m.body)).toEqual([STUCK_MESSAGE]);

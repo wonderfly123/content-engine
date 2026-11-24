@@ -204,7 +204,11 @@ async function earlierRequests(conversationId: string, before: Date, triggerId: 
     .map((r) => r.body.slice(0, MAX_REQUEST_CHARS));
 }
 
-export async function startEditorJob(threadId: string, messageId: string, origin?: string | null): Promise<EditorHandoff> {
+/**
+ * `retry`: the same request again after its job failed (lib/editor/callback.ts). A batch of clips
+ * normally starts a first cut only once; a retry is that same first cut, so it is let through.
+ */
+export async function startEditorJob(threadId: string, messageId: string, origin?: string | null, opts: { retry?: boolean } = {}): Promise<EditorHandoff> {
   const [thread] = await db.select().from(conversations).where(eq(conversations.id, threadId)).limit(1);
   if (!thread || thread.status !== "open") return { queued: false, reason: "no open thread" };
   // A campaign makes its videos from the plan (lib/campaigns/run.ts), never from a loose message.
@@ -223,7 +227,7 @@ export async function startEditorJob(threadId: string, messageId: string, origin
   if (!trigger) return { queued: false, reason: "unknown message" };
   // New clips (the person's "Added N clips" message) start a first cut only; after that, the person asks.
   const byClips = isClipsMessage(trigger.body);
-  if (byClips && (await hasAnyJob(thread.id))) return { queued: false, reason: "clips added to a thread that already has cuts" };
+  if (byClips && !opts.retry && (await hasAnyJob(thread.id))) return { queued: false, reason: "clips added to a thread that already has cuts" };
 
   const clipRows = await db
     .select()

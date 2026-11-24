@@ -1,10 +1,12 @@
 /**
  * System alerts aggregation — Section 6 "Failure surfacing".
  *
- * A virtual feed computed from three sources:
+ * A virtual feed computed from five sources:
  *   1. jobs.status='failed' AND attempts >= 3
  *   2. channel_connections.status IN ('expired','revoked','error')
  *   3. posts.status='failed' AND publish_attempts >= 3
+ *   4. editor_jobs.status='failed' in the last few days (the worker's own reason)
+ *   5. media_objects with an optimize_error in the last few days (kept at full size)
  *
  * Returns one normalised `SystemAlert` shape per row regardless of source so
  * the UI can render a single list and dispatch actions by `kind`.
@@ -12,13 +14,16 @@
  * DB is injectable for tests.
  */
 
-import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db as defaultDb, schema } from "@/lib/db";
 import type { Channel } from "@/lib/db/enums";
 
 export type DbOrTx = typeof defaultDb;
 
-export type SystemAlertKind = "job_failed" | "channel_disconnected" | "post_failed";
+export type SystemAlertKind = "job_failed" | "channel_disconnected" | "post_failed" | "edit_failed" | "clip_not_shrunk";
+
+/** Failed edits and clips that could not be shrunk stay on the list this long. */
+const PIPELINE_ALERT_DAYS = 3;
 
 export interface SystemAlert {
   id: string; // synthetic: `<kind>:<entityId>`
@@ -164,6 +169,70 @@ export async function listSystemAlerts(
         entityId: String(r.id),
         channel: r.channel as Channel,
         at: r.lastErrorAt ?? r.updatedAt ?? new Date(),
+      });
+    }
+  }
+
+  // ---- 4. Edits that failed, with the worker's own reason ---------------------
+  const since = new Date(Date.now() - PIPELINE_ALERT_DAYS * 24 * 60 * 60 * 1000);
+  {
+    const conds = [eq(schema.editorJobs.status, "failed"), gte(schema.editorJobs.updatedAt, since)];
+    if (scopedBrand) conds.push(eq(schema.editorJobs.brandId, scopedBrand));
+    if (brandIds) conds.push(inArray(schema.editorJobs.brandId, brandIds));
+    const rows = await db
+      .select({
+        id: schema.editorJobs.id,
+        brandId: schema.editorJobs.brandId,
+        conversationId: schema.editorJobs.conversationId,
+        editError: schema.editorJobs.error,
+        finishedAt: schema.editorJobs.finishedAt,
+        updatedAt: schema.editorJobs.updatedAt,
+      })
+      .from(schema.editorJobs)
+      .where(and(...conds))
+      .orderBy(desc(schema.editorJobs.updatedAt))
+      .limit(limit);
+    for (const r of rows) {
+      out.push({
+        id: `edit_failed:${r.id}`,
+        kind: "edit_failed",
+        brandId: r.brandId,
+        title: "An edit failed",
+        detail: r.editError ?? "No reason was recorded.",
+        // The chat it happened in, so the alert can link there.
+        entityId: String(r.conversationId),
+        at: r.finishedAt ?? r.updatedAt ?? new Date(),
+      });
+    }
+  }
+
+  // ---- 5. Clips that could not be shrunk (still usable, at full size) ---------
+  {
+    const conds = [isNotNull(schema.mediaObjects.optimizeError), isNull(schema.mediaObjects.deletedAt), gte(schema.mediaObjects.updatedAt, since)];
+    if (scopedBrand) conds.push(eq(schema.mediaObjects.brandId, scopedBrand));
+    if (brandIds) conds.push(inArray(schema.mediaObjects.brandId, brandIds));
+    const rows = await db
+      .select({
+        id: schema.mediaObjects.id,
+        brandId: schema.mediaObjects.brandId,
+        conversationId: schema.mediaObjects.conversationId,
+        filename: schema.mediaObjects.filename,
+        optimizeError: schema.mediaObjects.optimizeError,
+        updatedAt: schema.mediaObjects.updatedAt,
+      })
+      .from(schema.mediaObjects)
+      .where(and(...conds))
+      .orderBy(desc(schema.mediaObjects.updatedAt))
+      .limit(limit);
+    for (const r of rows) {
+      out.push({
+        id: `clip_not_shrunk:${r.id}`,
+        kind: "clip_not_shrunk",
+        brandId: r.brandId,
+        title: `${r.filename} was kept at full size`,
+        detail: r.optimizeError ?? "No reason was recorded.",
+        entityId: String(r.conversationId ?? r.id),
+        at: r.updatedAt ?? new Date(),
       });
     }
   }

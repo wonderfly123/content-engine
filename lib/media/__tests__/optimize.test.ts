@@ -99,8 +99,8 @@ describe("complete hands the clip to the optimizer", () => {
     const job = JSON.parse(init.body as string);
     expect(Object.keys(job).sort()).toEqual(["callbackUrl", "jobId", "mediaId", "outputUrl", "sourceUrl"]);
     expect(job).toMatchObject({ jobId: clip.optimizeJobId, mediaId: clip.id, callbackUrl: "http://localhost/api/media/optimized" });
-    expect(r2.presignGet).toHaveBeenCalledWith(clip.r2Key, 7200);
-    expect(r2.presignPut).toHaveBeenCalledWith(`ws/${a.workspaceId}/conv/${a.conversationId}/raw/${clip.id}.mp4`, 7200);
+    expect(r2.presignGet).toHaveBeenCalledWith(clip.r2Key, 10800);
+    expect(r2.presignPut).toHaveBeenCalledWith(`ws/${a.workspaceId}/conv/${a.conversationId}/raw/${clip.id}.mp4`, 10800);
   });
 
   it("uses APP_URL for the callback when set", async () => {
@@ -238,7 +238,7 @@ describe("the worker's callback", () => {
     expect(await recoverStuckOptimizing()).toBe(1);
     const clip = await row(a.mediaId);
     expect(clip).toMatchObject({ status: "ready", r2Key: incomingKey() });
-    expect(clip.optimizeError).toContain("2 hours");
+    expect(clip.optimizeError).toContain("did not finish in time");
     await callback(okResult());
     expect(await row(a.mediaId)).toMatchObject({ status: "ready", r2Key: incomingKey(), sizeBytes: 2000 });
     expect(r2.deleteObject).toHaveBeenCalledWith(outputKey());
@@ -246,11 +246,11 @@ describe("the worker's callback", () => {
 });
 
 describe("stuck clips", () => {
-  it("only gives up after 2 hours", async () => {
+  it("only gives up after two and a half hours", async () => {
     await processing(new Date(Date.now() - 60 * 60 * 1000));
     expect(await recoverStuckOptimizing()).toBe(0);
     expect((await row(a.mediaId)).status).toBe("processing");
-    expect(await recoverStuckOptimizing(new Date(Date.now() + 61 * 60 * 1000 + 1000))).toBe(1);
+    expect(await recoverStuckOptimizing(new Date(Date.now() + 91 * 60 * 1000))).toBe(1);
     expect((await row(a.mediaId)).status).toBe("ready");
   });
 });

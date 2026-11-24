@@ -35,7 +35,10 @@ from typing import Any, Dict, Optional
 import modal
 
 SECRET_NAME = "nekter-optimize"
-TIMEOUT_SEC = 30 * 60
+# One clip, end to end. A 489 MB 4K clip took 12 minutes to encode and a 1 GB one needs about 25, so the
+# old 30 minutes cut off anything over roughly 800 MB. The app gives up a little later (STUCK_AFTER_MS in
+# lib/media/optimize.ts), and the links it hands out outlive both (OPTIMIZE_LINK_SECONDS).
+TIMEOUT_SEC = 120 * 60
 MAX_PUT_BYTES = 5 * 1024**3  # R2's limit for a single PUT
 CHUNK = 8 * 1024 * 1024
 

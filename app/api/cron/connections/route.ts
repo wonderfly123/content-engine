@@ -10,11 +10,11 @@ export const maxDuration = 60;
 export const GET = withCronAuth(async () => {
   const results = await checkConnections();
   const keys = await checkCredentials();
-  // Clips the optimizer never answered for within 2 hours: kept as uploaded.
+  // Clips the optimizer never answered for in time: kept as uploaded.
   const clipsRecovered = await recoverStuckOptimizing();
   // Camera originals whose small copy took over more than an hour ago: deleted.
   const originalsDeleted = await deleteReplacedOriginals();
-  // Editor jobs with no result within 35 minutes: failed, with a message in their thread.
+  // Editor jobs with no result in time: failed, with a message in their thread.
   const editorJobsStopped = await recoverStuckEditorJobs();
   return {
     checked: results.length,

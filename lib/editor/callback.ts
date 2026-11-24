@@ -18,10 +18,12 @@ import { headObject } from "@/lib/storage/r2";
 import { getJob, type EditorJobRow } from "./jobs";
 import { callbackSchema, type EditorCallback, type EditorManifest, type EditorUsage, type WorkerManifest, type WorkerNewTrack } from "./manifest";
 import { lastInbound, postEditorMessage, textMember, watchLink } from "./notify";
+import { startEditorJob } from "./submit";
 
 const { conversations, editorJobs, mediaObjects } = schema;
 
 export const FAILED_MESSAGE = "Sorry, I couldn't finish this edit. Send your request again to retry.";
+export const RETRY_MESSAGE = "That edit hit a snag, so I'm trying it once more. Nothing for you to do.";
 const DEFAULT_REPLY = "Here's your cut. Tell me what to change, or approve it.";
 
 export interface CallbackOutcome {
@@ -51,8 +53,30 @@ async function fail(job: EditorJobRow, error: string, usage: EditorUsage | null 
     .returning();
   if (!row) return false;
   const [thread] = await db.select().from(conversations).where(eq(conversations.id, job.conversationId)).limit(1);
-  if (thread) await postEditorMessage(thread, FAILED_MESSAGE);
+  if (!thread) return true;
+  // A crashed edit is tried once more by itself before anyone is asked to send it again.
+  if (await retryOnce(row)) await postEditorMessage(thread, RETRY_MESSAGE);
+  else await postEditorMessage(thread, FAILED_MESSAGE);
   return true;
+}
+
+/**
+ * Starts the failed job's request again, the first time that request fails. Not for a campaign's
+ * plan items (lib/campaigns/run.ts makes those), and never a second time for the same request.
+ */
+async function retryOnce(job: EditorJobRow): Promise<boolean> {
+  if (!job.triggerMessageId || job.campaignItemId) return false;
+  const failures = await db
+    .select({ id: editorJobs.id })
+    .from(editorJobs)
+    .where(and(eq(editorJobs.conversationId, job.conversationId), eq(editorJobs.triggerMessageId, job.triggerMessageId), eq(editorJobs.status, "failed")));
+  if (failures.length !== 1) return false;
+  try {
+    return (await startEditorJob(job.conversationId, job.triggerMessageId, undefined, { retry: true })).queued;
+  } catch (err) {
+    console.warn(`[editor] could not retry job ${job.id}: ${(err as Error).message}`);
+    return false;
+  }
 }
 
 /**

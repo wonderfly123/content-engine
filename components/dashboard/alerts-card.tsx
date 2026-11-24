@@ -39,8 +39,12 @@ function iconFor(kind: SystemAlertDTO["kind"]) {
   }
 }
 
-function hrefFor(kind: SystemAlertDTO["kind"]): string | null {
+function hrefFor(kind: SystemAlertDTO["kind"], entityId?: string): string | null {
   switch (kind) {
+    // Failed edits and unshrunk clips carry their chat's id.
+    case "edit_failed":
+    case "clip_not_shrunk":
+      return entityId ? `/chats/${entityId}` : null;
     case "channel_disconnected":
       return "/settings?tab=integrations";
     case "post_failed":
@@ -84,7 +88,7 @@ export function AlertsCard({ brandId }: { brandId: string }) {
           <ul className="divide-y" role="list">
             {data.slice(0, MAX_ALERTS).map((a) => {
               const Icon = iconFor(a.kind);
-              const href = hrefFor(a.kind);
+              const href = hrefFor(a.kind, a.entityId);
               const body = (
                 <div className="flex items-start gap-3 py-2">
                   <Icon
