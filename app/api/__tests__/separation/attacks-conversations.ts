@@ -132,6 +132,23 @@ export const routes: RouteAttack[] = [
     build: (v) => ({ params: { id: v.conversationId }, body: { jobId: v.editorJobId! } }),
   },
 
+  // ---- a cut finished on the phone: its file takes the place of the editor's preview
+  {
+    route: "app/api/conversations/[id]/final/route.ts",
+    method: "POST",
+    name: STORAGE_OFF,
+    build: (v) => ({ params: { id: v.conversationId }, body: { jobId: v.editorJobId!, cutKey: "cut-1", size: 1000 } }),
+  },
+  {
+    route: "app/api/conversations/[id]/final/route.ts",
+    method: "PATCH",
+    name: STORAGE_OFF,
+    build: (v) => ({
+      params: { id: v.conversationId },
+      body: { jobId: v.editorJobId!, cutKey: "cut-1", size: 1000, seconds: 12, shots: [{ mediaId: v.mediaId, in: 0, dur: 2, speed: 1, cropX: null }] },
+    }),
+  },
+
   // ---- campaigns: the plan pinned in a campaign chat (a reel chat answers null / 409 to its owner)
   { route: "app/api/conversations/[id]/campaign/route.ts", method: "GET", build: (v) => ({ params: { id: v.conversationId } }) },
   { route: "app/api/conversations/[id]/campaign/route.ts", method: "POST", name: "make their next video", build: (v) => ({ params: { id: v.conversationId }, body: { action: "next" } }) },

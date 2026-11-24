@@ -106,6 +106,36 @@ enum LocalCut {
         return Built(asset: composition, video: video)
     }
 
+    /// Writes the rebuilt cut to a file: 1080x1920 HEVC, ready to post.
+    static func export(_ built: Built, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        // The 1080p preset keeps the size of a vertical frame on current systems; the check below
+        // falls back to the full-quality preset if it ever comes out smaller.
+        for preset in [AVAssetExportPresetHEVC1920x1080, AVAssetExportPresetHEVCHighestQuality] {
+            guard let session = AVAssetExportSession(asset: built.asset, presetName: preset) else { continue }
+            session.videoComposition = built.video
+            session.shouldOptimizeForNetworkUse = true
+            let out = FileManager.default.temporaryDirectory.appendingPathComponent("final-\(UUID().uuidString).mp4")
+            let watcher = Task {
+                for await state in session.states(updateInterval: 0.3) {
+                    if case .exporting(let progress) = state { onProgress(progress.fractionCompleted) }
+                }
+            }
+            defer { watcher.cancel() }
+            do {
+                try await session.export(to: out, as: .mp4)
+            } catch {
+                try? FileManager.default.removeItem(at: out)
+                throw UploadError(message: "The video could not be made on this phone. \(error.localizedDescription)")
+            }
+            if let track = try? await AVURLAsset(url: out).loadTracks(withMediaType: .video).first,
+               let made = try? await track.load(.naturalSize), Int(made.width) == Int(size.width), Int(made.height) == Int(size.height) {
+                return out
+            }
+            try? FileManager.default.removeItem(at: out)
+        }
+        throw UploadError(message: "The video did not come out at 1080 by 1920.")
+    }
+
     /// Upright, filling 1080x1920. A clip that is not 9:16 is cropped at `cropX` (0 = left, 1 = right), else centred.
     private static func fill(natural: CGSize, transform: CGAffineTransform, cropX: Double?) -> CGAffineTransform {
         let upright = CGRect(origin: .zero, size: natural).applying(transform)
