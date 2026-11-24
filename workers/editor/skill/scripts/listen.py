@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """usage: listen.py <footage_dir> <out_dir>
 Listens to every clip: which ones have someone talking, what they say and when. Writes <out_dir>/speech.tsv
-(clip, start, end, text; one line per spoken phrase) and prints a summary per clip. A clip with no line has
+(clip, start, end, text; one line per spoken phrase), <out_dir>/words.tsv (clip, start, end, word; one line per
+word, which speechcheck.py uses to make sure no shot cuts into a word) and prints a summary per clip. A clip with no line has
 no speech worth keeping (it may still have room sound). Shortest clips first; stops starting new clips after
 LIMIT_SEC and lists the ones it did not reach. Never fails the job: a clip it cannot read is skipped."""
 import json, os, shutil, subprocess, sys, time
@@ -45,6 +46,9 @@ def main(root, out):
     tsv = os.path.join(out, "speech.tsv")
     with open(tsv, "w") as fh:
         fh.write("clip\tstart\tend\ttext\n")
+    words_tsv = os.path.join(out, "words.tsv")
+    with open(words_tsv, "w") as fh:
+        fh.write("clip\tstart\tend\tword\n")
     try:
         from faster_whisper import WhisperModel
         local = os.path.isdir(MODEL_DIR)
@@ -64,8 +68,12 @@ def main(root, out):
             continue
         try:
             segments, _ = model.transcribe(samples(os.path.join(root, f)), beam_size=1, vad_filter=True,
-                                           vad_parameters={"min_silence_duration_ms": 400}, condition_on_previous_text=False)
-            lines = [(s.start, s.end, t) for s in segments if (t := keep(s))]
+                                           vad_parameters={"min_silence_duration_ms": 400}, condition_on_previous_text=False,
+                                           word_timestamps=True)
+            kept = [(s, t) for s in segments if (t := keep(s))]
+            lines = [(s.start, s.end, t) for s, t in kept]
+            words = [(w.start, w.end, w.word.strip().replace("\t", " ")) for s, _ in kept for w in (getattr(s, "words", None) or [])
+                     if w.word.strip() and w.end > w.start]
         except Exception as err:
             print(f"{f} {dur:.0f}s: could not be listened to ({type(err).__name__})")
             continue
@@ -76,6 +84,9 @@ def main(root, out):
         talking += 1
         with open(tsv, "a") as fh:
             for s, e, t in lines:
+                fh.write(f"{f}\t{s:.2f}\t{e:.2f}\t{t}\n")
+        with open(words_tsv, "a") as fh:
+            for s, e, t in words:
                 fh.write(f"{f}\t{s:.2f}\t{e:.2f}\t{t}\n")
         kind = "TALKING" if spoken >= max(2.0, 0.3 * dur) else "some speech"
         print(f"{f} {dur:.0f}s: {kind}, {spoken:.0f}s spoken")

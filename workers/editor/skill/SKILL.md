@@ -66,16 +66,25 @@ Clips are only ever read; never modify or delete anything in `footage/`.
    re-times the same shots onto the beat and prints `audio_start` and `video_seconds`. From here on use the
    `.beat.tsv` as the cut's EDL and `video_seconds` as its `seconds`. `auto` starts at the loudest stretch (the
    chorus or drop); give a number instead to start elsewhere.
-6. **Render**: `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4` (the `.beat.tsv` with music).
+6. **Render**: first, when any shot keeps its sound, `python3 $SK/speechcheck.py work/edl/<id>.tsv work/listen`
+   (the `.beat.tsv` with music). It must end in `PASS`. A `FIX` line means a shot cuts into a word or stops
+   mid-sentence, and gives the corrected EDL line: put that line in the EDL, fit again, and run it again. Never
+   render a cut it fails.
+   Then `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4` (the `.beat.tsv` with music).
    With music, then `bash $SK/mix.sh out/previews/<id>.mp4 music/<file> <audio_start>` (sets loudness and a short
-   fade out). Read
+   fade out). After every `mix.sh`, `python3 $SK/soundcheck.py out/previews/<id>.mp4` measures the result: how
+   loud the cut is, that the music sits well under anyone speaking, and that the music fades out at the end. It
+   must end in `PASS`; a `FIX` line says what to run instead (for music too loud under a voice, `mix.sh` again
+   with the number it gives as a fourth argument). If it still fails after two tries, keep the cut and say so in
+   your one-line finish. Read
    `out/previews/<id>.check.jpg`: every shot upright, filling the frame, not black. Then read every
    `out/previews/<id>.review-N.jpg`: five frames across each shot, one shot per row. In every row something must
    visibly happen from the first frame to the last (under the profile: the hit, the rep, the pour, the reaction);
    a row where the frames look alike, or people only walk or wait, is a wasted shot: replace it from another
    `moments.py` window, fit and render again. Do 15s first, then 30s.
    When a shot keeps its sound, `render.sh` says so and `mix.sh` lowers the music under it by itself. With no
-   music but a shot that keeps its sound: `bash $SK/mix.sh out/previews/<id>.mp4 none 0`.
+   music but a shot that keeps its sound: `bash $SK/mix.sh out/previews/<id>.mp4 none 0`, then `soundcheck.py`
+   as above.
 7. **Words**: for each cut, ~10 `hookOptions` per `hooks.md` and a `caption` per `captions.md`. Suggest `coverAt`:
    seconds into the cut of the best cover frame (the finished result, no motion blur).
 8. **Review**: for each cut, ask the `reviewer` subagent to check it (one call per cut). Tell it the cut's `id`
@@ -93,6 +102,8 @@ A shot is silent under the music unless its EDL line ends in `|1`. Keep a shot's
   "I can't hear her", "keep what he says"). A talking clip that is used is used for its words: take whole
   phrases by the times in `work/listen/speech.tsv` (start 0.2s before the first word, end 0.3s after the last),
   never the middle of a sentence, and let the shot run as long as the phrase needs (3 to 8 seconds is normal).
+  `speechcheck.py` checks this word by word before every render: a shot that clips a word or stops mid-sentence
+  is not a judgement call.
   `fit.py` and `beatfit.py` leave these shots' words whole and do not count them towards pacing.
 - The person asks for the real sound of something (the hits, the crowd).
 Use the strongest one or two phrases, not everything said. On a first cut, a `TALKING` clip opens the cut or
