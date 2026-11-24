@@ -40,6 +40,8 @@ SKILL_NAME = "cutting-montage-videos"
 SKILL_DIR = "/opt/nekter/skill"
 WHISPER_DIR = "/opt/nekter/whisper"  # scripts/listen.py reads the speech model from here
 TIMEOUT_SEC = 30 * 60
+# Largest single message accepted from the agent's CLI (see ClaudeAgentOptions.max_buffer_size).
+MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 AGENT_MAX_SEC = 25 * 60
 MAX_TURNS = 100
 MAX_FOOTAGE_BYTES = 40 * 1024**3
@@ -431,6 +433,9 @@ async def _run_agent(ws: str, tmp: str, prompt: str, model: str, api_key: str, b
         max_turns=MAX_TURNS,
         env=_agent_env(api_key, tmp),
         stderr=lambda _line: None,         # never echo CLI output into logs
+        # One message from the CLI carries a whole tool result. A frame read from a 4K camera original
+        # is a few MB as base64, and the default limit (1 MB) ends the run with CLIJSONDecodeError.
+        max_buffer_size=MAX_MESSAGE_BYTES,
     )
     err = None
     tokens: Dict[str, int] = state["tokens"]
