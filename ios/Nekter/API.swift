@@ -131,6 +131,25 @@ struct API: Sendable {
         let _: Ignored = try await send("DELETE", "api/conversations/\(id)/schedule")
     }
 
+    /// Where to send a cut finished on this phone.
+    func startFinal(_ id: String, jobID: String, cutKey: String, size: Int) async throws -> URL {
+        struct Link: Decodable { let uploadUrl: String }
+        let res: Link = try await send("POST", "api/conversations/\(id)/final", body: ["jobId": jobID, "cutKey": cutKey, "size": size])
+        guard let url = URL(string: res.uploadUrl) else { throw UploadError(message: "The server gave no place to send the video.") }
+        return url
+    }
+
+    /// The file is up: from now on the chat plays, approves and posts this version.
+    func completeFinal(_ id: String, jobID: String, cutKey: String, size: Int, seconds: Double, shots: [Cut.Shot]) async throws {
+        let list: [[String: Any]] = shots.map { s in
+            var shot: [String: Any] = ["mediaId": s.mediaId, "in": s.in, "dur": s.dur, "speed": s.speed, "cropX": s.cropX.map { $0 as Any } ?? NSNull()]
+            if s.sound == true { shot["sound"] = true }
+            return shot
+        }
+        let body: [String: Any] = ["jobId": jobID, "cutKey": cutKey, "size": size, "seconds": seconds, "shots": list]
+        let _: Ignored = try await send("PATCH", "api/conversations/\(id)/final", body: body)
+    }
+
     /// A ten-minute link to play a video. The route answers with a redirect; the link is where it points.
     func mediaURL(_ mediaID: String) async throws -> URL {
         var req = URLRequest(url: Config.appBase.appendingPathComponent("api/media/\(mediaID)"))
@@ -147,6 +166,8 @@ struct API: Sendable {
         if !query.isEmpty { parts.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var req = URLRequest(url: parts.url!, timeoutInterval: timeout)
         req.httpMethod = method
+        // Always the server's current answer: a remembered copy would hide new messages and cuts.
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         guard let token = await token() else { throw UploadError(message: "Please sign in again.") }
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {

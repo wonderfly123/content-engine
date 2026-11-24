@@ -155,7 +155,7 @@ private struct MessageRow: View {
                 .background(message.mine ? AnyShapeStyle(Color.orange.opacity(0.2)) : AnyShapeStyle(.quaternary), in: RoundedRectangle(cornerRadius: 18))
                 .textSelection(.enabled)
             if let job = message.editor {
-                ForEach(job.cuts) { CutCard(cut: $0, api: api) }
+                ForEach(job.cuts) { CutCard(cut: $0, api: api, threadID: threadID, jobID: job.id, reload: { act {} }) }
                 if job.approvable || (job.status == "approved" && schedule?.stage != nil) {
                     CutActions(threadID: threadID, schedule: schedule, approvable: job.approvable, api: api, act: act)
                 }
@@ -169,6 +169,11 @@ private struct MessageRow: View {
 private struct CutCard: View {
     let cut: Cut
     let api: API
+    let threadID: String
+    let jobID: String
+    let reload: () -> Void
+    /// "Making the video 40%" while the phone's version is exported and sent; nil otherwise.
+    @State private var sending: String?
     @State private var player: AVPlayer?
     @State private var loading = false
     @State private var failed: String?
@@ -205,6 +210,19 @@ private struct CutCard: View {
                 }
                 .buttonStyle(.bordered)
             }
+            if edited || fromOriginals {
+                Button {
+                    useThisVersion()
+                } label: {
+                    HStack(spacing: 6) {
+                        if sending != nil { ProgressView() }
+                        Text(sending ?? "Use this version").font(.subheadline.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(sending != nil)
+            }
             if let music = cut.music { Label(music.title, systemImage: "music.note").font(.caption).foregroundStyle(.secondary) }
             if !cut.caption.isEmpty { Text(cut.caption).font(.footnote).textSelection(.enabled) }
             if !cut.hookOptions.isEmpty {
@@ -224,6 +242,54 @@ private struct CutCard: View {
                 edited = CutEdits.shots(for: cut) != nil
                 player = nil
                 fromOriginals = false
+            }
+        }
+    }
+
+    /// Makes the cut on the phone (with any edits), sends the file, and makes it the one the chat posts.
+    private func useThisVersion() {
+        player?.pause()
+        failed = nil
+        sending = "Getting the sound"
+        Task {
+            defer { sending = nil }
+            var leftovers: [URL] = []
+            defer { leftovers.forEach { try? FileManager.default.removeItem(at: $0) } }
+            do {
+                // The sound comes from the editor's own preview; a local copy keeps the export off the network.
+                let (downloaded, _) = try await URLSession.shared.download(from: try await api.mediaURL(cut.previewId))
+                let sound = FileManager.default.temporaryDirectory.appendingPathComponent("sound-\(UUID().uuidString).mp4")
+                try FileManager.default.moveItem(at: downloaded, to: sound)
+                leftovers.append(sound)
+
+                let shots = CutEdits.shots(for: cut) ?? cut.shots ?? []
+                sending = "Making the video"
+                let built = try await LocalCut.build(shots: shots, soundFrom: sound, cloud: { try await api.mediaURL($0) })
+                let file = try await LocalCut.export(built) { fraction in
+                    Task { @MainActor in if sending != nil { sending = "Making the video \(Int(fraction * 100))%" } }
+                }
+                leftovers.append(file)
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                let seconds = try await built.asset.load(.duration).seconds
+
+                sending = "Sending it"
+                var put = URLRequest(url: try await api.startFinal(threadID, jobID: jobID, cutKey: cut.key, size: size))
+                put.httpMethod = "PUT"
+                put.setValue("video/mp4", forHTTPHeaderField: "Content-Type")
+                let (_, answer) = try await URLSession.shared.upload(for: put, fromFile: file)
+                guard let http = answer as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw UploadError(message: "The video could not be sent.")
+                }
+                try await api.completeFinal(threadID, jobID: jobID, cutKey: cut.key, size: size, seconds: seconds, shots: shots)
+
+                // The server's cut is now this one: nothing left to keep on the phone.
+                CutEdits.clear(cut)
+                edited = false
+                fromOriginals = false
+                player = nil
+                reload()
+            } catch {
+                failed = error.localizedDescription
             }
         }
     }
