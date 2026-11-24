@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessFromClaims, decideAccess, hostRedirect, initialAccess, type Access } from "../access";
+import { accessFromClaims, bearerFrom, decideAccess, hostRedirect, initialAccess, type Access } from "../access";
 
 const user = (over: Partial<Access> = {}): Access => ({ userId: "u1", email: "a@b.co", role: "user", status: "active", ...over });
 
@@ -103,5 +103,17 @@ describe("hostRedirect", () => {
   it("leaves other hosts alone", () => {
     expect(go("content-engine-tau-swart.vercel.app", "/login")).toBeNull();
     expect(go("localhost:3000", "/")).toBeNull();
+  });
+});
+
+describe("bearerFrom", () => {
+  it("reads a JWT from an Authorization header, and nothing else", () => {
+    expect(bearerFrom("Bearer aaa.bbb.ccc")).toBe("aaa.bbb.ccc");
+    expect(bearerFrom("  Bearer a-_1.b-_2.c-_3 ")).toBe("a-_1.b-_2.c-_3");
+    expect(bearerFrom(null)).toBeNull();
+    expect(bearerFrom("")).toBeNull();
+    expect(bearerFrom("Basic dXNlcjpwYXNz")).toBeNull();
+    expect(bearerFrom("Bearer not-a-jwt")).toBeNull();
+    expect(bearerFrom("Bearer aaa.bbb.ccc extra")).toBeNull();
   });
 });

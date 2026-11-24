@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { accessFromClaims, decideAccess, hostRedirect } from "@/lib/auth/access";
+import { accessFromClaims, bearerFrom, decideAccess, hostRedirect } from "@/lib/auth/access";
 import { SITE } from "@/lib/site";
 import { supabaseEnv } from "@/lib/supabase/env";
 
@@ -84,7 +84,9 @@ export async function middleware(req: NextRequest) {
     },
   });
   // Do not run code between createServerClient and getClaims (Supabase guidance).
-  const { data } = await supabase.auth.getClaims();
+  // The native app sends its access token instead of cookies.
+  const bearer = bearerFrom(req.headers.get("authorization"));
+  const { data } = bearer ? await supabase.auth.getClaims(bearer) : await supabase.auth.getClaims();
   const access = accessFromClaims(data?.claims as Record<string, unknown> | undefined);
 
   const decision = decideAccess(req.nextUrl.pathname, access);
