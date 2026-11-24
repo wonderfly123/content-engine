@@ -86,7 +86,8 @@ export async function middleware(req: NextRequest) {
   // Do not run code between createServerClient and getClaims (Supabase guidance).
   // The native app sends its access token instead of cookies.
   const bearer = bearerFrom(req.headers.get("authorization"));
-  const { data } = bearer ? await supabase.auth.getClaims(bearer) : await supabase.auth.getClaims();
+  // A malformed token makes getClaims throw; that is simply "not signed in", never a server error.
+  const { data } = bearer ? await supabase.auth.getClaims(bearer).catch(() => ({ data: null })) : await supabase.auth.getClaims();
   const access = accessFromClaims(data?.claims as Record<string, unknown> | undefined);
 
   const decision = decideAccess(req.nextUrl.pathname, access);
