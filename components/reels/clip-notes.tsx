@@ -99,12 +99,12 @@ export function ClipNotes({ cut, videoRef, notes, onChange, disabled }: ClipNote
           <MapPin className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />Clip playing now
         </Button>
       </div>
-      <div className="flex gap-1 overflow-x-auto pb-1" role="listbox" aria-label="Clips in this cut">
+      <div className="flex gap-1.5 overflow-x-auto p-1" role="listbox" aria-label="Clips in this cut">
         {clips.map((c, i) => {
           const count = notes.filter((n) => n.clip === i + 1).length;
           return (
             <button key={i} type="button" role="option" aria-selected={selected === i} aria-label={`Clip ${i + 1}${count ? `, ${count} note${count > 1 ? "s" : ""}` : ""}`} disabled={disabled} onClick={() => select(i)}
-              className={`relative aspect-[9/16] w-11 shrink-0 overflow-hidden rounded-md border-2 bg-muted ${selected === i ? "border-primary" : playing === i ? "border-foreground/40" : "border-transparent"}`}>
+              className={`relative aspect-[9/16] w-11 shrink-0 overflow-hidden rounded-md border-2 bg-muted ${selected === i ? "border-orange-500 ring-2 ring-orange-500/50" : playing === i ? "border-foreground/40" : "border-transparent opacity-80"}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={thumb(c)} alt="" loading="lazy" className="h-full w-full object-cover" />
               <span className="absolute inset-x-0 bottom-0 bg-black/60 text-center text-[10px] leading-4 text-white tabular-nums">{i + 1}</span>

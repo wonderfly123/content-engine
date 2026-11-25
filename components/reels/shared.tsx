@@ -19,7 +19,8 @@ export const patch = (body: Record<string, unknown>) =>
 export function Split({ video, children }: { video: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="grid gap-6 md:grid-cols-[minmax(0,19rem)_minmax(0,1fr)]">
-      <div className="flex min-w-0 flex-col gap-3">{video}</div>
+      {/* The video stays in view while the right side scrolls, so a clip picked further down can still be watched. */}
+      <div className="flex min-w-0 flex-col gap-3 md:sticky md:top-0 md:self-start">{video}</div>
       <div className="flex min-w-0 flex-col gap-3">{children}</div>
     </div>
   );

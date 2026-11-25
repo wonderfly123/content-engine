@@ -106,9 +106,11 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
             <Button variant="outline" disabled={takeLocksEdit || busy} onClick={() => { videoRef.current?.pause(); setEditingClips(true); }}>
               <Maximize2 className="mr-2 h-4 w-4" aria-hidden="true" />Edit clips
             </Button>
-            <p className="text-xs text-muted-foreground">
-              {takeLocksEdit ? "Your voice-over is timed to this cut. Redo the take to edit the clips." : cut.original ? "This is your edit of the cut." : "Opens the full-screen editor: trim, extend, move, split or delete each clip."}
-            </p>
+            {(takeLocksEdit || cut.original) && (
+              <p className="text-xs text-muted-foreground">
+                {takeLocksEdit ? "Your voice-over is timed to this cut. Redo the take to edit the clips." : "This is your edit of the cut."}
+              </p>
+            )}
             <ClipEditor cut={cut} open={editingClips} onClose={() => setEditingClips(false)} onSaved={onDone} />
           </>
         ) : (
