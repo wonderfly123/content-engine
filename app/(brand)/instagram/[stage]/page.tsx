@@ -29,7 +29,7 @@ const modeLabel = (cut: ReelCutView) => (cut.mode === "voice" ? "voice-over" : "
 /** What the editor is working on for a cut that was accepted and handed over. */
 function editorStatus(cut: ReelCutView): string {
   const pinned = cut.clipNotes?.length ?? 0;
-  if (cut.note || pinned) return `Changes requested: ${[cut.note, pinned && `${pinned} clip note${pinned > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}`;
+  if (cut.note || pinned) return `Changes requested: ${[cut.note?.replace(/\n/g, " · "), pinned && `${pinned} clip note${pinned > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}`;
   const todo = [
     cut.edits && "your edit",
     cut.voiceover && "the voice-over mix and captions",

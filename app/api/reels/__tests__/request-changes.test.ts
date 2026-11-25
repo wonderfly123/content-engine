@@ -63,12 +63,34 @@ describe("sending a cut back", () => {
     expect(cut.clipNotes).toHaveLength(1);
   });
 
-  it("replaces earlier clip notes when sent back again with only an overall note", async () => {
+  it("adds a second send-back to the notes already waiting, without keeping the same note twice", async () => {
     await seed({ edl: "edl/a.tsv" });
-    await sendBack({ clipNotes: [{ clip: 1, from: 0, to: 3, text: "x" }] });
+    await sendBack({ note: "different song", clipNotes: [{ clip: 2, from: 3, to: 5, text: "x" }] });
+    await sendBack({ note: "slower start", clipNotes: [{ clip: 1, from: 0, to: 3, text: "y" }, { clip: 2, from: 3, to: 5, text: "x" }] });
     await sendBack({ note: "different song" });
     const cut = await saved();
-    expect(cut.note).toBe("different song");
+    expect(cut.note).toBe("different song\nslower start");
+    expect(cut.clipNotes?.map((n) => [n.clip, n.text])).toEqual([[1, "y"], [2, "x"]]);
+  });
+
+  it("starts a fresh list once the earlier changes were handled", async () => {
+    await seed({ edl: "edl/a.tsv", note: "old", changesRequested: false });
+    await sendBack({ note: "new" });
+    expect((await saved()).note).toBe("new");
+  });
+
+  it("takes one waiting note back, and the cut stops waiting when none are left", async () => {
+    await seed({ edl: "edl/a.tsv" });
+    await sendBack({ note: "different song", clipNotes: [{ clip: 1, from: 0, to: 3, text: "y" }] });
+    await sendBack({ note: "slower start" });
+    const remove = (r: Record<string, unknown>) => sendBack({ action: "remove_note", remove: r });
+    expect((await remove({ kind: "overall", index: 0, text: "slower start" })).status).toBe(400);
+    expect((await remove({ kind: "overall", index: 0, text: "different song" })).status).toBe(200);
+    expect(await saved()).toMatchObject({ note: "slower start", changesRequested: true });
+    expect((await remove({ kind: "clip", index: 0, text: "y" })).status).toBe(200);
+    expect((await remove({ kind: "overall", index: 0, text: "slower start" })).status).toBe(200);
+    const cut = await saved();
+    expect(cut).toMatchObject({ note: "", changesRequested: false });
     expect(cut.clipNotes).toBeUndefined();
   });
 

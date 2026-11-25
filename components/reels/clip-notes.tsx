@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapPin, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { MAX_CLIP_NOTES, MAX_CLIP_NOTE_TEXT, clipNoteLabel, type ClipNoteDraft } from "@/lib/reels/clip-notes";
+import { MAX_CLIP_NOTES, MAX_CLIP_NOTE_TEXT, clipNoteLabel, overallNotes, type ClipNoteDraft } from "@/lib/reels/clip-notes";
 import { clipAt, clipStarts, outSeconds, type Clip } from "@/lib/reels/clips";
 import type { ReelCutView } from "@/lib/reels/store";
+import { patch } from "./shared";
 
 /** One-tap notes for the changes asked for most. */
 const QUICK = [
@@ -162,19 +164,36 @@ export function ClipNotes({ cut, videoRef, notes, onChange, disabled }: ClipNote
   );
 }
 
-/** What was asked for when a cut was sent back: the overall note and each clip note. */
+/**
+ * Everything waiting on the editor for a cut that was sent back: the overall notes and each clip note. Sending back again
+ * adds to this list, and a note can be taken back here before the editor gets to it.
+ */
 export function RequestedChanges({ cut }: { cut: ReelCutView }) {
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (note: { kind: "overall" | "clip"; index: number; text: string }) => patch({ job: cut.job, id: cut.id, action: "remove_note", remove: note }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reels"] }),
+    onError: (e) => { toast.error((e as Error).message); void qc.invalidateQueries({ queryKey: ["reels"] }); },
+  });
+  const overall = overallNotes(cut.note);
   const clipNotes = cut.clipNotes ?? [];
-  if (!cut.changesRequested || (!cut.note && clipNotes.length === 0)) return null;
+  if (!cut.changesRequested || (overall.length === 0 && clipNotes.length === 0)) return null;
+  const row = (kind: "overall" | "clip", index: number, text: string, label?: string) => (
+    <li key={`${kind}-${index}`} className="flex items-start gap-2">
+      <span className="min-w-0 flex-1 break-words">{label && <span className="font-medium tabular-nums">{label}: </span>}{text}</span>
+      <button type="button" aria-label={`Remove the note "${text}"`} disabled={remove.isPending} onClick={() => remove.mutate({ kind, index, text })} className="shrink-0 hover:text-foreground">
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </li>
+  );
   return (
     <div className="rounded-md border border-dashed p-2 text-sm text-muted-foreground">
       <p className="font-medium text-foreground">Waiting on changes</p>
-      {cut.note && <p>{cut.note}</p>}
-      {clipNotes.length > 0 && (
-        <ul className="mt-1 flex flex-col gap-0.5">
-          {clipNotes.map((n, i) => <li key={i}><span className="font-medium tabular-nums">{clipNoteLabel(n)}:</span> {n.text}</li>)}
-        </ul>
-      )}
+      <ul className="mt-1 flex flex-col gap-0.5">
+        {overall.map((text, i) => row("overall", i, text))}
+        {clipNotes.map((n, i) => row("clip", i, n.text, clipNoteLabel(n)))}
+      </ul>
+      <p className="mt-1 text-xs">Anything you send back now is added to this list.</p>
     </div>
   );
 }

@@ -69,7 +69,7 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   });
   const sendBack = useMutation({
     mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note, clipNotes }),
-    onSuccess: () => { toast.success(clipNotes.length ? "Sent back with your notes" : "Sent back with your note"); setNote(""); setClipNotes([]); onDone(); },
+    onSuccess: () => { toast.success(cut.changesRequested ? "Added to the notes for the editor" : clipNotes.length ? "Sent back with your notes" : "Sent back with your note"); setNote(""); setClipNotes([]); onDone(); },
     onError: (e) => toast.error((e as Error).message),
   });
   const [confirmDelete, setConfirmDelete] = useState(false);

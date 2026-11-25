@@ -74,6 +74,33 @@ export function pinClipNotes(clips: Clip[], drafts: ClipNoteDraft[]): ClipNote[]
   return notes.sort((a, b) => a.clip - b.clip || a.at - b.at);
 }
 
+/** Most overall notes that can wait on one cut. */
+export const MAX_OVERALL_NOTES = 20;
+
+/** The overall notes waiting on a cut. `note` holds one per line, so each send-back adds a line. */
+export function overallNotes(note: string | undefined): string[] {
+  return (note ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
+/** Adds an overall note to the ones already waiting on the cut. Nothing asked for earlier is lost, and the same note is not kept twice. */
+export function addOverallNote(pending: string | undefined, note: string | undefined): string {
+  const lines = overallNotes(pending);
+  const added = (note ?? "").replace(/\s*\n\s*/g, " ").trim();
+  if (added && !lines.includes(added)) lines.push(added);
+  if (lines.length > MAX_OVERALL_NOTES) throw new Error("too many notes are waiting on this cut");
+  return lines.join("\n");
+}
+
+/** Adds clip notes to the ones already waiting on the cut, the same way. */
+export function addClipNotes(pending: ClipNote[], added: ClipNote[]): ClipNote[] {
+  const all = [...pending];
+  for (const n of added) {
+    if (!all.some((p) => p.file === n.file && p.from === n.from && p.to === n.to && p.text === n.text)) all.push(n);
+  }
+  if (all.length > MAX_CLIP_NOTES) throw new Error("too many clip notes are waiting on this cut");
+  return all.sort((a, b) => a.clip - b.clip || a.at - b.at);
+}
+
 /** "Clip 7" for a whole clip, "Clip 7, 12.9s to 13.4s" for a section of it. */
 export function clipNoteLabel(note: Pick<ClipNote, "clip" | "at" | "until" | "whole">): string {
   return note.whole ? `Clip ${note.clip}` : `Clip ${note.clip}, ${note.at.toFixed(1)}s to ${note.until.toFixed(1)}s`;
