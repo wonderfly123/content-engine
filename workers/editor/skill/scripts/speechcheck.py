@@ -6,6 +6,7 @@ the last, and must not start or stop in the middle of a sentence. Uses <listen_d
 from listen.py); without it, the phrases in <listen_dir>/speech.tsv.
 Prints one line per talking shot, `ok` or `FIX` with the corrected EDL line to use instead, writes the same to
 <edl>.speech.txt (the reviewer reads it), and ends with PASS or FAIL. Exit code 1 on FAIL.
+With neither file there, a shot that keeps its sound FAILS: nothing was checked, so run listen.py first.
 A FIX is not a matter of taste: put the corrected line in the EDL, fit and render again, and run this again."""
 import os, sys
 
@@ -121,9 +122,15 @@ def check_shot(shot, units, phrases=None):
 def check(edl_path, listen_dir):
     words = read_tsv(os.path.join(listen_dir, "words.tsv"))
     phrases = read_tsv(os.path.join(listen_dir, "speech.tsv"))
+    # listen.py writes both files even when it hears nothing; neither one there means nobody listened.
+    listened = any(os.path.isfile(os.path.join(listen_dir, f)) for f in ("words.tsv", "speech.tsv"))
     lines, failed = [], 0
     for n, shot in enumerate(read_edl(edl_path), 1):
         if not shot["sound"]:
+            continue
+        if not listened:
+            failed += 1
+            lines.append(f"shot {n} {shot['file']} {shot['in']:.2f}-{shot['in'] + shot['dur']:.2f}: FIX not checked, the clips have no transcript")
             continue
         clip_phrases = phrases.get(shot["file"], [])
         if words.get(shot["file"]):
@@ -138,7 +145,10 @@ def check(edl_path, listen_dir):
         lines.append(f"shot {n} {shot['file']} {shot['in']:.2f}-{shot['in'] + shot['dur']:.2f}: FIX {'; '.join(problems)} -> use: {fixed}")
     if not lines:
         lines.append("no shot keeps its own sound")
-    lines.append("PASS" if failed == 0 else f"FAIL {failed} talking shot{'s' if failed != 1 else ''} cut into speech")
+    if failed and not listened:
+        lines.append(f"FAIL no transcript in {listen_dir} -> run listen.py on the footage first, then this again")
+    else:
+        lines.append("PASS" if failed == 0 else f"FAIL {failed} talking shot{'s' if failed != 1 else ''} cut into speech")
     return lines, failed
 
 

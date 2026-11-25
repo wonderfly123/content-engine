@@ -357,6 +357,19 @@ class SpeechCheckTests(unittest.TestCase):
         self.assertTrue(out.strip().endswith("PASS"))
         self.assertEqual(report, out)                      # the reviewer reads the same text
 
+    def test_a_talking_shot_with_no_transcript_at_all_fails_instead_of_passing_unchecked(self):
+        code, out, report = self.run_check(["action.mov|4|1.5|1", "talk.mov|0.8|2.4|1||1"], words=False, phrases=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("shot 2 talk.mov 0.80-3.20: FIX not checked", out)
+        self.assertIn("FAIL no transcript", out.strip().splitlines()[-1])
+        self.assertIn("listen.py", out)
+        self.assertEqual(report, out)
+
+    def test_no_transcript_does_not_matter_when_no_shot_keeps_its_sound(self):
+        code, out, _ = self.run_check(["action.mov|4|1.5|1"], words=False, phrases=False)
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out.strip().endswith("PASS"))
+
     def test_a_shot_that_cuts_off_a_word_fails_with_the_corrected_line(self):
         code, out, _ = self.run_check(["talk.mov|0.8|1.8|1||1"])           # ends at 2.60, inside "kickboxing."
         self.assertEqual(code, 1)
