@@ -69,7 +69,8 @@ Clips are only ever read; never modify or delete anything in `footage/`.
 6. **Render**: first, when any shot keeps its sound, `python3 $SK/speechcheck.py work/edl/<id>.tsv work/listen`
    (the `.beat.tsv` with music). It must end in `PASS`. A `FIX` line means a shot cuts into a word or stops
    mid-sentence, and gives the corrected EDL line: put that line in the EDL, fit again, and run it again. Never
-   render a cut it fails.
+   render a cut it fails. `FAIL no transcript` means the clips were never listened to in this run: run
+   `python3 $SK/listen.py footage work/listen` and then the check again.
    Then `bash $SK/render.sh footage work/edl/<id>.tsv out/previews/<id>.mp4` (the `.beat.tsv` with music).
    With music, then `bash $SK/mix.sh out/previews/<id>.mp4 music/<file> <audio_start>` (sets loudness and a short
    fade out). After every `mix.sh`, `python3 $SK/soundcheck.py out/previews/<id>.mp4` measures the result: how
