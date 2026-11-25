@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { ClipNoteDraft } from "@/lib/reels/clip-notes";
 import type { ReelCutView } from "@/lib/reels/store";
+import { ClipNotes } from "./clip-notes";
 import { HookPicker, Player, Split, mediaUrl, patch, send } from "./shared";
 
 function localDateTimeValue(d: Date): string {
@@ -21,6 +23,9 @@ export function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => v
   const [when, setWhen] = useState(() => { const d = new Date(Date.now() + 24 * 3600_000); d.setHours(9, 0, 0, 0); return localDateTimeValue(d); });
   const [mode, setMode] = useState<"trial-manual" | "trial-auto" | "normal">("trial-manual");
   const [note, setNote] = useState("");
+  const [clipNotes, setClipNotes] = useState<ClipNoteDraft[]>([]);
+  // Notes can be pinned to clips when the finished video still runs on the clip list's timing (no trim was applied to it).
+  const canPin = Boolean(cut.edl) && !cut.edits;
   // The cover is the frame people see on the profile grid. It must be confirmed here, even when the editor suggested one.
   const [coverAt, setCoverAt] = useState<number | null>(cut.coverAt ?? null);
   const [coverConfirmed, setCoverConfirmed] = useState(false);
@@ -40,8 +45,8 @@ export function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => v
   const [hook, setHook] = useState(cut.hook ?? burned);
   const textChanges = hook.trim() !== burned;
   const sendBack = useMutation({
-    mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note }),
-    onSuccess: () => { toast.success("Sent back with your note"); onDone(); },
+    mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note, clipNotes }),
+    onSuccess: () => { toast.success(clipNotes.length ? "Sent back with your notes" : "Sent back with your note"); onDone(); },
     onError: (e) => toast.error((e as Error).message),
   });
   const busy = schedule.isPending || sendBack.isPending;
@@ -85,10 +90,14 @@ export function FinalReview({ cut, onDone }: { cut: ReelCutView; onDone: () => v
       <Button onClick={() => schedule.mutate()} disabled={busy || !caption.trim() || !when || coverAt === null || !coverConfirmed}>
         <Check className="mr-2 h-4 w-4" aria-hidden="true" />{schedule.isPending ? (textChanges ? "Saving…" : "Hosting and scheduling…") : "Approve and schedule"}
       </Button>
-      <div className="flex gap-2">
-        <Input placeholder="Or say what should change" value={note} onChange={(e) => setNote(e.target.value)} />
-        <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || !note.trim()}>Send back</Button>
-      </div>
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <h3 className="text-sm font-semibold">Or send it back to the editor</h3>
+        {canPin && <ClipNotes cut={cut} videoRef={videoRef} notes={clipNotes} onChange={setClipNotes} disabled={busy} />}
+        <div className="flex gap-2">
+          <Input placeholder={canPin ? "Overall: music, pacing, anything about the whole video" : "Say what should change"} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Overall note" />
+          <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || (!note.trim() && clipNotes.length === 0)}>Send back</Button>
+        </div>
+      </section>
     </Split>
   );
 }

@@ -1,14 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Maximize2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { ClipNoteDraft } from "@/lib/reels/clip-notes";
 import { NO_TRIM, isEdited, trimFromKeep, type TrimState } from "@/lib/reels/edits";
 import type { ReelCutView } from "@/lib/reels/store";
 import { ClipEditor } from "./clip-editor";
+import { ClipNotes, RequestedChanges } from "./clip-notes";
 import { HookPicker, Player, Split, patch, send } from "./shared";
 import { TrimEditor } from "./trim-editor";
 import { useEditedPlayback } from "./use-edited-playback";
@@ -44,9 +46,12 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   const [recording, setRecording] = useState(false);
   const [hook, setHook] = useState(cut.hook ?? cut.hookBurned ?? "");
   const [note, setNote] = useState("");
+  const [clipNotes, setClipNotes] = useState<ClipNoteDraft[]>([]);
   // Cuts that come with their clip list open in the full-screen clip editor; older ones only get the simple trim.
   const [editingClips, setEditingClips] = useState(false);
   const takeLocksEdit = recording || Boolean(takes.record || takes.ai);
+  // Voice-over chosen: the music is muted for every playback. No voice-over: the music plays.
+  useEffect(() => { if (videoRef.current) videoRef.current.muted = voice; }, [voice, cut.preview, editingClips]);
 
   const accept = useMutation({
     mutationFn: () => {
@@ -63,8 +68,8 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
     onError: (e) => toast.error((e as Error).message),
   });
   const sendBack = useMutation({
-    mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note }),
-    onSuccess: () => { toast.success("Sent back with your note"); setNote(""); onDone(); },
+    mutationFn: () => patch({ job: cut.job, id: cut.id, action: "request_changes", note, clipNotes }),
+    onSuccess: () => { toast.success(clipNotes.length ? "Sent back with your notes" : "Sent back with your note"); setNote(""); setClipNotes([]); onDone(); },
     onError: (e) => toast.error((e as Error).message),
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -79,7 +84,8 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
   const choose = (on: boolean, how: "record" | "ai" = method) => {
     if (on) setMethod(how);
     setVoice(on);
-    if (videoRef.current && !recording) videoRef.current.muted = false;
+    // With a voice-over chosen the cut plays without its music, so a take can be heard on its own.
+    if (videoRef.current) videoRef.current.muted = on;
   };
   const choice = (on: boolean, label: string, how: "record" | "ai" = "record") => {
     const selected = voice === on && (!on || method === how);
@@ -110,14 +116,13 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
         )}
       </>
     }>
-      {cut.changesRequested && cut.note && <p className="text-sm text-muted-foreground">Waiting on changes: {cut.note}</p>}
+      <RequestedChanges cut={cut} />
       <Step n={1} title="Watch and edit">
         <p className="text-xs text-muted-foreground">{cut.edl ? "Use Edit clips under the video to change any clip. Skip this if the cut is good as it is." : "Trim the start or end, or cut a section out, with the buttons under the video. Skip this if the cut is good as it is."}</p>
       </Step>
       <Step n={2} title="Voice-over">
         <div className="flex gap-2" role="radiogroup" aria-label="Voice-over">
           {choice(true, "Record voice-over")}
-          {choice(true, "AI voice over", "ai")}
           {choice(false, "No voice-over")}
         </div>
         {voice && (
@@ -132,10 +137,14 @@ export function ReviewAndEdit({ cut, onDone }: { cut: ReelCutView; onDone: () =>
         <Check className="mr-2 h-4 w-4" aria-hidden="true" />{accept.isPending ? "Saving…" : "Accept"}
       </Button>
       {blocked && <p className="text-xs text-muted-foreground">{blocked}</p>}
-      <div className="flex gap-2">
-        <Input placeholder="Or say what should change" value={note} onChange={(e) => setNote(e.target.value)} />
-        <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || recording || !note.trim()}>Send back</Button>
-      </div>
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <h3 className="text-sm font-semibold">Or send it back to the editor</h3>
+        {cut.edl && <ClipNotes cut={cut} videoRef={videoRef} notes={clipNotes} onChange={setClipNotes} disabled={busy || recording} />}
+        <div className="flex gap-2">
+          <Input placeholder={cut.edl ? "Overall: music, pacing, anything about the whole cut" : "Say what should change"} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Overall note" />
+          <Button variant="outline" onClick={() => sendBack.mutate()} disabled={busy || recording || (!note.trim() && clipNotes.length === 0)}>Send back</Button>
+        </div>
+      </section>
       {confirmDelete ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-2">
           <p className="min-w-0 flex-1 text-sm">Delete this cut? It leaves review; the video file stays on the drive.</p>
