@@ -28,7 +28,8 @@ const modeLabel = (cut: ReelCutView) => (cut.mode === "voice" ? "voice-over" : "
 
 /** What the editor is working on for a cut that was accepted and handed over. */
 function editorStatus(cut: ReelCutView): string {
-  if (cut.note) return `Changes requested: ${cut.note}`;
+  const pinned = cut.clipNotes?.length ?? 0;
+  if (cut.note || pinned) return `Changes requested: ${[cut.note, pinned && `${pinned} clip note${pinned > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}`;
   const todo = [
     cut.edits && "your edit",
     cut.voiceover && "the voice-over mix and captions",
@@ -60,11 +61,12 @@ export default function InstagramPipelinePage() {
   useWriteMissingScripts(data ?? [], refresh);
   const cuts = (data ?? []).filter((c) => (stage.show as readonly string[]).includes(c.stage));
   const order = (c: ReelCutView) => stage.show.indexOf(c.stage as never);
-  cuts.sort((a, b) => order(a) - order(b) || a.job.localeCompare(b.job) || a.seconds - b.seconds);
+  // Stage first, then job; within a job the cuts keep the order the editor listed them in (the sort is stable).
+  cuts.sort((a, b) => order(a) - order(b) || a.job.localeCompare(b.job));
   // The dialog follows the list: when a cut leaves this stage (approved, sent back), it closes by itself.
   const openCut = cuts.find((c) => keyOf(c) === openKey) ?? null;
-  // One section per video length, shortest first.
-  const lengths = [...new Set(cuts.map((c) => c.seconds))].sort((x, y) => x - y);
+  // One section per job (project), never per video length.
+  const jobs = [...new Set(cuts.map((c) => c.job))].sort((x, y) => x.localeCompare(y));
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -83,11 +85,11 @@ export default function InstagramPipelinePage() {
         </Card>
       )}
 
-      {lengths.map((len) => (
-      <section key={len} className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold">{len} seconds <span className="font-normal text-muted-foreground">· {cuts.filter((c) => c.seconds === len).length}</span></h2>
+      {jobs.map((job) => (
+      <section key={job} className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold">{job} <span className="font-normal text-muted-foreground">· {cuts.filter((c) => c.job === job).length}</span></h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {cuts.filter((c) => c.seconds === len).map((cut) => (
+        {cuts.filter((c) => c.job === job).map((cut) => (
           <Card key={keyOf(cut)} className="overflow-hidden">
             <CardContent className="flex flex-col gap-2 p-3">
               <button type="button" onClick={() => setOpenKey(keyOf(cut))} className="block w-full" aria-label={`Open ${cut.title}`}>
@@ -96,7 +98,7 @@ export default function InstagramPipelinePage() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{cut.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{cut.job}{inFirstReview(cut) ? "" : ` · ${modeLabel(cut)}`}</p>
+                  <p className="truncate text-xs text-muted-foreground">{cut.seconds}s{inFirstReview(cut) ? "" : ` · ${modeLabel(cut)}`}</p>
                 </div>
                 <button type="button" onClick={() => setOpenKey(keyOf(cut))} className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Expand ${cut.title}`}>
                   <Maximize2 className="h-4 w-4" aria-hidden="true" />

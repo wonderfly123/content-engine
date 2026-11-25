@@ -119,7 +119,7 @@ export function VoiceRecorder({ videoRef, startAt, onEnd, script, voiceScript, m
 
   const redo = () => {
     audioRef.current?.pause();
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.muted = false; }
+    videoRef.current?.pause(); // stays muted: the recorder is only on screen while a voice-over is chosen
     onEnd.current = null;
     onTake(null);
   };

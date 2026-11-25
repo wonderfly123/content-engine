@@ -7,6 +7,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { ClipNote } from "./clip-notes";
 import type { ReelEdits } from "./edits";
 
 export const REEL_STAGES = ["cut_review", "voiceover", "editing", "final_review", "scheduled", "posted"] as const;
@@ -35,6 +36,8 @@ export interface ReelCut {
   caption?: string;
   /** Reviewer's note back to the editor. */
   note?: string;
+  /** Reviewer's notes on specific clips, sent back with (or instead of) `note`. Each names the shot and footage it is about. */
+  clipNotes?: ClipNote[];
   changesRequested?: boolean;
   /** Light edits from cut review (trim, sections cut out), for the editor to apply. The voice-over is timed to the edited cut. */
   edits?: ReelEdits;
@@ -83,11 +86,16 @@ export function jobDir(job: string): string {
   return path.join(jobsDir(), job);
 }
 
-/** Resolve a clip's source file, refusing anything outside the job's footage folder. */
+/**
+ * Resolve a clip's source file. Paths are relative to the job folder, and a cut may borrow footage from another job
+ * (`../turf/footage/x.mov`) or a shared folder beside the jobs (`../../generic-build/x.mov`), so anything inside the
+ * video library (the folder that holds `jobs`) is allowed. Anything outside it, or in a `.trash`, is refused.
+ */
 export function resolveInJob(job: string, relative: string): string {
-  const root = jobDir(job);
-  const full = path.resolve(root, relative);
-  if (!full.startsWith(root + path.sep)) throw new Error("path escapes the job folder");
+  const library = path.dirname(jobsDir());
+  const full = path.resolve(jobDir(job), relative);
+  if (!full.startsWith(library + path.sep)) throw new Error("path escapes the video library");
+  if (path.relative(library, full).split(path.sep).some((part) => part === ".trash")) throw new Error("path is in the trash");
   return full;
 }
 

@@ -80,6 +80,7 @@ export const POST = guard(async (req: NextRequest): Promise<NextResponse> => {
       c.hook = hook;
       c.changesRequested = false;
       c.note = "";
+      delete c.clipNotes;
       // Straight to final review only when the editor has nothing to do: no edits, no recording to mix and caption,
       // and the opening text already matches what is on a finished file.
       const editorWork = voice || Boolean(keep) || hook !== (c.hookBurned ?? "") || !c.final;
